@@ -13,9 +13,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ error: 'ID is required' }, { status: 400 });
   }
 
-  const success = await db.deleteInterview(id);
+  const success = await db.removePanelist(id);
   if (!success) {
-    return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Panelist not found' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

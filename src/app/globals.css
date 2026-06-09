@@ -390,3 +390,53 @@ a {
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Custom Toggle Switch */
+.switch-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-input {
+  display: none;
+}
+
+.switch-toggle {
+  position: relative;
+  width: 46px;
+  height: 24px;
+  background-color: #3f3f46;
+  border-radius: 99px;
+  transition: background-color 0.2s;
+}
+
+.switch-toggle::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background-color: #f8fafc;
+  border-radius: 50%;
+  transition: transform 0.2s, background-color 0.2s;
+}
+
+.switch-input:checked + .switch-toggle {
+  background-color: #8b5cf6; /* Vibrant purple toggle background */
+}
+
+.switch-input:checked + .switch-toggle::before {
+  transform: translateX(22px);
+  background-color: #12131a; /* Dark knob matching screenshot */
+}
+
+.switch-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+

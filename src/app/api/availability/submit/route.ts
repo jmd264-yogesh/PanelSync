@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing token or invalid slots' }, { status: 400 });
     }
 
-    const success = db.submitAvailability(token, slots);
+    const success = await db.submitAvailability(token, slots);
     if (!success) {
       return NextResponse.json({ error: 'Invalid token or panel not found' }, { status: 404 });
     }

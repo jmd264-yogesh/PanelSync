@@ -69,8 +69,8 @@ export async function GET(request: NextRequest) {
 
     const userData = await userResponse.json();
 
-    // 3. Set standard encrypted cookie session
-    await setSession({
+    // 3. Save session to server store and get sessionId
+    const sessionId = await setSession({
       accessToken,
       refreshToken,
       expiresAt,
@@ -81,8 +81,17 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // 4. Redirect to main dashboard
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    // 4. Construct response and set sessionId cookie directly
+    const response = NextResponse.redirect(new URL('/dashboard', request.url));
+    response.cookies.set('sessionId', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    });
+
+    return response;
   } catch (err) {
     console.error('Callback handler network or parsing error:', err);
     return NextResponse.redirect(new URL('/?error=internal_server_error', request.url));

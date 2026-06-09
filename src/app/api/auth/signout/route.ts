@@ -1,8 +1,7 @@
-import { NextResponse } from 'next/server';
-import { clearSession } from '@/lib/session';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: Request) {
-  await clearSession();
-  const url = new URL('/', request.url);
-  return NextResponse.redirect(url);
+export async function GET(request: NextRequest) {
+  const response = NextResponse.redirect(new URL('/', request.url));
+  response.cookies.delete('session');
+  return response;
 }

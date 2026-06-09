@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required booking details' }, { status: 400 });
     }
 
-    const interview = db.getInterview(interviewId);
+    const interview = await db.getInterview(interviewId);
     if (!interview) {
       return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
     }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Save scheduled details to the JSON database
-    db.bookInterview(interviewId, {
+    await db.bookInterview(interviewId, {
       scheduledSlotStart: startTime,
       scheduledSlotEnd: endTime,
       teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',

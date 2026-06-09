@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Create database records
-    const interview = db.createInterview({
+    const interview = await db.createInterview({
       candidateName,
       candidateEmail,
       role,

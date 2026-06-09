@@ -1,0 +1,72 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getValidAccessToken, getSession } from '@/lib/session';
+import { db, dbClient } from '@/lib/db';
+import { graph } from '@/lib/graph';
+import * as schema from '@/lib/schema';
+import { eq } from 'drizzle-orm';
+
+export async function POST(request: NextRequest) {
+  const token = await getValidAccessToken();
+  const session = await getSession();
+
+  if (!token || !session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { interviewId, candidateName, candidateEmail, sendAsTeamsMeeting } = body;
+
+    if (!interviewId || !candidateName) {
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+    }
+
+    const finalEmail = candidateEmail || 'pending@assign.com';
+
+    // 1. Fetch existing interview
+    const interview = await db.getInterview(interviewId);
+    if (!interview) {
+      return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+    }
+
+    // 2. Update database record
+    await dbClient
+      .update(schema.interviews)
+      .set({
+        candidateName,
+        candidateEmail: finalEmail,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.interviews.id, interviewId));
+
+    // 3. If the interview is already scheduled, update the Microsoft Calendar event via Graph API PATCH
+    if (interview.calendarEventId) {
+      try {
+        const panelEmails = interview.panels.map((p) => p.email);
+        const description = 'Interview scheduled via Microsoft Teams Scheduler. Candidate assigned.';
+        
+        await graph.updateTeamsMeeting(
+          interview.calendarEventId,
+          {
+            candidateName,
+            candidateEmail,
+            role: interview.role,
+            description,
+            panelEmails,
+            sendAsTeamsMeeting: sendAsTeamsMeeting !== false, // default to true if not specified
+          },
+          token
+        );
+      } catch (graphError) {
+        console.error('Failed to update MS Graph calendar event with candidate:', graphError);
+        // We still return success because DB is updated successfully, but log the error
+      }
+    }
+
+    const updatedInterview = await db.getInterview(interviewId);
+    return NextResponse.json({ success: true, interview: updatedInterview });
+  } catch (error) {
+    console.error('Failed to assign candidate:', error);
+    return NextResponse.json({ error: 'Failed to assign candidate' }, { status: 500 });
+  }
+}

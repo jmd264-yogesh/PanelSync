@@ -1,5 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+import { eq, and, inArray } from 'drizzle-orm';
+import * as schema from './schema';
 
 export interface PanelAvailability {
   id: string;
@@ -38,66 +40,161 @@ export interface Interview {
   panels: InterviewPanel[];
 }
 
-interface DatabaseSchema {
-  interviews: Interview[];
+export interface Panelist {
+  id: string;            // Microsoft Graph User ID
+  displayName: string;
+  email: string;
+  roles: ('L1' | 'L2')[]; // L1 or L2 panel capabilities
+  createdAt: string;
 }
 
-const DB_PATH = path.join(process.cwd(), 'db.json');
+// 1. Initialize Drizzle Neon HTTP Serverless client
+const connectionString = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
+const sql = neon(connectionString);
+export const dbClient = drizzle(sql, { schema });
 
-// Helper to read database
-function readDb(): DatabaseSchema {
+// Helper to clean up default mock panelists and ensure database starts clean
+async function ensureSeeded() {
   try {
-    if (!fs.existsSync(DB_PATH)) {
-      const initialDb: DatabaseSchema = { interviews: [] };
-      fs.writeFileSync(DB_PATH, JSON.stringify(initialDb, null, 2), 'utf-8');
-      return initialDb;
-    }
-    const data = fs.readFileSync(DB_PATH, 'utf-8');
-    return JSON.parse(data);
+    // Clean up mock panelists if they were previously seeded
+    await dbClient.delete(schema.panelists).where(
+      inArray(schema.panelists.id, ['mock-panelist-1', 'mock-panelist-2', 'mock-panelist-3'])
+    );
   } catch (error) {
-    console.error('Error reading JSON DB, returning empty schema:', error);
-    return { interviews: [] };
+    // Ignore error if database table isn't migrated/ready
   }
 }
 
-// Helper to write database
-function writeDb(data: DatabaseSchema): void {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (error) {
-    console.error('Error writing JSON DB:', error);
-  }
-}
-
-// Database helper operations
+// 2. Database Helper Operations
 export const db = {
   // Get all interviews sorted by newest
-  getInterviews: (): Interview[] => {
-    const data = readDb();
-    return data.interviews.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  getInterviews: async (): Promise<Interview[]> => {
+    const interviewsRes = await dbClient.select().from(schema.interviews);
+    
+    const result: Interview[] = [];
+    for (const intv of interviewsRes) {
+      const panelsRes = await dbClient
+        .select()
+        .from(schema.interviewPanels)
+        .where(eq(schema.interviewPanels.interviewId, intv.id));
+        
+      const panels: InterviewPanel[] = [];
+      for (const p of panelsRes) {
+        const avRes = await dbClient
+          .select()
+          .from(schema.panelAvailabilities)
+          .where(eq(schema.panelAvailabilities.panelId, p.id));
+          
+        panels.push({
+          id: p.id,
+          interviewId: p.interviewId,
+          userId: p.userId,
+          name: p.name,
+          email: p.email,
+          token: p.token,
+          status: p.status as 'PENDING' | 'SUBMITTED',
+          submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+          availabilities: avRes.map((av) => ({
+            id: av.id,
+            panelId: av.panelId,
+            startTime: av.startTime.toISOString(),
+            endTime: av.endTime.toISOString(),
+          })),
+        });
+      }
+      
+      result.push({
+        id: intv.id,
+        candidateName: intv.candidateName,
+        candidateEmail: intv.candidateEmail,
+        role: intv.role,
+        duration: intv.duration,
+        startDate: intv.startDate.toISOString(),
+        endDate: intv.endDate.toISOString(),
+        status: intv.status as any,
+        teamsMeetingUrl: intv.teamsMeetingUrl || undefined,
+        calendarEventId: intv.calendarEventId || undefined,
+        scheduledSlotStart: intv.scheduledSlotStart ? intv.scheduledSlotStart.toISOString() : undefined,
+        scheduledSlotEnd: intv.scheduledSlotEnd ? intv.scheduledSlotEnd.toISOString() : undefined,
+        createdAt: intv.createdAt ? intv.createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: intv.updatedAt ? intv.updatedAt.toISOString() : new Date().toISOString(),
+        panels,
+      });
+    }
+    
+    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   // Get a single interview
-  getInterview: (id: string): Interview | null => {
-    const data = readDb();
-    const interview = data.interviews.find((i) => i.id === id);
-    return interview || null;
+  getInterview: async (id: string): Promise<Interview | null> => {
+    const [intv] = await dbClient.select().from(schema.interviews).where(eq(schema.interviews.id, id)).limit(1);
+    if (!intv) return null;
+    
+    const panelsRes = await dbClient
+      .select()
+      .from(schema.interviewPanels)
+      .where(eq(schema.interviewPanels.interviewId, intv.id));
+      
+    const panels: InterviewPanel[] = [];
+    for (const p of panelsRes) {
+      const avRes = await dbClient
+        .select()
+        .from(schema.panelAvailabilities)
+        .where(eq(schema.panelAvailabilities.panelId, p.id));
+        
+      panels.push({
+        id: p.id,
+        interviewId: p.interviewId,
+        userId: p.userId,
+        name: p.name,
+        email: p.email,
+        token: p.token,
+        status: p.status as 'PENDING' | 'SUBMITTED',
+        submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+        availabilities: avRes.map((av) => ({
+          id: av.id,
+          panelId: av.panelId,
+          startTime: av.startTime.toISOString(),
+          endTime: av.endTime.toISOString(),
+        })),
+      });
+    }
+    
+    return {
+      id: intv.id,
+      candidateName: intv.candidateName,
+      candidateEmail: intv.candidateEmail,
+      role: intv.role,
+      duration: intv.duration,
+      startDate: intv.startDate.toISOString(),
+      endDate: intv.endDate.toISOString(),
+      status: intv.status as any,
+      teamsMeetingUrl: intv.teamsMeetingUrl || undefined,
+      calendarEventId: intv.calendarEventId || undefined,
+      scheduledSlotStart: intv.scheduledSlotStart ? intv.scheduledSlotStart.toISOString() : undefined,
+      scheduledSlotEnd: intv.scheduledSlotEnd ? intv.scheduledSlotEnd.toISOString() : undefined,
+      createdAt: intv.createdAt ? intv.createdAt.toISOString() : new Date().toISOString(),
+      updatedAt: intv.updatedAt ? intv.updatedAt.toISOString() : new Date().toISOString(),
+      panels,
+    };
   },
 
   // Find panel and interview by token
-  getInterviewByPanelToken: (token: string): { interview: Interview; panel: InterviewPanel } | null => {
-    const data = readDb();
-    for (const interview of data.interviews) {
-      const panel = interview.panels.find((p) => p.token === token);
-      if (panel) {
-        return { interview, panel };
-      }
-    }
-    return null;
+  getInterviewByPanelToken: async (token: string): Promise<{ interview: Interview; panel: InterviewPanel } | null> => {
+    const [panelRow] = await dbClient.select().from(schema.interviewPanels).where(eq(schema.interviewPanels.token, token)).limit(1);
+    if (!panelRow) return null;
+    
+    const interview = await db.getInterview(panelRow.interviewId);
+    if (!interview) return null;
+    
+    const activePanel = interview.panels.find((p) => p.id === panelRow.id);
+    if (!activePanel) return null;
+    
+    return { interview, panel: activePanel };
   },
 
   // Create an interview
-  createInterview: (params: {
+  createInterview: async (params: {
     candidateName: string;
     candidateEmail: string;
     role: string;
@@ -105,90 +202,89 @@ export const db = {
     startDate: string;
     endDate: string;
     panels: { userId: string; name: string; email: string }[];
-  }): Interview => {
-    const data = readDb();
+  }): Promise<Interview> => {
     const interviewId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    const panels: InterviewPanel[] = params.panels.map((p) => ({
-      id: crypto.randomUUID(),
-      interviewId,
-      userId: p.userId,
-      name: p.name,
-      email: p.email,
-      token: crypto.randomUUID().replace(/-/g, ''), // Unguessable token
-      status: 'PENDING',
-      availabilities: [],
-    }));
-
-    const newInterview: Interview = {
+    const now = new Date();
+    
+    await dbClient.insert(schema.interviews).values({
       id: interviewId,
       candidateName: params.candidateName,
       candidateEmail: params.candidateEmail,
       role: params.role,
       duration: params.duration,
-      startDate: params.startDate,
-      endDate: params.endDate,
+      startDate: new Date(params.startDate),
+      endDate: new Date(params.endDate),
       status: 'PENDING',
       createdAt: now,
       updatedAt: now,
-      panels,
-    };
-
-    data.interviews.push(newInterview);
-    writeDb(data);
-    return newInterview;
+    });
+    
+    for (const p of params.panels) {
+      const panelId = crypto.randomUUID();
+      const token = crypto.randomUUID().replace(/-/g, '');
+      await dbClient.insert(schema.interviewPanels).values({
+        id: panelId,
+        interviewId,
+        userId: p.userId,
+        name: p.name,
+        email: p.email,
+        token,
+        status: 'PENDING',
+      });
+    }
+    
+    const created = await db.getInterview(interviewId);
+    if (!created) throw new Error('Failed to retrieve created interview');
+    return created;
   },
 
   // Submit availability for a panel
-  submitAvailability: (panelToken: string, slots: { startTime: string; endTime: string }[]): boolean => {
-    const data = readDb();
+  submitAvailability: async (panelToken: string, slots: { startTime: string; endTime: string }[]): Promise<boolean> => {
+    const [panelRow] = await dbClient.select().from(schema.interviewPanels).where(eq(schema.interviewPanels.token, panelToken)).limit(1);
+    if (!panelRow) return false;
     
-    // Find interview index and panel index
-    let interviewIdx = -1;
-    let panelIdx = -1;
-
-    for (let i = 0; i < data.interviews.length; i++) {
-      const pIdx = data.interviews[i].panels.findIndex((p) => p.token === panelToken);
-      if (pIdx !== -1) {
-        interviewIdx = i;
-        panelIdx = pIdx;
-        break;
+    // 1. Wipe previous availability slots
+    await dbClient.delete(schema.panelAvailabilities).where(eq(schema.panelAvailabilities.panelId, panelRow.id));
+    
+    // 2. Insert new slots
+    for (const slot of slots) {
+      const avId = crypto.randomUUID();
+      await dbClient.insert(schema.panelAvailabilities).values({
+        id: avId,
+        panelId: panelRow.id,
+        startTime: new Date(slot.startTime),
+        endTime: new Date(slot.endTime),
+      });
+    }
+    
+    // 3. Update panel status to SUBMITTED
+    const now = new Date();
+    await dbClient
+      .update(schema.interviewPanels)
+      .set({ status: 'SUBMITTED', submittedAt: now })
+      .where(eq(schema.interviewPanels.id, panelRow.id));
+      
+    // 4. Check if all panels submitted and transition status
+    const interview = await db.getInterview(panelRow.interviewId);
+    if (interview) {
+      const allSubmitted = interview.panels.every((p) => p.status === 'SUBMITTED');
+      if (allSubmitted && interview.status === 'PENDING') {
+        await dbClient
+          .update(schema.interviews)
+          .set({ status: 'COLLECTED', updatedAt: now })
+          .where(eq(schema.interviews.id, interview.id));
+      } else {
+        await dbClient
+          .update(schema.interviews)
+          .set({ updatedAt: now })
+          .where(eq(schema.interviews.id, interview.id));
       }
     }
-
-    if (interviewIdx === -1 || panelIdx === -1) {
-      return false;
-    }
-
-    const interview = data.interviews[interviewIdx];
-    const panel = interview.panels[panelIdx];
-
-    // Map new availabilities
-    const availabilities: PanelAvailability[] = slots.map((s) => ({
-      id: crypto.randomUUID(),
-      panelId: panel.id,
-      startTime: s.startTime,
-      endTime: s.endTime,
-    }));
-
-    panel.availabilities = availabilities;
-    panel.status = 'SUBMITTED';
-    panel.submittedAt = new Date().toISOString();
-    
-    // Check if all panels for this interview have submitted availability
-    const allSubmitted = interview.panels.every((p) => p.status === 'SUBMITTED');
-    if (allSubmitted && interview.status === 'PENDING') {
-      interview.status = 'COLLECTED';
-    }
-
-    interview.updatedAt = new Date().toISOString();
-    writeDb(data);
     return true;
   },
 
   // Book the interview with a selected slot
-  bookInterview: (
+  bookInterview: async (
     interviewId: string,
     params: {
       scheduledSlotStart: string;
@@ -196,36 +292,74 @@ export const db = {
       teamsMeetingUrl: string;
       calendarEventId: string;
     }
-  ): boolean => {
-    const data = readDb();
-    const interview = data.interviews.find((i) => i.id === interviewId);
-    
-    if (!interview) {
-      return false;
-    }
-
-    interview.status = 'SCHEDULED';
-    interview.scheduledSlotStart = params.scheduledSlotStart;
-    interview.scheduledSlotEnd = params.scheduledSlotEnd;
-    interview.teamsMeetingUrl = params.teamsMeetingUrl;
-    interview.calendarEventId = params.calendarEventId;
-    interview.updatedAt = new Date().toISOString();
-
-    writeDb(data);
+  ): Promise<boolean> => {
+    const now = new Date();
+    await dbClient
+      .update(schema.interviews)
+      .set({
+        status: 'SCHEDULED',
+        scheduledSlotStart: new Date(params.scheduledSlotStart),
+        scheduledSlotEnd: new Date(params.scheduledSlotEnd),
+        teamsMeetingUrl: params.teamsMeetingUrl,
+        calendarEventId: params.calendarEventId,
+        updatedAt: now,
+      })
+      .where(eq(schema.interviews.id, interviewId));
+      
     return true;
   },
 
-  // Delete an interview record
-  deleteInterview: (id: string): boolean => {
-    const data = readDb();
-    const initialLen = data.interviews.length;
-    data.interviews = data.interviews.filter((i) => i.id !== id);
+  // Delete an interview record (cascading foreign keys handled at SQL level)
+  deleteInterview: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.interviews).where(eq(schema.interviews.id, id));
+    return true;
+  },
+
+  // Get all registered panelists
+  getPanelists: async (): Promise<Panelist[]> => {
+    await ensureSeeded();
+    const res = await dbClient.select().from(schema.panelists);
+    return res.map((row) => ({
+      id: row.id,
+      displayName: row.displayName,
+      email: row.email,
+      roles: row.roles as ('L1' | 'L2')[],
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  // Add or update a panelist
+  addPanelist: async (
+    user: { id: string; displayName: string; email: string },
+    roles: ('L1' | 'L2')[]
+  ): Promise<Panelist> => {
+    const [existing] = await dbClient.select().from(schema.panelists).where(eq(schema.panelists.id, user.id)).limit(1);
+    const now = new Date();
     
-    if (data.interviews.length === initialLen) {
-      return false;
+    if (existing) {
+      await dbClient.update(schema.panelists).set({ roles }).where(eq(schema.panelists.id, user.id));
+    } else {
+      await dbClient.insert(schema.panelists).values({
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        roles,
+        createdAt: now,
+      });
     }
     
-    writeDb(data);
+    return {
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      roles,
+      createdAt: now.toISOString(),
+    };
+  },
+
+  // Delete a panelist record
+  removePanelist: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.panelists).where(eq(schema.panelists.id, id));
     return true;
-  }
+  },
 };

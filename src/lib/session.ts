@@ -1,8 +1,7 @@
 import { cookies } from 'next/headers';
-import * as jose from 'jose';
-
-const SECRET_KEY = process.env.SESSION_SECRET || 'fallback-secret-key-at-least-32-chars-long-change-in-prod';
-const SECRET = new TextEncoder().encode(SECRET_KEY);
+import { dbClient } from './db';
+import { sessions } from './schema';
+import { eq, desc } from 'drizzle-orm';
 
 export interface SessionPayload {
   accessToken: string;
@@ -15,55 +14,85 @@ export interface SessionPayload {
   };
 }
 
-export async function encrypt(payload: SessionPayload): Promise<string> {
-  return await new jose.SignJWT({ ...payload })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(SECRET);
-}
-
-export async function decrypt(token: string): Promise<SessionPayload | null> {
-  try {
-    const { payload } = await jose.jwtVerify(token, SECRET, {
-      algorithms: ['HS256'],
-    });
-    return payload as unknown as SessionPayload;
-  } catch (error) {
-    console.error('Failed to verify session token:', error);
-    return null;
-  }
-}
-
 export async function getSession(): Promise<SessionPayload | null> {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get('session')?.value;
-    if (!token) return null;
-    return await decrypt(token);
+    const sessionId = cookieStore.get('sessionId')?.value;
+    if (!sessionId) return null;
+
+    // Retrieve session from PostgreSQL using Drizzle
+    const [sessionRow] = await dbClient
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
+
+    if (!sessionRow) return null;
+
+    return {
+      accessToken: sessionRow.accessToken,
+      refreshToken: sessionRow.refreshToken || undefined,
+      expiresAt: sessionRow.expiresAt.getTime(),
+      user: {
+        id: sessionRow.userId,
+        displayName: sessionRow.userDisplayName,
+        email: sessionRow.userEmail,
+      },
+    };
   } catch (error) {
     console.error('Error fetching session cookie:', error);
     return null;
   }
 }
 
-export async function setSession(payload: SessionPayload): Promise<void> {
-  const token = await encrypt(payload);
+export async function setSession(payload: SessionPayload): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  
+  // 1. Save session to Neon DB using Drizzle
+  await dbClient.insert(sessions).values({
+    id: sessionId,
+    accessToken: payload.accessToken,
+    refreshToken: payload.refreshToken || null,
+    expiresAt: new Date(payload.expiresAt),
+    userId: payload.user.id,
+    userDisplayName: payload.user.displayName,
+    userEmail: payload.user.email,
+  });
+
+  // 2. Set only the small Session ID in the cookie
   const cookieStore = await cookies();
-  cookieStore.set('session', token, {
+  cookieStore.set('sessionId', sessionId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7, // 7 days
     path: '/',
   });
+
+  return sessionId;
 }
 
 export async function clearSession(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete('session');
+  try {
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('sessionId')?.value;
+    
+    if (sessionId) {
+      // Delete from PostgreSQL
+      await dbClient.delete(sessions).where(eq(sessions.id, sessionId));
+    }
+
+    cookieStore.delete('sessionId');
+  } catch (error) {
+    console.error('Error clearing session:', error);
+  }
 }
+
 export async function getValidAccessToken(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const sessionId = cookieStore.get('sessionId')?.value;
+  if (!sessionId) return null;
+
   const session = await getSession();
   if (!session) return null;
 
@@ -75,12 +104,17 @@ export async function getValidAccessToken(): Promise<string | null> {
       const tokens = await refreshMicrosoftTokens(session.refreshToken);
       if (tokens) {
         const expiresAt = Date.now() + tokens.expires_in * 1000;
-        await setSession({
-          ...session,
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token || session.refreshToken,
-          expiresAt,
-        });
+        
+        // Update session tokens in PostgreSQL
+        await dbClient
+          .update(sessions)
+          .set({
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token || session.refreshToken,
+            expiresAt: new Date(expiresAt),
+          })
+          .where(eq(sessions.id, sessionId));
+        
         return tokens.access_token;
       }
     }
@@ -125,6 +159,47 @@ async function refreshMicrosoftTokens(refreshToken: string) {
     return await response.json();
   } catch (err) {
     console.error('Network error refreshing token:', err);
+    return null;
+  }
+}
+
+export async function getAnyValidAccessToken(): Promise<{ token: string; email: string } | null> {
+  try {
+    const [latestSession] = await dbClient
+      .select()
+      .from(sessions)
+      .orderBy(desc(sessions.createdAt))
+      .limit(1);
+
+    if (!latestSession) return null;
+
+    const now = Date.now();
+    const expiresAt = latestSession.expiresAt.getTime();
+
+    if (expiresAt - now < 30 * 1000) {
+      if (latestSession.refreshToken) {
+        console.log('Access token expiring soon for guest booking. Refreshing token...');
+        const tokens = await refreshMicrosoftTokens(latestSession.refreshToken);
+        if (tokens) {
+          const newExpiresAt = Date.now() + tokens.expires_in * 1000;
+          await dbClient
+            .update(sessions)
+            .set({
+              accessToken: tokens.access_token,
+              refreshToken: tokens.refresh_token || latestSession.refreshToken,
+              expiresAt: new Date(newExpiresAt),
+            })
+            .where(eq(sessions.id, latestSession.id));
+
+          return { token: tokens.access_token, email: latestSession.userEmail };
+        }
+      }
+      return null;
+    }
+
+    return { token: latestSession.accessToken, email: latestSession.userEmail };
+  } catch (error) {
+    console.error('Error fetching generic valid token:', error);
     return null;
   }
 }

@@ -19,31 +19,75 @@ interface AvailabilityClientProps {
   panel: InterviewPanel;
 }
 
-interface TempSlot {
-  date: string;
-  startTime: string;
-  endTime: string;
-}
-
 export default function AvailabilityClient({ interview, panel }: AvailabilityClientProps) {
-  // Page state
+  // Common states
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Flow A: Panelist-First Booking (candidateName is "Pending Assignment")
+  const isPendingAssignment = interview.candidateName === 'Pending Assignment';
+
+  // State for Flow A
+  const [isBooked, setIsBooked] = useState(interview.status === 'SCHEDULED');
+  const [bookedSlot, setBookedSlot] = useState<{ startTime: string; endTime: string } | null>(
+    interview.scheduledSlotStart && interview.scheduledSlotEnd
+      ? { startTime: interview.scheduledSlotStart, endTime: interview.scheduledSlotEnd }
+      : null
+  );
+  const [meetingUrl, setMeetingUrl] = useState(interview.teamsMeetingUrl || '');
+  const [isBooking, setIsBooking] = useState(false);
+  const [selectingSlotId, setSelectingSlotId] = useState<string | null>(null);
+  const [hoveredSlotId, setHoveredSlotId] = useState<string | null>(null);
+
+  // State for Flow B (Original Availability submission builder)
   const [isSubmitted, setIsSubmitted] = useState(panel.status === 'SUBMITTED');
   const [slots, setSlots] = useState<{ startTime: string; endTime: string }[]>(
     panel.availabilities.map((a) => ({ startTime: a.startTime, endTime: a.endTime }))
   );
-  
-  // Interactive form states
   const [inputDate, setInputDate] = useState('');
   const [inputStart, setInputStart] = useState('09:00');
   const [inputEnd, setInputEnd] = useState('17:00');
-  const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Date limit strings for native calendar inputs (min/max attributes)
+  // Date limit strings for Flow B
   const minDate = new Date(interview.startDate).toISOString().split('T')[0];
   const maxDate = new Date(interview.endDate).toISOString().split('T')[0];
 
-  // Add a slot to the list
+  // Flow A actions
+  const handleSelectSlot = async (startTime: string, endTime: string, slotId: string) => {
+    setIsBooking(true);
+    setSelectingSlotId(slotId);
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('/api/availability/select-slot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: panel.token,
+          startTime,
+          endTime,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to book slot.');
+      }
+
+      const data = await res.json();
+      setBookedSlot({ startTime, endTime });
+      setMeetingUrl(data.meeting?.joinUrl || data.meeting?.webLink || '');
+      setIsBooked(true);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'An error occurred while booking this slot.');
+    } finally {
+      setIsBooking(false);
+      setSelectingSlotId(null);
+    }
+  };
+
+  // Flow B actions
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -53,7 +97,6 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
       return;
     }
 
-    // Parse times
     const startStr = `${inputDate}T${inputStart}`;
     const endStr = `${inputDate}T${inputEnd}`;
     const startObj = new Date(startStr);
@@ -75,11 +118,6 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
       return;
     }
 
-    // Check if slot falls in requested date range
-    const rangeStart = new Date(interview.startDate).getTime();
-    const rangeEnd = new Date(interview.endDate).getTime();
-    
-    // Add margin for date comparisons (start of start date, end of end date)
     const startOfDay = new Date(interview.startDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(interview.endDate);
@@ -90,7 +128,6 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
       return;
     }
 
-    // Prevent duplicate entries
     const isDuplicate = slots.some(
       (s) => s.startTime === startObj.toISOString() && s.endTime === endObj.toISOString()
     );
@@ -104,12 +141,10 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
     setErrorMsg('');
   };
 
-  // Remove slot
   const handleRemoveSlot = (index: number) => {
     setSlots(slots.filter((_, idx) => idx !== index));
   };
 
-  // Submit all slots
   const handleSubmitSlots = async () => {
     if (slots.length === 0) {
       setErrorMsg('Please add at least one available slot.');
@@ -142,7 +177,147 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
     }
   };
 
-  // Render Submited success screen
+  // --- RENDER FLOW A: PANEL DELIVERED CHOICE FLOW ---
+  if (isPendingAssignment) {
+    if (isBooked) {
+      return (
+        <div className="glass-card text-center animate-pulse-once" style={{ padding: '3rem 2rem' }}>
+          <CheckCircle size={56} style={{ color: 'var(--success)', margin: '0 auto 1.5rem' }} />
+          <h2 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>Interview Scheduled</h2>
+          <p className="text-muted" style={{ fontSize: '0.95rem', marginBottom: '2rem' }}>
+            Thank you, <strong>{panel.name}</strong>. The <strong>{interview.role}</strong> interview is officially scheduled.
+          </p>
+          
+          {bookedSlot && (
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', textAlign: 'left', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <Calendar size={18} className="text-primary" />
+                <div>
+                  <span className="text-xs text-muted block">Date</span>
+                  <span className="font-semibold text-sm">
+                    {new Date(bookedSlot.startTime).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <Clock size={18} className="text-primary" />
+                <div>
+                  <span className="text-xs text-muted block">Time (UTC)</span>
+                  <span className="font-semibold text-sm">
+                    {new Date(bookedSlot.startTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {new Date(bookedSlot.endTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+              {meetingUrl && (
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <Video size={18} className="text-primary" />
+                  <div>
+                    <span className="text-xs text-muted block">Teams Meeting Link</span>
+                    <a href={meetingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-primary flex-gap-1 hover-underline">
+                      Join Teams Meeting <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-muted text-xs">
+            A calendar invitation has been sent to your Outlook account. You can safely close this page now.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="glass-card">
+        {/* Title block */}
+        <div style={{ borderBottom: '1px solid var(--border-glass)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+          <div className="badge badge-info" style={{ marginBottom: '0.75rem' }}>
+            Interview Slot Selection
+          </div>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>Select a Slot for {interview.role}</h2>
+          <p className="text-muted text-sm">
+            Hi <strong>{panel.name}</strong>, please select **one** of the proposed slots below to schedule this interview. Clicking a slot will book it instantly on the coordinator's calendar.
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div style={{ color: 'var(--danger)', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem', background: 'var(--danger-glow)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {/* Proposed Slots List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
+          {panel.availabilities.length === 0 ? (
+            <div style={{ padding: '2.5rem', textAlign: 'center', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.1)' }}>
+              <span className="text-muted text-sm block">No proposed slots found.</span>
+              <span className="text-muted text-xs">Please contact the recruiter to propose slots.</span>
+            </div>
+          ) : (
+            panel.availabilities.map((slot) => {
+              const start = new Date(slot.startTime);
+              const end = new Date(slot.endTime);
+              const isSelecting = selectingSlotId === slot.id;
+
+              return (
+                <div
+                  key={slot.id}
+                  onMouseEnter={() => setHoveredSlotId(slot.id)}
+                  onMouseLeave={() => setHoveredSlotId(null)}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '1.25rem',
+                    background: hoveredSlotId === slot.id ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.02)',
+                    border: hoveredSlotId === slot.id ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
+                    borderRadius: 'var(--radius-md)',
+                    transform: hoveredSlotId === slot.id ? 'translateY(-2px)' : 'none',
+                    boxShadow: hoveredSlotId === slot.id ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <Calendar size={20} className="text-muted" />
+                    <div>
+                      <span className="font-semibold block text-sm">
+                        {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={isBooking}
+                    onClick={() => handleSelectSlot(slot.startTime, slot.endTime, slot.id)}
+                    style={{ minWidth: '100px' }}
+                  >
+                    {isSelecting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      'Book Slot'
+                    )}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <p className="text-muted text-xs text-center">
+          Note: This booking will immediately reserve a Teams meeting room and coordinate calendar schedules.
+        </p>
+      </div>
+    );
+  }
+
+  // --- RENDER FLOW B: ORIGINAL MULTI-AVAILABILITY SUBMISSION FLOW ---
   if (isSubmitted) {
     return (
       <div className="glass-card text-center animate-pulse-once" style={{ padding: '3rem 2rem' }}>
