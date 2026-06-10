@@ -25,7 +25,8 @@ import {
   CalendarCheck,
   Shield,
   Settings,
-  ListFilter
+  ListFilter,
+  Building2
 } from 'lucide-react';
 
 interface DashboardClientProps {
@@ -77,6 +78,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [l1TimeEnd, setL1TimeEnd] = useState('13:00');
   const [l2TimeStart, setL2TimeStart] = useState('14:00');
   const [l2TimeEnd, setL2TimeEnd] = useState('17:00');
+  const [collegeName, setCollegeName] = useState('');
 
   // Panelist-First slot request form states (New Flow)
   const [reqPanelists, setReqPanelists] = useState<Panelist[]>([]);
@@ -2167,15 +2169,15 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       {activeTab === 'panelists' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           
-          {/* Timing Period Configuration Card */}
+          {/* Interview Scheduler Defaults Card */}
           <div className="glass-card" style={{ padding: '1.25rem 1.5rem' }}>
             <h3 style={{ fontSize: '1.15rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Clock size={18} className="text-primary" /> Auto-Scheduler Timing Configurations
+              <Clock size={18} className="text-primary" /> Interview Scheduler Defaults
             </h3>
             <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
-              Configure the default daily time windows during which interview slots can be automatically proposed. L1/L2 slot options will be auto-generated inside these ranges.
+              Configure the default daily time windows, proposed date range, and college/institution name used when auto-generating interview slot proposals.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1.25rem' }}>
               <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
                 <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>L1 Timing Period (Technical Screening)</h4>
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -2216,6 +2218,26 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={defaultEndDate} min={defaultStartDate || todayStr} onChange={(e) => setDefaultEndDate(e.target.value)} />
                   </div>
                 </div>
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
+                <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#fb923c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Building2 size={14} /> College / Institution
+                </h4>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem' }}>College Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    value={collegeName}
+                    onChange={(e) => setCollegeName(e.target.value)}
+                    placeholder="e.g. IIT Bombay, NIT Trichy..."
+                  />
+                </div>
+                <p className="text-muted" style={{ fontSize: '0.65rem', marginTop: '0.5rem', lineHeight: 1.4 }}>
+                  Default institution shown in slot request messages.
+                </p>
               </div>
             </div>
 

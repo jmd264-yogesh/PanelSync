@@ -145,6 +145,10 @@ bulkSelectedL2Ids: string[]      // IDs selected in L2 column only
 // L1/L2 interview time config
 l1TimeStart, l1TimeEnd           // default '10:00' – '13:00'
 l2TimeStart, l2TimeEnd           // default '14:00' – '17:00'
+
+// Default scheduler config
+defaultStartDate, defaultEndDate // default proposed date range pre-filled in slot request modal
+collegeName: string              // default college/institution name shown in slot request messages
 ```
 
 ### Interviews Tab
@@ -161,6 +165,11 @@ l2TimeStart, l2TimeEnd           // default '14:00' – '17:00'
 - Sticky floating action bar when any selection → "Request L1 Slots" / "Request L2 Slots" buttons
 - Slot request modal: date range picker, time windows, generates per-day slots, sends Teams message via `/api/interviews/request-panelist`
 - Admin add: search org users → assign L1/L2 roles → save
+- **Interview Scheduler Defaults** card (renamed from "Auto-Scheduler Timing Configurations"): 4-column configuration panel with:
+  - L1 Timing Period (start/end time for L1 scheduling window)
+  - L2 Timing Period (start/end time for L2 scheduling window)
+  - Default Proposed Date Range (start/end date pre-filled in slot request modals)
+  - College / Institution (`collegeName` state) — default institution name displayed in slot request messages
 
 ---
 
