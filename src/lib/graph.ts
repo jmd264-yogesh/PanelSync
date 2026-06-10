@@ -199,7 +199,7 @@ class GraphService {
 
     return {
       id: response.id,
-      joinUrl: response.onlineMeeting?.joinUrl,
+      joinUrl: response.onlineMeeting?.joinUrl || response.onlineMeetingUrl,
       webLink: response.webLink,
     };
   }
@@ -264,11 +264,9 @@ class GraphService {
       attendees,
     };
 
-    if (params.sendAsTeamsMeeting !== undefined) {
-      body.isOnlineMeeting = params.sendAsTeamsMeeting;
-      if (params.sendAsTeamsMeeting) {
-        body.onlineMeetingProvider = 'teamsForBusiness';
-      }
+    body.isOnlineMeeting = params.sendAsTeamsMeeting !== false;
+    if (params.sendAsTeamsMeeting !== false) {
+      body.onlineMeetingProvider = 'teamsForBusiness';
     }
 
     return await this.fetchGraph(endpoint, accessToken, {

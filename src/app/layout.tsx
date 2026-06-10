@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Teams Interview Scheduler | Microsoft Graph API Automation",
+  title: "PanelSync — Interview Scheduling",
   description: "Schedule employee panel interviews seamlessly. Dispatch Teams notifications, collect availabilities, calculate overlapping slots, and schedule meetings automatically.",
 };
 

@@ -8,22 +8,21 @@ import {
   Panelist
 } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
-import { 
-  Plus, 
-  Calendar, 
-  User, 
-  Mail, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  Search, 
-  Loader2, 
-  Trash2, 
-  Video, 
-  Check, 
+import {
+  Plus,
+  Calendar,
+  User,
+  Users,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Search,
+  Loader2,
+  Trash2,
+  Video,
+  Check,
   Info,
   CalendarCheck,
-  ChevronRight,
   Shield,
   Settings,
   ListFilter
@@ -94,6 +93,13 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [isAssigningCandidate, setIsAssigningCandidate] = useState(false);
   const [isEditingMapping, setIsEditingMapping] = useState(false);
   const [sendAsTeamsMeeting, setSendAsTeamsMeeting] = useState(true);
+
+  // UI / UX States
+  const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
+  const [detailTab, setDetailTab] = useState<'overview' | 'panels' | 'booking'>('overview');
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Sync selected interview details if the interviews list updates & sync candidate assignment form values
   useEffect(() => {
@@ -270,6 +276,9 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     e.preventDefault();
     if (!reqPanelist) return;
 
+    if (reqStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
+    if (reqEndDate < reqStartDate) { alert('End date cannot be before the start date.'); return; }
+
     const selectedProposedSlots = reqSlots.filter((s) => s.selected);
     if (selectedProposedSlots.length === 0) {
       alert('Please select or enable at least one proposed slot option.');
@@ -354,10 +363,16 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   // Submit original new interview create form
   const handleCreateInterview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedPanels.length === 0) {
-      alert('Please select at least one panel member.');
-      return;
-    }
+    setCreateError(null);
+
+    if (!candidateName.trim()) { setCreateError('Please enter the candidate name.'); return; }
+    if (!candidateEmail.trim()) { setCreateError('Please enter the candidate email.'); return; }
+    if (!role.trim()) { setCreateError('Please enter the job title / focus area.'); return; }
+    if (!startDate) { setCreateError('Please select a proposed range start date.'); return; }
+    if (!endDate) { setCreateError('Please select a proposed range end date.'); return; }
+    if (startDate < todayStr) { setCreateError('Start date cannot be in the past.'); return; }
+    if (endDate < startDate) { setCreateError('End date cannot be before the start date.'); return; }
+    if (selectedPanels.length === 0) { setCreateError('Please select at least one panel member.'); return; }
 
     setIsLoading(true);
     try {
@@ -382,7 +397,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
       const result = await res.json();
       setInterviews([result.interview, ...interviews]);
-      
+
       // Reset fields
       setCandidateName('');
       setCandidateEmail('');
@@ -393,10 +408,12 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       setSelectedPanels([]);
       setInterviewType('L1');
       setShowCreateForm(false);
+      setCreateError(null);
       setSelectedInterview(result.interview);
+      setDetailTab('overview');
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Error occurred while saving');
+      setCreateError(error.message || 'An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -600,7 +617,23 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   };
 
   const commonSlots = selectedInterview ? getOverlappingSlots(selectedInterview) : [];
-  
+
+  // Stats
+  const statsPending = interviews.filter((i) => i.status === 'PENDING').length;
+  const statsCollected = interviews.filter((i) => i.status === 'COLLECTED').length;
+  const statsScheduled = interviews.filter((i) => i.status === 'SCHEDULED').length;
+
+  // Filtered interview list based on status pill selection
+  const filteredInterviews = statusFilter === 'all'
+    ? interviews
+    : interviews.filter((i) => i.status === statusFilter);
+
+  // Active interview count per panelist (PENDING or COLLECTED)
+  const activePanelistInterviewCount = (panelistId: string) =>
+    interviews.filter(
+      (i) => (i.status === 'PENDING' || i.status === 'COLLECTED') && i.panels.some((p) => p.userId === panelistId)
+    ).length;
+
   const filteredPanelists = panelists.filter(
     (p) =>
       p.displayName.toLowerCase().includes(panelistFilterText.toLowerCase()) ||
@@ -625,53 +658,36 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   return (
     <div>
       {/* Navigation Tabs */}
-      <div 
-        style={{ 
-          display: 'flex', 
-          gap: '1rem', 
-          marginBottom: '2rem', 
-          borderBottom: '1px solid var(--border-glass)', 
-          paddingBottom: '0.5rem' 
-        }}
-      >
-        <button 
-          onClick={() => {
-            setActiveTab('interviews');
-            setAdminSelectedUser(null);
-          }}
-          className="btn"
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '1rem' }}>
+        <button
+          onClick={() => { setActiveTab('interviews'); setAdminSelectedUser(null); }}
+          className="btn btn-sm"
           style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'interviews' ? '2px solid var(--primary)' : '2px solid transparent',
-            color: activeTab === 'interviews' ? 'var(--text-main)' : 'var(--text-muted)',
-            borderRadius: 0,
-            padding: '0.5rem 1rem',
+            background: activeTab === 'interviews' ? 'rgba(99,102,241,0.1)' : 'transparent',
+            border: activeTab === 'interviews' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
+            color: activeTab === 'interviews' ? 'var(--primary)' : 'var(--text-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '0.4rem 1rem',
             fontWeight: 600,
-            fontSize: '0.95rem'
+            fontSize: '0.85rem',
           }}
         >
-          Interviews Cockpit
+          Interviews
         </button>
-        <button 
-          onClick={() => {
-            setActiveTab('panelists');
-            setSelectedInterview(null);
-            setShowCreateForm(false);
-          }}
-          className="btn"
+        <button
+          onClick={() => { setActiveTab('panelists'); setSelectedInterview(null); setShowCreateForm(false); }}
+          className="btn btn-sm"
           style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'panelists' ? '2px solid var(--primary)' : '2px solid transparent',
-            color: activeTab === 'panelists' ? 'var(--text-main)' : 'var(--text-muted)',
-            borderRadius: 0,
-            padding: '0.5rem 1rem',
+            background: activeTab === 'panelists' ? 'rgba(99,102,241,0.1)' : 'transparent',
+            border: activeTab === 'panelists' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
+            color: activeTab === 'panelists' ? 'var(--primary)' : 'var(--text-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '0.4rem 1rem',
             fontWeight: 600,
-            fontSize: '0.95rem'
+            fontSize: '0.85rem',
           }}
         >
-          Manage Panelists (Admin)
+          Panelists
         </button>
       </div>
 
@@ -681,6 +697,34 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
           
           {/* Left: Interviews list & Panelist Tracker */}
           <div>
+            {/* Stats Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              {[
+                { label: 'Total', value: interviews.length, color: 'var(--text-muted)', active: statusFilter === 'all', onClick: () => setStatusFilter('all') },
+                { label: 'Pending', value: statsPending, color: '#f59e0b', active: statusFilter === 'PENDING', onClick: () => setStatusFilter('PENDING') },
+                { label: 'Ready', value: statsCollected, color: '#0ea5e9', active: statusFilter === 'COLLECTED', onClick: () => setStatusFilter('COLLECTED') },
+                { label: 'Scheduled', value: statsScheduled, color: '#10b981', active: statusFilter === 'SCHEDULED', onClick: () => setStatusFilter('SCHEDULED') },
+              ].map((stat) => (
+                <button
+                  key={stat.label}
+                  onClick={stat.onClick}
+                  style={{
+                    background: stat.active ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${stat.active ? stat.color : 'var(--border-glass)'}`,
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.75rem 0.5rem',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-fast)',
+                    color: 'inherit',
+                  }}
+                >
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</div>
+                </button>
+              ))}
+            </div>
+
             {/* Segmented Control Toggle */}
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', padding: '2px', marginBottom: '1.5rem' }}>
               <button
@@ -741,82 +785,120 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Yet</h4>
                     <p className="text-muted text-sm">Create a new interview schedule to nominate panels and book slots.</p>
                   </div>
+                ) : filteredInterviews.length === 0 ? (
+                  <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
+                    <ListFilter size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem', opacity: 0.4 }} />
+                    <h4 style={{ marginBottom: '0.5rem' }}>No matches</h4>
+                    <p className="text-muted text-sm">No interviews in this status. Try a different filter.</p>
+                  </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {interviews.map((interview) => {
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {filteredInterviews.map((interview) => {
                       const totalPanels = interview.panels.length;
                       const submittedPanels = interview.panels.filter((p) => p.status === 'SUBMITTED').length;
                       const isSelected = selectedInterview?.id === interview.id;
+                      const progressPct = totalPanels > 0 ? Math.round((submittedPanels / totalPanels) * 100) : 0;
+
+                      const statusBorderColor = interview.status === 'SCHEDULED'
+                        ? '#10b981'
+                        : interview.status === 'COLLECTED'
+                        ? '#0ea5e9'
+                        : '#f59e0b';
+
+                      // Candidate initials for avatar
+                      const initials = interview.candidateName === 'Pending Assignment'
+                        ? '?'
+                        : interview.candidateName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
                       return (
-                        <div 
-                          key={interview.id} 
+                        <div
+                          key={interview.id}
                           className={`glass-card ${isSelected ? 'selected-interview' : ''}`}
-                          style={{ 
-                            padding: '1.25rem 1.5rem', 
+                          style={{
+                            padding: '1rem 1.25rem 1rem 0',
                             cursor: 'pointer',
                             borderColor: isSelected ? 'var(--primary)' : 'var(--border-glass)',
-                            boxShadow: isSelected ? '0 0 15px rgba(99, 102, 241, 0.2)' : 'var(--shadow-card)'
+                            boxShadow: isSelected ? '0 0 15px rgba(99, 102, 241, 0.2)' : 'var(--shadow-card)',
+                            display: 'flex',
+                            gap: '0',
+                            overflow: 'hidden',
                           }}
                           onClick={() => {
                             setSelectedInterview(interview);
                             setShowCreateForm(false);
                             setSelectedSlot(null);
+                            setDetailTab('overview');
                           }}
                         >
-                          <div className="flex-between">
-                            <div>
-                              <h4 style={{ fontSize: '1.1rem', marginBottom: '0.25rem' }}>
-                                {interview.candidateName === 'Pending Assignment' ? (
-                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending Assignment</span>
-                                ) : (
-                                  interview.candidateName
-                                )}
-                              </h4>
-                              <p className="text-muted text-xs flex-gap-2" style={{ marginBottom: '0.75rem' }}>
-                                <Mail size={12} /> {interview.candidateEmail === 'pending@assign.com' ? 'Pending candidate assignment' : interview.candidateEmail}
-                              </p>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                              {interview.candidateName === 'Pending Assignment' && (
-                                <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.2)' }}>Pending Candidate</span>
-                              )}
-                              {interview.status === 'PENDING' && (
-                                <span className="badge badge-pending">Pending Panel Response</span>
-                              )}
-                              {interview.status === 'COLLECTED' && (
-                                <span className="badge badge-success">Ready to Book</span>
-                              )}
-                              {interview.status === 'SCHEDULED' && (
-                                <span className="badge badge-info">Scheduled</span>
-                              )}
-                            </div>
-                          </div>
+                          {/* Status left border strip */}
+                          <div style={{ width: '4px', background: statusBorderColor, flexShrink: 0, marginRight: '1rem', borderRadius: '4px 0 0 4px' }} />
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
-                            <div>
-                              <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Role / Stage</div>
-                              <div className="text-sm font-semibold">{interview.role} ({interview.duration} mins)</div>
-                            </div>
-                            <div>
-                              <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Panel Submissions</div>
-                              <div className="text-sm font-semibold">
-                                {submittedPanels} / {totalPanels} Responded
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {/* Top row: avatar + name + badges */}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.6rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                                <div style={{
+                                  width: '36px', height: '36px', flexShrink: 0,
+                                  background: isSelected ? 'var(--primary-glow)' : 'rgba(255,255,255,0.05)',
+                                  border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border-glass)'}`,
+                                  borderRadius: '50%',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: '0.75rem', fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--text-muted)',
+                                }}>
+                                  {initials}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <h4 style={{ fontSize: '0.95rem', marginBottom: '0', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {interview.candidateName === 'Pending Assignment' ? (
+                                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span>
+                                    ) : interview.candidateName}
+                                  </h4>
+                                  <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {interview.role}
+                                  </p>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
+                                {interview.status === 'PENDING' && <span className="badge badge-pending" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Awaiting Panels</span>}
+                                {interview.status === 'COLLECTED' && <span className="badge badge-success" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Ready to Book</span>}
+                                {interview.status === 'SCHEDULED' && <span className="badge badge-info" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Scheduled</span>}
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex-between" style={{ marginTop: '0.75rem' }}>
-                            <span className="text-muted text-xs flex-gap-2">
-                              <Clock size={12} /> Range: {new Date(interview.startDate).toLocaleDateString()} - {new Date(interview.endDate).toLocaleDateString()}
-                            </span>
-                            <button 
-                              className="btn btn-secondary btn-sm" 
-                              style={{ padding: '0.25rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
-                              onClick={(e) => handleDeleteInterview(interview.id, e)}
-                            >
-                              <Trash2 size={14} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
-                            </button>
+                            {/* Panel response progress bar */}
+                            <div style={{ marginBottom: '0.6rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Panel Responses</span>
+                                <span style={{ fontSize: '0.65rem', fontWeight: 600, color: submittedPanels === totalPanels && totalPanels > 0 ? '#10b981' : 'var(--text-muted)' }}>
+                                  {submittedPanels}/{totalPanels}
+                                </span>
+                              </div>
+                              <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${progressPct}%`, background: submittedPanels === totalPanels && totalPanels > 0 ? '#10b981' : '#0ea5e9', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                              </div>
+                            </div>
+
+                            {/* Bottom row: scheduled info or date range + delete */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
+                                <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
+                                  <CheckCircle size={11} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
+                                  {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+                                  <Clock size={10} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
+                                  {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '0.2rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
+                                onClick={(e) => handleDeleteInterview(interview.id, e)}
+                              >
+                                <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1098,22 +1180,24 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   <div className="grid-2">
                     <div className="form-group">
                       <label className="form-label">Proposed Range Start</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={startDate} 
-                        onChange={(e) => setStartDate(e.target.value)} 
-                        required 
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={startDate}
+                        min={todayStr}
+                        onChange={(e) => { setStartDate(e.target.value); setCreateError(null); }}
+                        required
                       />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Proposed Range End</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={endDate} 
-                        onChange={(e) => setEndDate(e.target.value)} 
-                        required 
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={endDate}
+                        min={startDate || todayStr}
+                        onChange={(e) => { setEndDate(e.target.value); setCreateError(null); }}
+                        required
                       />
                     </div>
                   </div>
@@ -1131,6 +1215,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
                         {recommendedPanelists.map((p) => {
                           const isChosen = selectedPanels.some((sp) => sp.id === p.id);
+                          const activeCount = activePanelistInterviewCount(p.id);
                           return (
                             <button
                               type="button"
@@ -1144,10 +1229,18 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                                 borderRadius: '50px',
                                 fontSize: '0.75rem',
                                 cursor: 'pointer',
-                                transition: 'var(--transition-fast)'
+                                transition: 'var(--transition-fast)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
                               }}
                             >
                               {p.displayName} {isChosen ? '✓' : '+'}
+                              {activeCount > 0 && (
+                                <span style={{ background: 'rgba(245,158,11,0.2)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '9px', padding: '0 5px', fontSize: '0.6rem', fontWeight: 700 }}>
+                                  {activeCount} active
+                                </span>
+                              )}
                             </button>
                           );
                         })}
@@ -1236,16 +1329,21 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     </div>
                   )}
 
-                  <button 
-                    type="submit" 
-                    className="btn btn-primary" 
+                  {/* Inline error banner */}
+                  {createError && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.9rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <XCircle size={14} style={{ flexShrink: 0 }} /> {createError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
                     style={{ width: '100%', marginTop: '0.5rem' }}
                     disabled={isLoading}
                   >
                     {isLoading ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" /> Dispatching Teams Invites...
-                      </>
+                      <><Loader2 size={16} className="animate-spin" /> Dispatching Teams Invites...</>
                     ) : (
                       'Send Teams Invites'
                     )}
@@ -1257,243 +1355,202 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
             {/* Details & booking screen */}
             {selectedInterview && (
               <div className="glass-card" style={{ position: 'sticky', top: '2rem' }}>
+                {/* Header */}
                 <div className="flex-between" style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '1rem' }}>
-                  <div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <span className="text-muted text-xs block" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Interview Details</span>
-                    <h3 style={{ fontSize: '1.35rem', fontWeight: 700 }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {selectedInterview.candidateName === 'Pending Assignment' ? (
                         <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending Assignment</span>
-                      ) : (
-                        selectedInterview.candidateName
-                      )}
+                      ) : selectedInterview.candidateName}
                     </h3>
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>{selectedInterview.role} · {selectedInterview.duration} mins</span>
                   </div>
-                  <button 
-                    className="btn btn-secondary btn-sm" 
-                    onClick={() => setSelectedInterview(null)}
-                  >
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSelectedInterview(null)} style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
                     Close
                   </button>
                 </div>
 
-                {/* Inline Assign Candidate Form */}
-                {(selectedInterview.candidateName === 'Pending Assignment' || isEditingMapping) ? (
-                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
-                    <h4 style={{ color: 'var(--text-main)', fontSize: '0.95rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <User size={16} className="text-primary" /> {selectedInterview.candidateName === 'Pending Assignment' ? 'Assign Candidate to Interview' : 'Edit Candidate Assignment'}
-                    </h4>
-                    <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
-                      Provide candidate details below. The Microsoft Teams calendar invite will automatically update and invite the candidate.
-                    </p>
-                    <form onSubmit={async (e) => {
-                      await handleAssignCandidate(e);
-                      setIsEditingMapping(false);
-                    }} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.75rem' }}>Candidate Name</label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
-                            value={assignCandidateName}
-                            onChange={(e) => setAssignCandidateName(e.target.value)}
-                            placeholder="e.g. Alice Smith"
-                            required
-                          />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.75rem' }}>Candidate Email (Optional)</label>
-                          <input
-                            type="email"
-                            className="form-input"
-                            style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
-                            value={assignCandidateEmail}
-                            onChange={(e) => setAssignCandidateEmail(e.target.value)}
-                            placeholder="alice.smith@example.com"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Teams Meeting custom toggle */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem', marginBottom: '0.25rem' }}>
-                        <label className="switch-container">
-                          <input 
-                            type="checkbox" 
-                            className="switch-input"
-                            checked={sendAsTeamsMeeting}
-                            onChange={(e) => setSendAsTeamsMeeting(e.target.checked)}
-                          />
-                          <span className="switch-toggle"></span>
-                          <span className="switch-label">Teams meeting</span>
-                        </label>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                        <button
-                          type="submit"
-                          className="btn btn-primary btn-sm"
-                          disabled={isAssigningCandidate}
-                          style={{ flex: 1 }}
-                        >
-                          {isAssigningCandidate ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" /> Saving...
-                            </>
-                          ) : (
-                            'Confirm & Save'
-                          )}
-                        </button>
-                        {selectedInterview.candidateName !== 'Pending Assignment' && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => setIsEditingMapping(false)}
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </form>
-                  </div>
-                ) : (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-glass)', padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span className="text-muted text-xs block" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned Candidate</span>
-                      <strong style={{ fontSize: '1.05rem', color: 'var(--primary)' }}>{selectedInterview.candidateName}</strong>
-                      {selectedInterview.candidateEmail && selectedInterview.candidateEmail !== 'pending@assign.com' && (
-                        <span className="text-muted text-xs block" style={{ marginTop: '2px' }}>{selectedInterview.candidateEmail}</span>
-                      )}
-                    </div>
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border-glass)', marginBottom: '1.25rem' }}>
+                  {([
+                    { key: 'overview', label: 'Overview', icon: <User size={13} /> },
+                    { key: 'panels', label: 'Panels', icon: <Users size={13} /> },
+                    { key: 'booking', label: 'Booking', icon: <Calendar size={13} /> },
+                  ] as { key: typeof detailTab; label: string; icon: React.ReactNode }[]).map((tab) => (
                     <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => {
-                        setAssignCandidateName(selectedInterview.candidateName);
-                        setAssignCandidateEmail(selectedInterview.candidateEmail === 'pending@assign.com' ? '' : selectedInterview.candidateEmail);
-                        setIsEditingMapping(true);
+                      key={tab.key}
+                      onClick={() => setDetailTab(tab.key)}
+                      style={{
+                        flex: 1,
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: detailTab === tab.key ? '2px solid var(--primary)' : '2px solid transparent',
+                        color: detailTab === tab.key ? 'var(--text-main)' : 'var(--text-muted)',
+                        padding: '0.5rem 0.25rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.3rem',
+                        transition: 'color 0.2s',
                       }}
                     >
-                      Edit Candidate
+                      {tab.icon} {tab.label}
                     </button>
+                  ))}
+                </div>
+
+                {/* TAB: Overview */}
+                {detailTab === 'overview' && (
+                  <div>
+                    {/* Candidate assign / edit */}
+                    {(selectedInterview.candidateName === 'Pending Assignment' || isEditingMapping) ? (
+                      <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem' }}>
+                        <h4 style={{ color: 'var(--text-main)', fontSize: '0.9rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <User size={15} className="text-primary" />
+                          {selectedInterview.candidateName === 'Pending Assignment' ? 'Assign Candidate' : 'Edit Candidate'}
+                        </h4>
+                        <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
+                          The Teams calendar invite will auto-update with candidate details.
+                        </p>
+                        <form onSubmit={async (e) => { await handleAssignCandidate(e); setIsEditingMapping(false); }} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.72rem' }}>Candidate Name</label>
+                              <input type="text" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={assignCandidateName} onChange={(e) => setAssignCandidateName(e.target.value)} placeholder="Alice Smith" required />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.72rem' }}>Email (Optional)</label>
+                              <input type="email" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={assignCandidateEmail} onChange={(e) => setAssignCandidateEmail(e.target.value)} placeholder="alice@example.com" />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <label className="switch-container">
+                              <input type="checkbox" className="switch-input" checked={sendAsTeamsMeeting} onChange={(e) => setSendAsTeamsMeeting(e.target.checked)} />
+                              <span className="switch-toggle"></span>
+                              <span className="switch-label">Teams meeting</span>
+                            </label>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button type="submit" className="btn btn-primary btn-sm" disabled={isAssigningCandidate} style={{ flex: 1 }}>
+                              {isAssigningCandidate ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : 'Confirm & Save'}
+                            </button>
+                            {selectedInterview.candidateName !== 'Pending Assignment' && (
+                              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsEditingMapping(false)}>Cancel</button>
+                            )}
+                          </div>
+                        </form>
+                      </div>
+                    ) : (
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="text-muted text-xs block" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Candidate</span>
+                          <strong style={{ fontSize: '1rem', color: 'var(--primary)' }}>{selectedInterview.candidateName}</strong>
+                          {selectedInterview.candidateEmail && selectedInterview.candidateEmail !== 'pending@assign.com' && (
+                            <span className="text-muted text-xs block" style={{ marginTop: '2px' }}>{selectedInterview.candidateEmail}</span>
+                          )}
+                        </div>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setAssignCandidateName(selectedInterview.candidateName); setAssignCandidateEmail(selectedInterview.candidateEmail === 'pending@assign.com' ? '' : selectedInterview.candidateEmail); setIsEditingMapping(true); }}>
+                          Edit
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Interview meta grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      {[
+                        { label: 'Stage', value: selectedInterview.role },
+                        { label: 'Duration', value: `${selectedInterview.duration} minutes` },
+                        { label: 'Status', value: selectedInterview.status === 'PENDING' ? 'Awaiting Panels' : selectedInterview.status === 'COLLECTED' ? 'Ready to Book' : selectedInterview.status === 'SCHEDULED' ? 'Scheduled' : selectedInterview.status },
+                        { label: 'Date Window', value: `${new Date(selectedInterview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(selectedInterview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` },
+                      ].map((item) => (
+                        <div key={item.label} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                          <div className="text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>{item.label}</div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <div className="text-muted text-xs">Role / Stage</div>
-                      <div className="text-sm font-semibold">{selectedInterview.role}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted text-xs">Interview Duration</div>
-                      <div className="text-sm font-semibold">{selectedInterview.duration} minutes</div>
-                    </div>
-                    <div>
-                      <div className="text-muted text-xs">Candidate Email</div>
-                      <div className="text-sm font-semibold" style={{ wordBreak: 'break-all' }}>
-                        {selectedInterview.candidateEmail === 'pending@assign.com' ? 'Pending assignment' : selectedInterview.candidateEmail}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted text-xs">Requested Date Range</div>
-                      <div className="text-sm font-semibold">
-                        {new Date(selectedInterview.startDate).toLocaleDateString()} - {new Date(selectedInterview.endDate).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Nominated Panelists */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.95rem', marginBottom: '0.75rem' }} className="flex-gap-2">
-                    <User size={16} /> Panels Status
-                  </h4>
+                {/* TAB: Panels */}
+                {detailTab === 'panels' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {selectedInterview.panels.map((p) => (
-                      <div 
-                        key={p.id} 
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          padding: '0.5rem 0.75rem',
-                          background: 'rgba(255,255,255,0.01)',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border-glass)'
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{p.name}</div>
-                          <div className="text-muted text-xs">{p.email}</div>
+                    {selectedInterview.panels.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No panels nominated.</div>
+                    ) : selectedInterview.panels.map((p) => (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: `1px solid ${p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.2)' : 'var(--border-glass)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.3)' : 'var(--border-glass)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, color: p.status === 'SUBMITTED' ? '#10b981' : 'var(--text-muted)', flexShrink: 0 }}>
+                            {p.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{p.name}</div>
+                            <div className="text-muted text-xs">{p.email}</div>
+                            {p.availabilities && p.availabilities.length > 0 && (
+                              <div style={{ fontSize: '0.65rem', color: '#0ea5e9', marginTop: '2px' }}>{p.availabilities.length} slot{p.availabilities.length !== 1 ? 's' : ''} submitted</div>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          {p.status === 'SUBMITTED' ? (
-                            <div className="flex-gap-2 badge badge-success" style={{ fontSize: '0.65rem' }}>
-                              <CheckCircle size={10} /> Submitted / Booked
-                            </div>
-                          ) : (
-                            <div className="flex-gap-2 badge badge-pending" style={{ fontSize: '0.65rem' }}>
-                              <Clock size={10} /> Pending
-                            </div>
-                          )}
-                        </div>
+                        {p.status === 'SUBMITTED' ? (
+                          <span className="badge badge-success" style={{ fontSize: '0.6rem' }}><CheckCircle size={9} style={{ display: 'inline', marginRight: '2px' }} />Responded</span>
+                        ) : (
+                          <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}><Clock size={9} style={{ display: 'inline', marginRight: '2px' }} />Pending</span>
+                        )}
                       </div>
                     ))}
                   </div>
-                </div>
+                )}
 
-                {/* Scheduled booking details */}
-                {selectedInterview.status === 'SCHEDULED' ? (
-                  <div style={{ background: 'var(--success-glow)', border: '1px solid var(--success)', padding: '1.25rem', borderRadius: 'var(--radius-md)' }}>
-                    <h4 style={{ color: 'var(--success)', fontSize: '1.05rem', marginBottom: '0.5rem' }} className="flex-gap-2">
-                      <CheckCircle size={18} /> Meeting Scheduled!
-                    </h4>
-                    
-                    <div style={{ fontSize: '0.9rem', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                      <div>
-                        <span className="text-muted text-xs block">Date & Time</span>
-                        <strong>{new Date(selectedInterview.scheduledSlotStart || '').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
-                      </div>
-                      <div>
-                        <span className="text-muted text-xs block">Slot</span>
-                        <strong>
-                          {new Date(selectedInterview.scheduledSlotStart || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {new Date(selectedInterview.scheduledSlotEnd || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)
-                        </strong>
-                      </div>
-                    </div>
-
-                    {selectedInterview.teamsMeetingUrl && (
-                      <a 
-                        href={selectedInterview.teamsMeetingUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="btn btn-primary flex-gap-2"
-                        style={{ width: '100%', background: 'var(--success)', border: 'none' }}
-                      >
-                        <Video size={16} /> Join Teams Meeting
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  /* Slot Calculation & Booking Workspace */
+                {/* TAB: Booking */}
+                {detailTab === 'booking' && (
                   <div>
-                    <h4 style={{ fontSize: '0.95rem', marginBottom: '0.75rem' }} className="flex-gap-2">
-                      <Calendar size={16} /> Computed Overlapping Free Slots
-                    </h4>
-
-                    {selectedInterview.panels.filter((p) => p.status === 'SUBMITTED').length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
-                        <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No availability data yet.</div>
-                        <p className="text-muted text-xs">We will compute slot options as soon as at least one panel member submits availability.</p>
-                      </div>
-                    ) : commonSlots.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
-                        <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No overlapping slots found.</div>
-                        <p className="text-muted text-xs">There are no common slots of {selectedInterview.duration} mins matching everyone's submission. Coordinate manual booking.</p>
+                    {selectedInterview.status === 'SCHEDULED' ? (
+                      <div style={{ background: 'var(--success-glow)', border: '1px solid var(--success)', padding: '1.5rem', borderRadius: 'var(--radius-md)' }}>
+                        <h4 style={{ color: 'var(--success)', fontSize: '1rem', marginBottom: '1rem' }} className="flex-gap-2">
+                          <CheckCircle size={18} /> Meeting Scheduled!
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                            <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Date</div>
+                            <strong style={{ fontSize: '0.9rem' }}>{new Date(selectedInterview.scheduledSlotStart || '').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+                          </div>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                            <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Time Slot (UTC)</div>
+                            <strong style={{ fontSize: '0.9rem' }}>
+                              {new Date(selectedInterview.scheduledSlotStart || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} –{' '}
+                              {new Date(selectedInterview.scheduledSlotEnd || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            </strong>
+                          </div>
+                        </div>
+                        {selectedInterview.teamsMeetingUrl && (
+                          <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary flex-gap-2" style={{ width: '100%', background: 'var(--success)', border: 'none' }}>
+                            <Video size={16} /> Join Teams Meeting
+                          </a>
+                        )}
                       </div>
                     ) : (
+                      <div>
+                        <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', fontWeight: 600 }} className="flex-gap-2">
+                          <Calendar size={15} /> Overlapping Free Slots
+                        </h4>
+
+                        {selectedInterview.panels.filter((p) => p.status === 'SUBMITTED').length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
+                            <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No availability yet.</div>
+                            <p className="text-muted text-xs">Slots will appear once at least one panel member submits their availability.</p>
+                          </div>
+                        ) : commonSlots.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
+                            <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No overlapping slots.</div>
+                            <p className="text-muted text-xs">No common {selectedInterview.duration}-min window found across all submissions.</p>
+                          </div>
+                        ) : (
                       <div>
                         {/* Time slots list */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', marginBottom: '1.25rem', paddingRight: '4px' }}>
@@ -1534,7 +1591,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                           <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
                             <div className="form-group">
                               <label className="form-label">Invitation Message / Agenda</label>
-                              <textarea 
+                              <textarea
                                 className="form-input"
                                 rows={3}
                                 style={{ resize: 'none' }}
@@ -1544,21 +1601,21 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                               />
                             </div>
 
-                            <button 
-                              className="btn btn-primary" 
+                            <button
+                              className="btn btn-primary"
                               style={{ width: '100%' }}
                               onClick={handleBookSlot}
                               disabled={isBooking}
                             >
                               {isBooking ? (
-                                <>
-                                  <Loader2 size={16} className="animate-spin" /> Scheduling Teams Event...
-                                </>
+                                <><Loader2 size={16} className="animate-spin" /> Scheduling Teams Event...</>
                               ) : (
                                 'Confirm Teams Booking'
                               )}
                             </button>
                           </div>
+                        )}
+                      </div>
                         )}
                       </div>
                     )}
@@ -1945,6 +2002,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     type="date"
                     className="form-input"
                     value={reqStartDate}
+                    min={todayStr}
                     onChange={(e) => setReqStartDate(e.target.value)}
                     required
                   />
@@ -1955,6 +2013,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     type="date"
                     className="form-input"
                     value={reqEndDate}
+                    min={reqStartDate || todayStr}
                     onChange={(e) => setReqEndDate(e.target.value)}
                     required
                   />

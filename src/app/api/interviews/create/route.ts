@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, interview });
   } catch (error) {
     console.error('Failed to create interview:', error);
-    return NextResponse.json({ error: 'Failed to create interview' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to create interview';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

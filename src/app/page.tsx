@@ -22,7 +22,7 @@ export default async function Home() {
               <Calendar size={22} color="#ffffff" />
             </div>
             <span style={{ fontSize: '1.25rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
-              MCP <span className="gradient-accent-text">Scheduler</span>
+              Panel<span className="gradient-accent-text">Sync</span>
             </span>
           </div>
           <a href="/api/auth/signin" className="btn btn-secondary btn-sm">
@@ -98,7 +98,7 @@ export default async function Home() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid var(--border-glass)', padding: '2rem 0', marginTop: 'auto' }}>
         <div className="container flex-between text-muted text-sm">
-          <p>© 2026 Microsoft Teams Interview Scheduler. Built securely with Next.js.</p>
+          <p>© 2026 PanelSync. Built securely with Next.js.</p>
           <div className="flex-gap-4">
             <span>Graph API v1.0</span>
           </div>
