@@ -309,6 +309,30 @@ export const db = {
     return true;
   },
 
+  // Cancel/remove booked slot from the interview
+  cancelBooking: async (interviewId: string): Promise<boolean> => {
+    const now = new Date();
+    const interview = await db.getInterview(interviewId);
+    if (!interview) return false;
+
+    const allSubmitted = interview.panels.every((p) => p.status === 'SUBMITTED');
+    const nextStatus = allSubmitted ? 'COLLECTED' : 'PENDING';
+
+    await dbClient
+      .update(schema.interviews)
+      .set({
+        status: nextStatus,
+        scheduledSlotStart: null,
+        scheduledSlotEnd: null,
+        teamsMeetingUrl: null,
+        calendarEventId: null,
+        updatedAt: now,
+      })
+      .where(eq(schema.interviews.id, interviewId));
+
+    return true;
+  },
+
   // Delete an interview record (cascading foreign keys handled at SQL level)
   deleteInterview: async (id: string): Promise<boolean> => {
     await dbClient.delete(schema.interviews).where(eq(schema.interviews.id, id));

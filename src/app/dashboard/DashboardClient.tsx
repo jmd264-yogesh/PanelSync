@@ -93,6 +93,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [isAssigningCandidate, setIsAssigningCandidate] = useState(false);
   const [isEditingMapping, setIsEditingMapping] = useState(false);
   const [sendAsTeamsMeeting, setSendAsTeamsMeeting] = useState(true);
+  const [isCancellingBooking, setIsCancellingBooking] = useState(false);
 
   // UI / UX States
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
@@ -464,6 +465,48 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       alert(err.message || 'Error scheduling meeting');
     } finally {
       setIsBooking(false);
+    }
+  };
+
+  const handleCancelBooking = async () => {
+    if (!selectedInterview) return;
+
+    if (!confirm('Are you sure you want to cancel this booking and remove the scheduled slot? This will delete the calendar event from Microsoft Teams.')) {
+      return;
+    }
+
+    setIsCancellingBooking(true);
+    try {
+      const res = await fetch('/api/interviews/cancel-booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId: selectedInterview.id,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to cancel booking');
+      }
+
+      const data = await res.json();
+      
+      const updatedList = interviews.map((i) => {
+        if (i.id === selectedInterview.id) {
+          return data.interview;
+        }
+        return i;
+      });
+      
+      setInterviews(updatedList);
+      setSelectedInterview(data.interview);
+      alert('Successfully cancelled meeting and removed scheduled slot.');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error cancelling meeting');
+    } finally {
+      setIsCancellingBooking(false);
     }
   };
 
@@ -1527,10 +1570,22 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                           </div>
                         </div>
                         {selectedInterview.teamsMeetingUrl && (
-                          <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary flex-gap-2" style={{ width: '100%', background: 'var(--success)', border: 'none' }}>
+                          <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary flex-gap-2" style={{ width: '100%', background: 'var(--success)', border: 'none', marginBottom: '0.5rem' }}>
                             <Video size={16} /> Join Teams Meeting
                           </a>
                         )}
+                        <button
+                          onClick={handleCancelBooking}
+                          className="btn btn-secondary flex-gap-2"
+                          style={{ width: '100%', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.05)' }}
+                          disabled={isCancellingBooking}
+                        >
+                          {isCancellingBooking ? (
+                            <><Loader2 size={16} className="animate-spin" /> Cancelling Booking...</>
+                          ) : (
+                            'Remove Booked Slot / Cancel Meeting'
+                          )}
+                        </button>
                       </div>
                     ) : (
                       <div>

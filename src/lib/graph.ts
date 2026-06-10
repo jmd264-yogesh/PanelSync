@@ -343,6 +343,15 @@ class GraphService {
       body: JSON.stringify(body),
     });
   }
+
+  // Delete a calendar event
+  async deleteCalendarEvent(eventId: string, accessToken: string): Promise<void> {
+    const endpoint = `/me/events/${eventId}`;
+    await this.fetchGraph(endpoint, accessToken, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const graph = new GraphService();
+
