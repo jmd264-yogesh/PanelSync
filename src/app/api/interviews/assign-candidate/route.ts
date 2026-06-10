@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
             description,
             panelEmails,
             sendAsTeamsMeeting: sendAsTeamsMeeting !== false, // default to true if not specified
+            teamsMeetingUrl: interview.teamsMeetingUrl || undefined,
           },
           token
         );
