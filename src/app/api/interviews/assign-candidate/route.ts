@@ -58,9 +58,47 @@ export async function POST(request: NextRequest) {
           },
           token
         );
-      } catch (graphError) {
+      } catch (graphError: any) {
         console.error('Failed to update MS Graph calendar event with candidate:', graphError);
-        // We still return success because DB is updated successfully, but log the error
+        
+        const errMsg = graphError instanceof Error ? graphError.message : String(graphError);
+        if (errMsg.includes('404') || errMsg.includes('ErrorItemNotFound')) {
+          console.log('Calendar event not found in Outlook store. Re-creating calendar event on the fly...');
+          try {
+            if (interview.scheduledSlotStart && interview.scheduledSlotEnd) {
+              const panelEmails = interview.panels.map((p) => p.email);
+              const description = 'Interview scheduled via Microsoft Teams Scheduler. Re-created after original event was not found.';
+              
+              const meeting = await graph.createTeamsMeeting(
+                session.user.email,
+                {
+                  candidateName,
+                  candidateEmail: finalEmail,
+                  role: interview.role,
+                  description,
+                  startTime: interview.scheduledSlotStart,
+                  endTime: interview.scheduledSlotEnd,
+                  panelEmails,
+                },
+                token
+              );
+              
+              // Update database record with new calendar details
+              await dbClient
+                .update(schema.interviews)
+                .set({
+                  teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',
+                  calendarEventId: meeting.id || '',
+                  updatedAt: new Date(),
+                })
+                .where(eq(schema.interviews.id, interviewId));
+                
+              console.log('Successfully re-created calendar event:', meeting.id);
+            }
+          } catch (recreateError) {
+            console.error('Failed to re-create calendar event:', recreateError);
+          }
+        }
       }
     }
 

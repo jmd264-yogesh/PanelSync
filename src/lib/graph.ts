@@ -264,7 +264,7 @@ class GraphService {
     },
     accessToken: string
   ): Promise<any> {
-    const endpoint = `/me/events/${eventId}`;
+    const endpoint = `/me/events/${encodeURIComponent(eventId)}`;
 
     const attendees = [];
     if (params.candidateEmail && params.candidateEmail !== 'pending@assign.com' && params.candidateEmail !== '') {
@@ -290,7 +290,7 @@ class GraphService {
     let joinUrl = params.teamsMeetingUrl;
     if (!joinUrl && params.sendAsTeamsMeeting !== false) {
       try {
-        const eventDetail = await this.fetchGraph(`/me/events/${eventId}`, accessToken);
+        const eventDetail = await this.fetchGraph(`/me/events/${encodeURIComponent(eventId)}`, accessToken);
         joinUrl = eventDetail.onlineMeeting?.joinUrl || eventDetail.onlineMeetingUrl;
       } catch (e) {
         console.error('Failed to fetch event detail for join URL:', e);
@@ -346,7 +346,7 @@ class GraphService {
 
   // Delete a calendar event
   async deleteCalendarEvent(eventId: string, accessToken: string): Promise<void> {
-    const endpoint = `/me/events/${eventId}`;
+    const endpoint = `/me/events/${encodeURIComponent(eventId)}`;
     await this.fetchGraph(endpoint, accessToken, {
       method: 'DELETE',
     });
