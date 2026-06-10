@@ -79,13 +79,26 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [l2TimeEnd, setL2TimeEnd] = useState('17:00');
 
   // Panelist-First slot request form states (New Flow)
-  const [reqPanelist, setReqPanelist] = useState<Panelist | null>(null);
+  const [reqPanelists, setReqPanelists] = useState<Panelist[]>([]);
   const [reqDuration, setReqDuration] = useState('30');
   const [reqStartDate, setReqStartDate] = useState('');
   const [reqEndDate, setReqEndDate] = useState('');
   const [reqInterviewType, setReqInterviewType] = useState<'L1' | 'L2' | 'General'>('L1');
   const [reqSlots, setReqSlots] = useState<{ startTime: string; endTime: string; selected: boolean }[]>([]);
   const [isRequestingSlot, setIsRequestingSlot] = useState(false);
+  const [bulkSelectedL1Ids, setBulkSelectedL1Ids] = useState<string[]>([]);
+  const [bulkSelectedL2Ids, setBulkSelectedL2Ids] = useState<string[]>([]);
+
+  const [defaultStartDate, setDefaultStartDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  });
+  const [defaultEndDate, setDefaultEndDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 2); // 2 days default window
+    return tomorrow.toISOString().split('T')[0];
+  });
 
   // Assign Candidate form states (New Flow)
   const [assignCandidateName, setAssignCandidateName] = useState('');
@@ -95,6 +108,13 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [sendAsTeamsMeeting, setSendAsTeamsMeeting] = useState(true);
   const [isCancellingBooking, setIsCancellingBooking] = useState(false);
   const [resendingPanelId, setResendingPanelId] = useState<string | null>(null);
+
+  // Date Editor States
+  const [isEditingDates, setIsEditingDates] = useState(false);
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [isUpdatingDates, setIsUpdatingDates] = useState(false);
+  const [selectedInterviewForConfig, setSelectedInterviewForConfig] = useState<Interview | null>(null);
 
   // UI / UX States
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
@@ -121,8 +141,14 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       setAssignCandidateName('');
       setAssignCandidateEmail('');
       setIsEditingMapping(false);
+      setIsEditingDates(false);
     }
-  }, [interviews, selectedInterview]);
+
+    if (selectedInterviewForConfig) {
+      const updated = interviews.find((i) => i.id === selectedInterviewForConfig.id);
+      setSelectedInterviewForConfig(updated || null);
+    }
+  }, [interviews, selectedInterview, selectedInterviewForConfig]);
 
   // Autocomplete search for scheduler panels
   useEffect(() => {
@@ -183,7 +209,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
   // Automatically compute proposed slot list based on config and date ranges
   useEffect(() => {
-    if (reqPanelist && reqStartDate && reqEndDate) {
+    if (reqPanelists.length > 0 && reqStartDate && reqEndDate) {
       const timingStart = reqInterviewType === 'L1' ? l1TimeStart : l2TimeStart;
       const timingEnd = reqInterviewType === 'L1' ? l1TimeEnd : l2TimeEnd;
       
@@ -222,7 +248,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     } else {
       setReqSlots([]);
     }
-  }, [reqPanelist, reqStartDate, reqEndDate, reqInterviewType, l1TimeStart, l1TimeEnd, l2TimeStart, l2TimeEnd]);
+  }, [reqPanelists, reqStartDate, reqEndDate, reqInterviewType, l1TimeStart, l1TimeEnd, l2TimeStart, l2TimeEnd]);
 
   // Recommended panelists based on interview level
   const recommendedPanelists = panelists.filter((p) => {
@@ -261,22 +287,19 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   };
 
   // Open the slot request preview modal
-  const handleOpenSlotRequest = (p: Panelist, stage: 'L1' | 'L2') => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-    setReqPanelist(p);
+  const handleOpenSlotRequest = (p: Panelist | Panelist[], stage: 'L1' | 'L2') => {
+    const arr = Array.isArray(p) ? p : [p];
+    setReqPanelists(arr);
     setReqInterviewType(stage);
     setReqDuration('30');
-    setReqStartDate(tomorrowStr);
-    setReqEndDate(tomorrowStr);
+    setReqStartDate(defaultStartDate);
+    setReqEndDate(defaultEndDate);
   };
 
   // Submit L1/L2 Automagic Slot request
   const handleSendSlotRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reqPanelist) return;
+    if (reqPanelists.length === 0) return;
 
     if (reqStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
     if (reqEndDate < reqStartDate) { alert('End date cannot be before the start date.'); return; }
@@ -293,7 +316,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          panelist: reqPanelist,
+          panelists: reqPanelists,
           duration: reqDuration,
           startDate: reqStartDate,
           endDate: reqEndDate,
@@ -309,8 +332,10 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
       const result = await res.json();
       setInterviews([result.interview, ...interviews]);
-      setReqPanelist(null);
-      alert(`Teams notification sent successfully to ${reqPanelist.displayName}!`);
+      setReqPanelists([]);
+      setBulkSelectedL1Ids([]);
+      setBulkSelectedL2Ids([]);
+      alert(`Teams notification sent successfully to ${reqPanelists.map((p) => p.displayName).join(', ')}!`);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Error occurred while sending slot request.');
@@ -534,6 +559,102 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     }
   };
 
+  const handleUpdateDates = async (e: React.FormEvent, targetInterviewOverride?: Interview) => {
+    if (e) e.preventDefault();
+    const target = targetInterviewOverride || selectedInterview;
+    if (!target) return;
+
+    if (editStartDate < todayStr) {
+      alert('Start date cannot be in the past.');
+      return;
+    }
+    if (editEndDate < editStartDate) {
+      alert('End date cannot be before the start date.');
+      return;
+    }
+
+    setIsUpdatingDates(true);
+    try {
+      // Determine interview type (L1 or L2) from the role name or default to L1
+      let type: 'L1' | 'L2' | 'General' = 'L1';
+      if (target.role.includes('L2')) {
+        type = 'L2';
+      } else if (target.role.includes('General')) {
+        type = 'General';
+      }
+
+      // Compute slots
+      const timingStart = type === 'L2' ? l2TimeStart : l1TimeStart;
+      const timingEnd = type === 'L2' ? l2TimeEnd : l1TimeEnd;
+      
+      const [startH, startM] = timingStart.split(':').map(Number);
+      const [endH, endM] = timingEnd.split(':').map(Number);
+
+      const generatedSlots: { startTime: string; endTime: string }[] = [];
+      const currentDay = new Date(editStartDate);
+      const endDay = new Date(editEndDate);
+
+      while (currentDay <= endDay) {
+        const year = currentDay.getFullYear();
+        const month = currentDay.getMonth();
+        const date = currentDay.getDate();
+
+        const dayStart = new Date(year, month, date, startH, startM, 0);
+        const dayEnd = new Date(year, month, date, endH, endM, 0);
+
+        let time = dayStart.getTime();
+        const stepMs = 30 * 60 * 1000;
+
+        while (time + stepMs <= dayEnd.getTime()) {
+          generatedSlots.push({
+            startTime: new Date(time).toISOString(),
+            endTime: new Date(time + stepMs).toISOString(),
+          });
+          time += stepMs;
+        }
+
+        currentDay.setDate(currentDay.getDate() + 1);
+      }
+
+      const res = await fetch(`/api/interviews/${target.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: editStartDate,
+          endDate: editEndDate,
+          slots: generatedSlots,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update interview dates.');
+      }
+
+      const data = await res.json();
+      const updatedList = interviews.map((i) => {
+        if (i.id === target.id) {
+          return data.interview;
+        }
+        return i;
+      });
+
+      setInterviews(updatedList);
+      if (targetInterviewOverride) {
+        setSelectedInterviewForConfig(data.interview);
+      } else {
+        setSelectedInterview(data.interview);
+        setIsEditingDates(false);
+      }
+      alert('Successfully updated interview date range and reset proposed availability slots.');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error updating dates');
+    } finally {
+      setIsUpdatingDates(false);
+    }
+  };
+
   // Delete interview
   const handleDeleteInterview = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -721,6 +842,33 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
   const respondedNominations = allNominations.filter((n) => n.status === 'SUBMITTED');
   const pendingNominations = allNominations.filter((n) => n.status === 'PENDING');
+  const pendingInterviews = interviews.filter((i) => i.status === 'PENDING');
+
+  const allL1Selected = l1Panelists.length > 0 && l1Panelists.every((p) => bulkSelectedL1Ids.includes(p.id));
+  const handleToggleSelectAllL1 = () => {
+    if (allL1Selected) {
+      setBulkSelectedL1Ids(bulkSelectedL1Ids.filter((id) => !l1Panelists.some((p) => p.id === id)));
+    } else {
+      const newIds = [...bulkSelectedL1Ids];
+      l1Panelists.forEach((p) => {
+        if (!newIds.includes(p.id)) newIds.push(p.id);
+      });
+      setBulkSelectedL1Ids(newIds);
+    }
+  };
+
+  const allL2Selected = l2Panelists.length > 0 && l2Panelists.every((p) => bulkSelectedL2Ids.includes(p.id));
+  const handleToggleSelectAllL2 = () => {
+    if (allL2Selected) {
+      setBulkSelectedL2Ids(bulkSelectedL2Ids.filter((id) => !l2Panelists.some((p) => p.id === id)));
+    } else {
+      const newIds = [...bulkSelectedL2Ids];
+      l2Panelists.forEach((p) => {
+        if (!newIds.includes(p.id)) newIds.push(p.id);
+      });
+      setBulkSelectedL2Ids(newIds);
+    }
+  };
 
   return (
     <div>
@@ -864,13 +1012,19 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                       const totalPanels = interview.panels.length;
                       const submittedPanels = interview.panels.filter((p) => p.status === 'SUBMITTED').length;
                       const isSelected = selectedInterview?.id === interview.id;
-                      const progressPct = totalPanels > 0 ? Math.round((submittedPanels / totalPanels) * 100) : 0;
 
                       const statusBorderColor = interview.status === 'SCHEDULED'
                         ? '#10b981'
                         : interview.status === 'COLLECTED'
                         ? '#0ea5e9'
                         : '#f59e0b';
+
+                      // Dynamic status colors for avatar and badge text
+                      const avatarColors = interview.status === 'SCHEDULED'
+                        ? { bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.3)', color: '#34d399' }
+                        : interview.status === 'COLLECTED'
+                        ? { bg: 'rgba(14, 165, 233, 0.08)', border: 'rgba(14, 165, 233, 0.3)', color: '#38bdf8' }
+                        : { bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24' };
 
                       // Candidate initials for avatar
                       const initials = interview.candidateName === 'Pending Assignment'
@@ -880,15 +1034,14 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                       return (
                         <div
                           key={interview.id}
-                          className={`glass-card ${isSelected ? 'selected-interview' : ''}`}
+                          className={`glass-card ${isSelected ? 'selected-interview' : 'cockpit-card-hover'}`}
                           style={{
                             padding: '1rem 1.25rem 1rem 0',
                             cursor: 'pointer',
-                            borderColor: isSelected ? 'var(--primary)' : 'var(--border-glass)',
-                            boxShadow: isSelected ? '0 0 15px rgba(99, 102, 241, 0.2)' : 'var(--shadow-card)',
                             display: 'flex',
                             gap: '0',
                             overflow: 'hidden',
+                            transition: 'var(--transition-fast)',
                           }}
                           onClick={() => {
                             setSelectedInterview(interview);
@@ -902,15 +1055,15 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
                           <div style={{ flex: 1, minWidth: 0 }}>
                             {/* Top row: avatar + name + badges */}
-                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.6rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.65rem' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
                                 <div style={{
                                   width: '36px', height: '36px', flexShrink: 0,
-                                  background: isSelected ? 'var(--primary-glow)' : 'rgba(255,255,255,0.05)',
-                                  border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border-glass)'}`,
+                                  background: avatarColors.bg,
+                                  border: `1px solid ${avatarColors.border}`,
                                   borderRadius: '50%',
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  fontSize: '0.75rem', fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--text-muted)',
+                                  fontSize: '0.8rem', fontWeight: 800, color: avatarColors.color,
                                 }}>
                                   {initials}
                                 </div>
@@ -927,26 +1080,87 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
                                 {interview.status === 'PENDING' && <span className="badge badge-pending" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Awaiting Panels</span>}
-                                {interview.status === 'COLLECTED' && <span className="badge badge-success" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Ready to Book</span>}
-                                {interview.status === 'SCHEDULED' && <span className="badge badge-info" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Scheduled</span>}
+                                {interview.status === 'COLLECTED' && <span className="badge badge-info" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Ready to Book</span>}
+                                {interview.status === 'SCHEDULED' && <span className="badge badge-success" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Scheduled</span>}
                               </div>
                             </div>
 
-                            {/* Panel response progress bar */}
-                            <div style={{ marginBottom: '0.6rem' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Panel Responses</span>
-                                <span style={{ fontSize: '0.65rem', fontWeight: 600, color: submittedPanels === totalPanels && totalPanels > 0 ? '#10b981' : 'var(--text-muted)' }}>
-                                  {submittedPanels}/{totalPanels}
-                                </span>
+                            {/* Panelists list */}
+                            {interview.panels && interview.panels.length > 0 && (
+                              <div style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column', 
+                                gap: '0.45rem', 
+                                marginBottom: '0.75rem',
+                                padding: '0.6rem 0.75rem',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                borderRadius: 'var(--radius-sm)',
+                                border: '1px solid rgba(255, 255, 255, 0.04)'
+                              }}>
+                                {/* Sent Request To */}
+                                <div>
+                                  <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '3px' }}>
+                                    Sent Request To
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                    {interview.panels.map((p) => (
+                                      <span 
+                                        key={p.id} 
+                                        style={{ 
+                                          fontSize: '0.7rem', 
+                                          fontWeight: 500,
+                                          padding: '0.15rem 0.4rem', 
+                                          borderRadius: '4px',
+                                          background: 'rgba(255, 255, 255, 0.03)',
+                                          border: '1px solid var(--border-glass)',
+                                          color: 'var(--text-main)',
+                                        }}
+                                      >
+                                        {p.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Waiting on Response From */}
+                                {interview.panels.some((p) => p.status === 'PENDING') && (
+                                  <div style={{ marginTop: '0.25rem', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '0.25rem' }}>
+                                    <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fbbf24', fontWeight: 700, marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                      <span className="animate-pulse" style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                                      Waiting on Response From
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                      {interview.panels.filter((p) => p.status === 'PENDING').map((p) => (
+                                        <span 
+                                          key={p.id} 
+                                          style={{ 
+                                            fontSize: '0.7rem', 
+                                            fontWeight: 600,
+                                            padding: '0.15rem 0.4rem', 
+                                            borderRadius: '4px',
+                                            background: 'rgba(245, 158, 11, 0.08)',
+                                            border: '1px solid rgba(245, 158, 11, 0.2)',
+                                            color: '#fbbf24',
+                                          }}
+                                        >
+                                          {p.name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${progressPct}%`, background: submittedPanels === totalPanels && totalPanels > 0 ? '#10b981' : '#0ea5e9', borderRadius: '2px', transition: 'width 0.4s ease' }} />
-                              </div>
-                            </div>
+                            )}
 
                             {/* Bottom row: scheduled info or date range + delete */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center', 
+                              marginTop: '0.5rem',
+                              paddingTop: '0.5rem',
+                              borderTop: '1px solid rgba(255, 255, 255, 0.04)' 
+                            }}>
                               {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
                                 <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
                                   <CheckCircle size={11} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
@@ -958,13 +1172,59 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                                   {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                 </span>
                               )}
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '0.2rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
-                                onClick={(e) => handleDeleteInterview(interview.id, e)}
-                              >
-                                <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
-                              </button>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                {/* Quick actions based on status */}
+                                {interview.status === 'COLLECTED' && (
+                                  <button 
+                                    className="btn btn-primary btn-xs" 
+                                    style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'var(--secondary)', border: 'none', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedInterview(interview);
+                                      setShowCreateForm(false);
+                                      setSelectedSlot(null);
+                                      setDetailTab('booking');
+                                    }}
+                                  >
+                                    <Calendar size={9} /> Book
+                                  </button>
+                                )}
+                                {interview.status === 'SCHEDULED' && interview.teamsMeetingUrl && (
+                                  <a 
+                                    href={interview.teamsMeetingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-primary btn-xs" 
+                                    style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'var(--success)', border: 'none', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Video size={9} /> Join
+                                  </a>
+                                )}
+                                {interview.status === 'PENDING' && (
+                                  <button 
+                                    className="btn btn-secondary btn-xs" 
+                                    style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-glass)', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(255,255,255,0.02)' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedInterview(interview);
+                                      setShowCreateForm(false);
+                                      setDetailTab('panels');
+                                    }}
+                                  >
+                                    <Users size={9} /> View Panels
+                                  </button>
+                                )}
+
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '0.2rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
+                                  onClick={(e) => handleDeleteInterview(interview.id, e)}
+                                >
+                                  <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1020,16 +1280,31 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                                     <span className="text-muted text-xs block">{nom.interview.candidateEmail}</span>
                                   )}
                                 </div>
-                                <button
-                                  className="btn btn-secondary btn-sm animate-pulse-once"
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
-                                  onClick={() => {
-                                    setSelectedInterview(nom.interview);
-                                    setCockpitView('list');
-                                  }}
-                                >
-                                  Edit Mapping / Details
-                                </button>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <button
+                                    className="btn btn-secondary btn-sm flex-gap-2"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
+                                    onClick={() => {
+                                      setSelectedInterview(nom.interview);
+                                      setEditStartDate(nom.interview.startDate.split('T')[0]);
+                                      setEditEndDate(nom.interview.endDate.split('T')[0]);
+                                      setDetailTab('overview');
+                                      setIsEditingDates(true);
+                                    }}
+                                  >
+                                    <Calendar size={11} /> Change Dates
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-sm animate-pulse-once"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
+                                    onClick={() => {
+                                      setSelectedInterview(nom.interview);
+                                      setCockpitView('list');
+                                    }}
+                                  >
+                                    Edit Mapping / Details
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               <div>
@@ -1132,40 +1407,133 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   <h3 style={{ fontSize: '1.3rem', fontWeight: 600, color: '#f59e0b', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <Clock size={16} /> Pending Response (Awaiting Availability)
                   </h3>
-                  {pendingNominations.length === 0 ? (
+                  {pendingInterviews.length === 0 ? (
                     <div className="glass-card text-center" style={{ padding: '2.5rem' }}>
                       <span className="text-muted text-xs">No pending requests. All panelists have responded.</span>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {pendingNominations.map((nom) => (
-                        <div key={nom.id} className="glass-card" style={{ padding: '1rem 1.25rem' }}>
-                          <div className="flex-between" style={{ alignItems: 'center' }}>
+                      {pendingInterviews.map((interview) => (
+                        <div key={interview.id} className="glass-card" style={{ padding: '1.25rem' }}>
+                          <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                             <div>
-                              <strong style={{ fontSize: '0.95rem' }}>{nom.name}</strong>
-                              <span className="text-muted text-xs block" style={{ opacity: 0.8 }}>{nom.email}</span>
+                              <strong style={{ fontSize: '0.95rem' }}>
+                                {interview.candidateName === 'Pending Assignment' ? (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span>
+                                ) : interview.candidateName}
+                              </strong>
+                              <span className="text-muted text-xs block" style={{ opacity: 0.8, marginTop: '2px' }}>
+                                {interview.role} ({interview.duration} mins)
+                              </span>
                             </div>
-                            <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>Pending</span>
+                            <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>Awaiting Panels</span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.5rem 0.75rem', borderRadius: '4px', marginTop: '0.5rem' }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '2px' }}>Role Stage Window</div>
-                            <div style={{ fontWeight: 600 }}>{nom.interview.role}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                              Date range: {new Date(nom.interview.startDate).toLocaleDateString()} - {new Date(nom.interview.endDate).toLocaleDateString()}
+
+                          <div style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '2px' }}>Proposed Date Window</div>
+                            <div style={{ fontWeight: 600 }}>
+                              {new Date(interview.startDate).toLocaleDateString()} - {new Date(interview.endDate).toLocaleDateString()}
                             </div>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+
+                          {/* Nominated Panelists List */}
+                          {interview.panels && interview.panels.length > 0 && (
+                            <div style={{ 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '0.5rem', 
+                              padding: '0.6rem 0.75rem',
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              borderRadius: 'var(--radius-sm)',
+                              border: '1px solid rgba(255, 255, 255, 0.04)',
+                              marginBottom: '0.75rem'
+                            }}>
+                              {/* Sent Request To */}
+                              <div>
+                                <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '3px' }}>
+                                  Sent Request To
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                  {interview.panels.map((p) => (
+                                    <span 
+                                      key={p.id} 
+                                      style={{ 
+                                        fontSize: '0.7rem', 
+                                        fontWeight: 500,
+                                        padding: '0.15rem 0.4rem', 
+                                        borderRadius: '4px',
+                                        background: p.status === 'SUBMITTED' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                                        border: p.status === 'SUBMITTED' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border-glass)',
+                                        color: p.status === 'SUBMITTED' ? '#10b981' : 'var(--text-main)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px'
+                                      }}
+                                    >
+                                      {p.status === 'SUBMITTED' && <CheckCircle size={10} />}
+                                      {p.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Waiting on Response From */}
+                              {interview.panels.some((p) => p.status === 'PENDING') && (
+                                <div style={{ marginTop: '0.25rem', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '0.25rem' }}>
+                                  <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fbbf24', fontWeight: 700, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <span className="animate-pulse" style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                                    Waiting on Response From
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    {interview.panels.filter((p) => p.status === 'PENDING').map((p) => (
+                                      <div 
+                                        key={p.id} 
+                                        style={{ 
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          background: 'rgba(245, 158, 11, 0.04)',
+                                          border: '1px solid rgba(245, 158, 11, 0.15)',
+                                          padding: '0.35rem 0.5rem',
+                                          borderRadius: '4px'
+                                        }}
+                                      >
+                                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#fbbf24' }}>
+                                          {p.name}
+                                        </span>
+                                        <button
+                                          onClick={() => handleResendInvite(interview.id, p.id)}
+                                          className="btn btn-secondary btn-xs"
+                                          style={{ padding: '0.15rem 0.4rem', fontSize: '0.65rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
+                                          disabled={resendingPanelId === p.id}
+                                        >
+                                          {resendingPanelId === p.id ? (
+                                            <><Loader2 size={8} className="animate-spin" /> Sending...</>
+                                          ) : (
+                                            'Resend'
+                                          )}
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
                             <button
-                              onClick={() => handleResendInvite(nom.interview.id, nom.id)}
+                              onClick={() => {
+                                setSelectedInterview(interview);
+                                setEditStartDate(interview.startDate.split('T')[0]);
+                                setEditEndDate(interview.endDate.split('T')[0]);
+                                setDetailTab('overview');
+                                setIsEditingDates(true);
+                              }}
                               className="btn btn-secondary btn-sm"
                               style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '3px' }}
-                              disabled={resendingPanelId === nom.id}
                             >
-                              {resendingPanelId === nom.id ? (
-                                <><Loader2 size={10} className="animate-spin" /> Sending...</>
-                              ) : (
-                                'Resend Invite'
-                              )}
+                              <Calendar size={11} /> Change Dates
                             </button>
                           </div>
                         </div>
@@ -1541,7 +1909,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     )}
 
                     {/* Interview meta grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                       {[
                         { label: 'Stage', value: selectedInterview.role },
                         { label: 'Duration', value: `${selectedInterview.duration} minutes` },
@@ -1554,6 +1922,50 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                         </div>
                       ))}
                     </div>
+
+                    {/* Date Window Editor Form */}
+                    {isEditingDates ? (
+                      <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem' }}>
+                        <h4 style={{ color: 'var(--text-main)', fontSize: '0.9rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Calendar size={15} className="text-primary" />
+                          Change Interview Date Window
+                        </h4>
+                        <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
+                          This will reset the availability collection flow and generate proposed slots in the new range.
+                        </p>
+                        <form onSubmit={handleUpdateDates} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.72rem' }}>Start Date</label>
+                              <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={editStartDate} min={todayStr} onChange={(e) => setEditStartDate(e.target.value)} required />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.72rem' }}>End Date</label>
+                              <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={editEndDate} min={editStartDate || todayStr} onChange={(e) => setEditEndDate(e.target.value)} required />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                            <button type="submit" className="btn btn-primary btn-sm" disabled={isUpdatingDates} style={{ flex: 1 }}>
+                              {isUpdatingDates ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : 'Save New Range'}
+                            </button>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsEditingDates(false)}>Cancel</button>
+                          </div>
+                        </form>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button 
+                          className="btn btn-secondary btn-sm flex-gap-2" 
+                          onClick={() => {
+                            setEditStartDate(selectedInterview.startDate.split('T')[0]);
+                            setEditEndDate(selectedInterview.endDate.split('T')[0]);
+                            setIsEditingDates(true);
+                          }}
+                        >
+                          <Calendar size={14} /> Change Date Window
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1763,7 +2175,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
             <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
               Configure the default daily time windows during which interview slots can be automatically proposed. L1/L2 slot options will be auto-generated inside these ranges.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem' }}>
               <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
                 <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>L1 Timing Period (Technical Screening)</h4>
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -1791,7 +2203,22 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   </div>
                 </div>
               </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
+                <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#34d399', fontWeight: 600 }}>Default Proposed Date Range</h4>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: '0.7rem' }}>Start Date</label>
+                    <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={defaultStartDate} min={todayStr} onChange={(e) => setDefaultStartDate(e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: '0.7rem' }}>End Date</label>
+                    <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={defaultEndDate} min={defaultStartDate || todayStr} onChange={(e) => setDefaultEndDate(e.target.value)} />
+                  </div>
+                </div>
+              </div>
             </div>
+
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem' }}>
@@ -1954,102 +2381,209 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   
                   {/* Column 1: L1 Panelists Directory */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                    <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                      <input 
+                        type="checkbox"
+                        checked={allL1Selected}
+                        onChange={handleToggleSelectAllL1}
+                        style={{ accentColor: '#60a5fa', cursor: 'pointer' }}
+                        title="Select All L1 Panelists"
+                      />
                       L1 Screening Panels ({l1Panelists.length})
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                       {l1Panelists.length === 0 ? (
                         <div className="text-muted text-xs" style={{ padding: '1rem', textAlign: 'center' }}>No L1 panelists registered.</div>
                       ) : (
-                        l1Panelists.map((p) => (
-                          <div 
-                            key={p.id}
-                            style={{ 
-                              display: 'flex', 
-                              flexDirection: 'column',
-                              gap: '0.5rem',
-                              padding: '0.75rem',
-                              background: 'rgba(255, 255, 255, 0.01)',
-                              border: '1px solid var(--border-glass)',
-                              borderRadius: 'var(--radius-md)'
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7 }}>{p.email}</div>
+                        l1Panelists.map((p) => {
+                          const isSelected = bulkSelectedL1Ids.includes(p.id);
+                          return (
+                            <div 
+                              key={p.id}
+                              style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                gap: '0.5rem',
+                                padding: '0.75rem',
+                                background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                                border: isSelected ? '1px solid rgba(99, 102, 241, 0.35)' : '1px solid var(--border-glass)',
+                                borderRadius: 'var(--radius-md)',
+                                transition: 'var(--transition-fast)'
+                              }}
+                            >
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                <input 
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setBulkSelectedL1Ids(bulkSelectedL1Ids.filter((id) => id !== p.id));
+                                    } else {
+                                      setBulkSelectedL1Ids([...bulkSelectedL1Ids, p.id]);
+                                    }
+                                  }}
+                                  style={{ accentColor: 'var(--primary)', marginTop: '3px', cursor: 'pointer' }}
+                                />
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
+                                  <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                                <button
+                                  onClick={() => handleOpenSlotRequest(p, 'L1')}
+                                  className="btn btn-primary btn-xs"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa' }}
+                                >
+                                  Send Request
+                                </button>
+                                <button 
+                                  onClick={() => handleDeletePanelist(p.id)}
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                              <button
-                                onClick={() => handleOpenSlotRequest(p, 'L1')}
-                                className="btn btn-primary btn-xs"
-                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa' }}
-                              >
-                                Send Request
-                              </button>
-                              <button 
-                                onClick={() => handleDeletePanelist(p.id)}
-                                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                                onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
 
                   {/* Column 2: L2 Panelists Directory */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                    <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                      <input 
+                        type="checkbox"
+                        checked={allL2Selected}
+                        onChange={handleToggleSelectAllL2}
+                        style={{ accentColor: '#a78bfa', cursor: 'pointer' }}
+                        title="Select All L2 Panelists"
+                      />
                       L2 System/Mgmt Panels ({l2Panelists.length})
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                       {l2Panelists.length === 0 ? (
                         <div className="text-muted text-xs" style={{ padding: '1rem', textAlign: 'center' }}>No L2 panelists registered.</div>
                       ) : (
-                        l2Panelists.map((p) => (
-                          <div 
-                            key={p.id}
-                            style={{ 
-                              display: 'flex', 
-                              flexDirection: 'column',
-                              gap: '0.5rem',
-                              padding: '0.75rem',
-                              background: 'rgba(255, 255, 255, 0.01)',
-                              border: '1px solid var(--border-glass)',
-                              borderRadius: 'var(--radius-md)'
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7 }}>{p.email}</div>
+                        l2Panelists.map((p) => {
+                          const isSelected = bulkSelectedL2Ids.includes(p.id);
+                          return (
+                            <div 
+                              key={p.id}
+                              style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                gap: '0.5rem',
+                                padding: '0.75rem',
+                                background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)',
+                                border: isSelected ? '1px solid rgba(99, 102, 241, 0.35)' : '1px solid var(--border-glass)',
+                                borderRadius: 'var(--radius-md)',
+                                transition: 'var(--transition-fast)'
+                              }}
+                            >
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                <input 
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setBulkSelectedL2Ids(bulkSelectedL2Ids.filter((id) => id !== p.id));
+                                    } else {
+                                      setBulkSelectedL2Ids([...bulkSelectedL2Ids, p.id]);
+                                    }
+                                  }}
+                                  style={{ accentColor: 'var(--primary)', marginTop: '3px', cursor: 'pointer' }}
+                                />
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
+                                  <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                                <button
+                                  onClick={() => handleOpenSlotRequest(p, 'L2')}
+                                  className="btn btn-primary btn-xs"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#c084fc' }}
+                                >
+                                  Send Request
+                                </button>
+                                <button 
+                                  onClick={() => handleDeletePanelist(p.id)}
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                              <button
-                                onClick={() => handleOpenSlotRequest(p, 'L2')}
-                                className="btn btn-primary btn-xs"
-                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#c084fc' }}
-                              >
-                                Send Request
-                              </button>
-                              <button 
-                                onClick={() => handleDeletePanelist(p.id)}
-                                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                                onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
 
+                </div>
+              )}
+
+              {/* Floating Bulk Action Bar */}
+              {(bulkSelectedL1Ids.length > 0 || bulkSelectedL2Ids.length > 0) && (
+                <div style={{ 
+                  position: 'sticky', 
+                  bottom: '1rem', 
+                  background: 'rgba(15, 23, 42, 0.9)', 
+                  backdropFilter: 'blur(10px)', 
+                  border: '1px solid rgba(99, 102, 241, 0.3)', 
+                  borderRadius: 'var(--radius-md)', 
+                  padding: '0.75rem 1.25rem', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+                  zIndex: 90,
+                  marginTop: '1.5rem'
+                }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                    <span className="text-primary" style={{ marginRight: '4px' }}>{bulkSelectedL1Ids.length + bulkSelectedL2Ids.length}</span> Panelists Selected
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={() => {
+                        const selectedPanelists = panelists.filter((p) => bulkSelectedL1Ids.includes(p.id));
+                        handleOpenSlotRequest(selectedPanelists, 'L1');
+                      }}
+                      className="btn btn-primary btn-sm"
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#60a5fa' }}
+                      disabled={bulkSelectedL1Ids.length === 0}
+                    >
+                      Request L1 Slots
+                    </button>
+                    <button
+                      onClick={() => {
+                        const selectedPanelists = panelists.filter((p) => bulkSelectedL2Ids.includes(p.id));
+                        handleOpenSlotRequest(selectedPanelists, 'L2');
+                      }}
+                      className="btn btn-primary btn-sm"
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#c084fc' }}
+                      disabled={bulkSelectedL2Ids.length === 0}
+                    >
+                      Request L2 Slots
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBulkSelectedL1Ids([]);
+                        setBulkSelectedL2Ids([]);
+                      }}
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', border: '1px solid var(--border-glass)', background: 'transparent' }}
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2058,7 +2592,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       )}
 
       {/* Request Slot Overlay Modal (New Automagic Flow) */}
-      {reqPanelist && (
+      {reqPanelists.length > 0 && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -2075,8 +2609,21 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
         }}>
           <div className="glass-card animate-pulse-once" style={{ maxWidth: '520px', width: '100%', padding: '2rem', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-glass)' }}>
             <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.75rem' }}>
-              Request Slot from {reqPanelist.displayName}
+              Request Slots from {reqPanelists.length === 1 ? reqPanelists[0].displayName : `${reqPanelists.length} Panelists`}
             </h3>
+
+            {reqPanelists.length > 1 && (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.6rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-glass)', marginBottom: '1rem', fontSize: '0.75rem' }}>
+                <span className="text-muted block font-semibold" style={{ marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invited Panel Members:</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                  {reqPanelists.map((p) => (
+                    <span key={p.id} style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>
+                      {p.displayName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSendSlotRequest}>
               <div className="grid-2">
@@ -2172,8 +2719,13 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                 <span className="text-muted text-xs block font-semibold" style={{ marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
                 <div style={{ borderLeft: '4px solid var(--primary)', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   <div style={{ fontWeight: 600, color: 'var(--primary)', marginBottom: '0.25rem' }}>Interview Slot Request</div>
-                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Hello <strong>{reqPanelist.displayName}</strong>,</p>
+                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
+                    Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,
+                  </p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>You have been requested to conduct an <strong>{reqInterviewType} Interview</strong>.</p>
+                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
+                    Proposed Interview Date Range: <strong>{new Date(reqStartDate || todayStr).toLocaleDateString()} - {new Date(reqEndDate || todayStr).toLocaleDateString()}</strong>
+                  </p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Please select one of the following proposed slots to book instantly:</p>
                   <div style={{ margin: '8px 0', paddingLeft: '1rem', color: 'var(--text-main)', fontSize: '0.75rem' }}>
                     {reqSlots.filter((s) => s.selected).slice(0, 6).map((s, i) => {
@@ -2192,7 +2744,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   type="button"
                   className="btn btn-secondary"
                   style={{ flex: 1 }}
-                  onClick={() => setReqPanelist(null)}
+                  onClick={() => setReqPanelists([])}
                 >
                   Cancel
                 </button>
@@ -2217,6 +2769,17 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       <style jsx global>{`
         .selected-interview {
           background: rgba(99, 102, 241, 0.05) !important;
+          border-color: var(--primary) !important;
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.25) !important;
+        }
+        .cockpit-card-hover {
+          transition: var(--transition-fast) !important;
+        }
+        .cockpit-card-hover:hover {
+          background: rgba(22, 29, 47, 0.6) !important;
+          border-color: rgba(255, 255, 255, 0.12) !important;
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-card), 0 4px 20px rgba(99, 102, 241, 0.08) !important;
         }
         .search-item-hover:hover {
           background: rgba(255, 255, 255, 0.04) !important;

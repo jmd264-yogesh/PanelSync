@@ -294,10 +294,13 @@ export const db = {
     }
   ): Promise<boolean> => {
     const now = new Date();
+    const interview = await db.getInterview(interviewId);
+    const nextStatus = (interview && interview.candidateName === 'Pending Assignment') ? 'COLLECTED' : 'SCHEDULED';
+
     await dbClient
       .update(schema.interviews)
       .set({
-        status: 'SCHEDULED',
+        status: nextStatus,
         scheduledSlotStart: new Date(params.scheduledSlotStart),
         scheduledSlotEnd: new Date(params.scheduledSlotEnd),
         teamsMeetingUrl: params.teamsMeetingUrl,

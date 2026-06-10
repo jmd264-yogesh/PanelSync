@@ -30,11 +30,15 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Update database record
+    const hasBookedSlot = interview.scheduledSlotStart ? true : false;
+    const nextStatus = hasBookedSlot ? 'SCHEDULED' : 'COLLECTED';
+
     await dbClient
       .update(schema.interviews)
       .set({
         candidateName,
         candidateEmail: finalEmail,
+        status: nextStatus,
         updatedAt: new Date(),
       })
       .where(eq(schema.interviews.id, interviewId));
