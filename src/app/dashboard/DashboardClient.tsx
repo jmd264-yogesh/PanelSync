@@ -94,6 +94,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [isEditingMapping, setIsEditingMapping] = useState(false);
   const [sendAsTeamsMeeting, setSendAsTeamsMeeting] = useState(true);
   const [isCancellingBooking, setIsCancellingBooking] = useState(false);
+  const [resendingPanelId, setResendingPanelId] = useState<string | null>(null);
 
   // UI / UX States
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
@@ -507,6 +508,29 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       alert(err.message || 'Error cancelling meeting');
     } finally {
       setIsCancellingBooking(false);
+    }
+  };
+
+  const handleResendInvite = async (interviewId: string, panelId: string) => {
+    setResendingPanelId(panelId);
+    try {
+      const res = await fetch('/api/interviews/resend-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interviewId, panelId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to resend invitation');
+      }
+
+      alert('Successfully resent Teams notification reminder!');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error resending invitation');
+    } finally {
+      setResendingPanelId(null);
     }
   };
 
@@ -1130,6 +1154,20 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                               Date range: {new Date(nom.interview.startDate).toLocaleDateString()} - {new Date(nom.interview.endDate).toLocaleDateString()}
                             </div>
                           </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                            <button
+                              onClick={() => handleResendInvite(nom.interview.id, nom.id)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '3px' }}
+                              disabled={resendingPanelId === nom.id}
+                            >
+                              {resendingPanelId === nom.id ? (
+                                <><Loader2 size={10} className="animate-spin" /> Sending...</>
+                              ) : (
+                                'Resend Invite'
+                              )}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1541,7 +1579,21 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                         {p.status === 'SUBMITTED' ? (
                           <span className="badge badge-success" style={{ fontSize: '0.6rem' }}><CheckCircle size={9} style={{ display: 'inline', marginRight: '2px' }} />Responded</span>
                         ) : (
-                          <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}><Clock size={9} style={{ display: 'inline', marginRight: '2px' }} />Pending</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}><Clock size={9} style={{ display: 'inline', marginRight: '2px' }} />Pending</span>
+                            <button
+                              onClick={() => handleResendInvite(selectedInterview.id, p.id)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '0.15rem 0.4rem', fontSize: '0.6rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
+                              disabled={resendingPanelId === p.id}
+                            >
+                              {resendingPanelId === p.id ? (
+                                <><Loader2 size={8} className="animate-spin" /> Sending...</>
+                              ) : (
+                                'Resend Invite'
+                              )}
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -1557,6 +1609,12 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                           <CheckCircle size={18} /> Meeting Scheduled!
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                            <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Panelist(s)</div>
+                            <strong style={{ fontSize: '0.9rem' }}>
+                              {selectedInterview.panels.filter((p) => p.status === 'SUBMITTED').map((p) => p.name).join(', ') || 'None'}
+                            </strong>
+                          </div>
                           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.15)' }}>
                             <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>Date</div>
                             <strong style={{ fontSize: '0.9rem' }}>{new Date(selectedInterview.scheduledSlotStart || '').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
