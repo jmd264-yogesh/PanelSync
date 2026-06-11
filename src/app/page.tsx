@@ -4,7 +4,15 @@ import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { Calendar, Shield, Cpu, Users } from 'lucide-react';
 
-export default async function Home() {
+interface PageProps {
+  searchParams?: Promise<{ error?: string }> | { error?: string };
+}
+
+export default async function Home(props: PageProps) {
+  const resolvedParams = props.searchParams instanceof Promise 
+    ? await props.searchParams 
+    : props.searchParams;
+  const error = resolvedParams?.error;
   const session = await getSession();
 
   // If already authenticated, redirect to dashboard
@@ -40,6 +48,37 @@ export default async function Home() {
               <div className="badge badge-info" style={{ marginBottom: '1.25rem' }}>
                 Powered by Microsoft Graph API
               </div>
+              
+              {error === 'unauthorized_recruiter' && (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1rem 1.25rem',
+                  marginBottom: '1.5rem',
+                  color: '#f87171',
+                  fontSize: '0.9rem',
+                  lineHeight: 1.5,
+                }}>
+                  <strong style={{ color: '#ef4444' }}>Access Denied:</strong> Your email address is not registered as an authorized recruiter. Please contact a system administrator to request access.
+                </div>
+              )}
+
+              {error && error !== 'unauthorized_recruiter' && (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1rem 1.25rem',
+                  marginBottom: '1.5rem',
+                  color: '#f87171',
+                  fontSize: '0.9rem',
+                  lineHeight: 1.5,
+                }}>
+                  <strong style={{ color: '#ef4444' }}>Authentication Error:</strong> {decodeURIComponent(error as string)}
+                </div>
+              )}
+
               <h1 style={{ fontSize: '3rem', lineHeight: 1.15, marginBottom: '1.5rem' }}>
                 Automate Your <br />
                 <span className="gradient-text">Interview Scheduling</span> <br />
@@ -50,7 +89,7 @@ export default async function Home() {
               </p>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <a href="/api/auth/signin" className="btn btn-primary" style={{ padding: '0.9rem 2rem' }}>
-                  Sign in with Microsoft Work Account
+                  Recruiter Sign In
                 </a>
               </div>
             </div>

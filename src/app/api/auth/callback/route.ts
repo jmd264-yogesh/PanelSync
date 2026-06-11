@@ -68,8 +68,17 @@ export async function GET(request: NextRequest) {
     }
 
     const userData = await userResponse.json();
+    const userEmail = (userData.mail || userData.userPrincipalName || '').toLowerCase().trim();
 
-    // 3. Save session to server store and get sessionId
+    // 3. Verify that the user is an authorized recruiter
+    const { db } = await import('@/lib/db');
+    const isAllowed = await db.isEmailAllowed(userEmail);
+    if (!isAllowed) {
+      console.warn(`Unauthorized sign-in attempt by email: ${userEmail}`);
+      return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
+    }
+
+    // 4. Save session to server store and get sessionId
     const sessionId = await setSession({
       accessToken,
       refreshToken,
@@ -77,7 +86,7 @@ export async function GET(request: NextRequest) {
       user: {
         id: userData.id,
         displayName: userData.displayName,
-        email: userData.mail || userData.userPrincipalName,
+        email: userEmail,
       },
     });
 

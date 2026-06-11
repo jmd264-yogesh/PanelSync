@@ -64,3 +64,10 @@ export const panelists = pgTable('panelists', {
   roles: text('roles').array().notNull(), // text[] role designations (e.g. L1, L2)
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+// 6. Pre-Approved Recruiters
+export const allowedRecruiters = pgTable('allowed_recruiters', {
+  email: varchar('email', { length: 255 }).primaryKey(), // email serves as the unique primary key
+  addedBy: varchar('added_by', { length: 255 }), // email of recruiter who added this recruiter
+  createdAt: timestamp('created_at').defaultNow(),
+});

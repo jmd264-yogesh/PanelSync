@@ -65,6 +65,12 @@ async function ensureSeeded() {
   }
 }
 
+export const INITIAL_RECRUITERS = [
+  'yogeshwarang@jmangroup.com',
+  'jeffringoldwin@jmangroup.com',
+  'vishnuprriya@jmangroup.com'
+];
+
 // 2. Database Helper Operations
 export const db = {
   // Get all interviews sorted by newest
@@ -387,6 +393,62 @@ export const db = {
   // Delete a panelist record
   removePanelist: async (id: string): Promise<boolean> => {
     await dbClient.delete(schema.panelists).where(eq(schema.panelists.id, id));
+    return true;
+  },
+
+  // Check if email is allowed to sign in
+  isEmailAllowed: async (email: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (INITIAL_RECRUITERS.includes(normalizedEmail)) {
+      return true;
+    }
+    const [allowed] = await dbClient
+      .select()
+      .from(schema.allowedRecruiters)
+      .where(eq(schema.allowedRecruiters.email, normalizedEmail))
+      .limit(1);
+    return !!allowed;
+  },
+
+  // Get all allowed recruiters from DB
+  getAllowedRecruiters: async (): Promise<{ email: string; addedBy: string | null; createdAt: string }[]> => {
+    const res = await dbClient.select().from(schema.allowedRecruiters);
+    return res.map((row) => ({
+      email: row.email,
+      addedBy: row.addedBy,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  // Add a recruiter email
+  addAllowedRecruiter: async (email: string, addedBy: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (INITIAL_RECRUITERS.includes(normalizedEmail)) {
+      return false; // Already allowed by default
+    }
+    const [existing] = await dbClient
+      .select()
+      .from(schema.allowedRecruiters)
+      .where(eq(schema.allowedRecruiters.email, normalizedEmail))
+      .limit(1);
+    if (existing) {
+      return false; // Already exists
+    }
+    await dbClient.insert(schema.allowedRecruiters).values({
+      email: normalizedEmail,
+      addedBy: addedBy.toLowerCase(),
+      createdAt: new Date(),
+    });
+    return true;
+  },
+
+  // Remove a recruiter email
+  removeAllowedRecruiter: async (email: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (INITIAL_RECRUITERS.includes(normalizedEmail)) {
+      throw new Error('Cannot remove initial system pre-approved recruiters');
+    }
+    await dbClient.delete(schema.allowedRecruiters).where(eq(schema.allowedRecruiters.email, normalizedEmail));
     return true;
   },
 };

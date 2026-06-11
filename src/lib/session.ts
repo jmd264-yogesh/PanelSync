@@ -29,6 +29,14 @@ export async function getSession(): Promise<SessionPayload | null> {
 
     if (!sessionRow) return null;
 
+    // Check if the user is still allowed to log in (access control check)
+    const { db } = await import('./db');
+    const isAllowed = await db.isEmailAllowed(sessionRow.userEmail);
+    if (!isAllowed) {
+      console.warn(`User ${sessionRow.userEmail} session exists but is no longer authorized.`);
+      return null;
+    }
+
     return {
       accessToken: sessionRow.accessToken,
       refreshToken: sessionRow.refreshToken || undefined,
