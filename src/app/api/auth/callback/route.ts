@@ -68,21 +68,39 @@ export async function GET(request: NextRequest) {
     }
 
     const userData = await userResponse.json();
+    const userEmail = (userData.mail || userData.userPrincipalName || '').toLowerCase().trim();
 
-    // 3. Set standard encrypted cookie session
-    await setSession({
+    // 3. Verify that the user is an authorized recruiter
+    const { db } = await import('@/lib/db');
+    const isAllowed = await db.isEmailAllowed(userEmail);
+    if (!isAllowed) {
+      console.warn(`Unauthorized sign-in attempt by email: ${userEmail}`);
+      return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
+    }
+
+    // 4. Save session to server store and get sessionId
+    const sessionId = await setSession({
       accessToken,
       refreshToken,
       expiresAt,
       user: {
         id: userData.id,
         displayName: userData.displayName,
-        email: userData.mail || userData.userPrincipalName,
+        email: userEmail,
       },
     });
 
-    // 4. Redirect to main dashboard
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    // 4. Construct response and set sessionId cookie directly
+    const response = NextResponse.redirect(new URL('/dashboard', request.url));
+    response.cookies.set('sessionId', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    });
+
+    return response;
   } catch (err) {
     console.error('Callback handler network or parsing error:', err);
     return NextResponse.redirect(new URL('/?error=internal_server_error', request.url));

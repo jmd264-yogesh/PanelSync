@@ -26,7 +26,7 @@ export default async function AvailabilityPage({ params }: PageProps) {
   }
 
   // Look up panel details by token
-  const result = db.getInterviewByPanelToken(token);
+  const result = await db.getInterviewByPanelToken(token);
 
   if (!result) {
     return (

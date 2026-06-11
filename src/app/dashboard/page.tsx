@@ -15,7 +15,8 @@ export default async function DashboardPage() {
   }
 
   // Load interviews from JSON database
-  const interviews = db.getInterviews();
+  const interviews = await db.getInterviews();
+  const panelists = await db.getPanelists();
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -27,7 +28,7 @@ export default async function DashboardPage() {
               <Calendar size={20} color="#ffffff" />
             </div>
             <span style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
-              MCP <span className="gradient-accent-text">Scheduler</span>
+              Panel<span className="gradient-accent-text">Sync</span>
             </span>
             <div style={{ borderLeft: '1px solid var(--border-glass)', height: '20px', marginLeft: '8px', paddingLeft: '12px' }} className="text-muted text-sm">
               Recruiter Portal
@@ -49,13 +50,13 @@ export default async function DashboardPage() {
       {/* Main Dashboard Panel */}
       <main style={{ flex: 1, padding: '2rem 0' }}>
         <div className="container">
-          <DashboardClient initialInterviews={interviews} />
+          <DashboardClient initialInterviews={interviews} initialPanelists={panelists} />
         </div>
       </main>
 
       <footer style={{ borderTop: '1px solid var(--border-glass)', padding: '1.5rem 0', marginTop: 'auto', background: 'rgba(0, 0, 0, 0.1)' }}>
         <div className="container flex-between text-muted text-xs">
-          <p>© 2026 Microsoft Teams Interview Scheduler. Authenticated Session active.</p>
+          <p>© 2026 PanelSync. Authenticated session active.</p>
           <p>Connected to MS Tenant ID: {process.env.AZURE_TENANT_ID || 'common'}</p>
         </div>
       </footer>

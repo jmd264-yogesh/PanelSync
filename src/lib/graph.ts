@@ -133,34 +133,46 @@ class GraphService {
   ): Promise<CalendarEventResponse> {
     const endpoint = '/me/events';
 
-    const attendees = [
-      {
+    const attendees = [];
+    if (params.candidateEmail && params.candidateEmail !== 'pending@assign.com' && params.candidateEmail !== '') {
+      attendees.push({
         emailAddress: {
           address: params.candidateEmail,
           name: params.candidateName,
         },
         type: 'required',
-      },
+      });
+    }
+    
+    attendees.push(
       ...params.panelEmails.map((email) => ({
         emailAddress: {
           address: email,
           name: email.split('@')[0], // Fallback name
         },
         type: 'required',
-      })),
-    ];
+      }))
+    );
 
     const body = {
       subject: `Interview: ${params.candidateName} - ${params.role}`,
       body: {
         contentType: 'html',
         content: `
-          <h3>Interview Schedule Confirmation</h3>
-          <p><strong>Candidate:</strong> ${params.candidateName} (${params.candidateEmail})</p>
-          <p><strong>Role:</strong> ${params.role}</p>
+          <p>Hi ${params.candidateName || 'Candidate'},</p>
+          <p>We are happy to take your candidature for the First level of Discussion.</p>
+          <p>Blocking your calendar for the Technical Interview. Kindly make yourself available for the same. Please find below few general instructions.</p>
+          <ol>
+            <li>Join at least five minutes prior to the scheduled time.</li>
+            <li>Make sure you have stable internet connectivity, at least 5mbps.</li>
+            <li>Check your microphone and camera settings before the start of the interview.</li>
+            <li>Join the interview using a laptop/desktop only.</li>
+            <li>Please join the link via web if you do not have Microsoft teams installed.</li>
+          </ol>
+          <p>Regards,<br />TA Team<br />JMAN Group</p>
           <hr />
-          <p>This interview is scheduled as an online Teams Meeting.</p>
-          <p>${params.description.replace(/\n/g, '<br />')}</p>
+          <p><strong>Role/Focus:</strong> ${params.role}</p>
+          ${params.description ? `<p>${params.description.replace(/\n/g, '<br />')}</p>` : ''}
         `,
       },
       start: {
@@ -185,12 +197,161 @@ class GraphService {
       body: JSON.stringify(body),
     });
 
+    const joinUrl = response.onlineMeeting?.joinUrl || response.onlineMeetingUrl;
+
+    if (joinUrl) {
+      try {
+        const eventId = response.id;
+        const updatedBody = {
+          body: {
+            contentType: 'html',
+            content: `
+              <p>Hi ${params.candidateName || 'Candidate'},</p>
+              <p>We are happy to take your candidature for the First level of Discussion.</p>
+              <p>Blocking your calendar for the Technical Interview. Kindly make yourself available for the same. Please find below few general instructions.</p>
+              <ol>
+                <li>Join at least five minutes prior to the scheduled time.</li>
+                <li>Make sure you have stable internet connectivity, at least 5mbps.</li>
+                <li>Check your microphone and camera settings before the start of the interview.</li>
+                <li>Join the interview using a laptop/desktop only.</li>
+                <li>Please join the link via web if you do not have Microsoft teams installed.</li>
+              </ol>
+              <p style="font-size: 16px; margin: 20px 0;">
+                <strong>Microsoft Teams Meeting Link:</strong><br />
+                <a href="${joinUrl}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                  Join Microsoft Teams Meeting
+                </a>
+              </p>
+              <p style="font-size: 12px; color: #64748b;">
+                Or copy and paste this link in your browser:<br />
+                <a href="${joinUrl}" style="color: #6366f1;">${joinUrl}</a>
+              </p>
+              <p>Regards,<br />TA Team<br />JMAN Group</p>
+              <hr />
+              <p><strong>Role/Focus:</strong> ${params.role}</p>
+              ${params.description ? `<p>${params.description.replace(/\n/g, '<br />')}</p>` : ''}
+            `
+          }
+        };
+
+        await this.fetchGraph(`/me/events/${eventId}`, accessToken, {
+          method: 'PATCH',
+          body: JSON.stringify(updatedBody),
+        });
+      } catch (patchError) {
+        console.error('Failed to patch Teams join URL into event description:', patchError);
+      }
+    }
+
     return {
       id: response.id,
-      joinUrl: response.onlineMeeting?.joinUrl,
+      joinUrl,
       webLink: response.webLink,
     };
+  }
+
+  // 5. Update calendar event with candidate details (PATCH)
+  async updateTeamsMeeting(
+    eventId: string,
+    params: {
+      candidateName: string;
+      candidateEmail: string;
+      role: string;
+      description: string;
+      panelEmails: string[];
+      sendAsTeamsMeeting?: boolean;
+      teamsMeetingUrl?: string;
+    },
+    accessToken: string
+  ): Promise<any> {
+    const endpoint = `/me/events/${encodeURIComponent(eventId)}`;
+
+    const attendees = [];
+    if (params.candidateEmail && params.candidateEmail !== 'pending@assign.com' && params.candidateEmail !== '') {
+      attendees.push({
+        emailAddress: {
+          address: params.candidateEmail,
+          name: params.candidateName,
+        },
+        type: 'required',
+      });
+    }
+    
+    attendees.push(
+      ...params.panelEmails.map((email) => ({
+        emailAddress: {
+          address: email,
+          name: email.split('@')[0], // Fallback name
+        },
+        type: 'required',
+      }))
+    );
+
+    let joinUrl = params.teamsMeetingUrl;
+    if (!joinUrl && params.sendAsTeamsMeeting !== false) {
+      try {
+        const eventDetail = await this.fetchGraph(`/me/events/${encodeURIComponent(eventId)}`, accessToken);
+        joinUrl = eventDetail.onlineMeeting?.joinUrl || eventDetail.onlineMeetingUrl;
+      } catch (e) {
+        console.error('Failed to fetch event detail for join URL:', e);
+      }
+    }
+
+    const body: any = {
+      subject: `Interview: ${params.candidateName} - ${params.role}`,
+      body: {
+        contentType: 'html',
+        content: `
+          <p>Hi ${params.candidateName || 'Candidate'},</p>
+          <p>We are happy to take your candidature for the First level of Discussion.</p>
+          <p>Blocking your calendar for the Technical Interview. Kindly make yourself available for the same. Please find below few general instructions.</p>
+          <ol>
+            <li>Join at least five minutes prior to the scheduled time.</li>
+            <li>Make sure you have stable internet connectivity, at least 5mbps.</li>
+            <li>Check your microphone and camera settings before the start of the interview.</li>
+            <li>Join the interview using a laptop/desktop only.</li>
+            <li>Please join the link via web if you do not have Microsoft teams installed.</li>
+          </ol>
+          ${joinUrl ? `
+            <p style="font-size: 16px; margin: 20px 0;">
+              <strong>Microsoft Teams Meeting Link:</strong><br />
+              <a href="${joinUrl}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                Join Microsoft Teams Meeting
+              </a>
+            </p>
+            <p style="font-size: 12px; color: #64748b;">
+              Or copy and paste this link in your browser:<br />
+              <a href="${joinUrl}" style="color: #6366f1;">${joinUrl}</a>
+            </p>
+          ` : ''}
+          <p>Regards,<br />TA Team<br />JMAN Group</p>
+          <hr />
+          <p><strong>Role/Focus:</strong> ${params.role}</p>
+          ${params.description ? `<p>${params.description.replace(/\n/g, '<br />')}</p>` : ''}
+        `,
+      },
+      attendees,
+    };
+
+    body.isOnlineMeeting = params.sendAsTeamsMeeting !== false;
+    if (params.sendAsTeamsMeeting !== false) {
+      body.onlineMeetingProvider = 'teamsForBusiness';
+    }
+
+    return await this.fetchGraph(endpoint, accessToken, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Delete a calendar event
+  async deleteCalendarEvent(eventId: string, accessToken: string): Promise<void> {
+    const endpoint = `/me/events/${encodeURIComponent(eventId)}`;
+    await this.fetchGraph(endpoint, accessToken, {
+      method: 'DELETE',
+    });
   }
 }
 
 export const graph = new GraphService();
+

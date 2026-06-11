@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { clearSession } from '@/lib/session';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   await clearSession();
-  const url = new URL('/', request.url);
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(new URL('/', request.url));
+  return response;
 }
