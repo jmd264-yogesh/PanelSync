@@ -32,13 +32,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Recruiter session is expired or not logged in' }, { status: 401 });
     }
 
+    // Check and auto-assign candidate if pending
+    let finalCandidateName = interview.candidateName;
+    let finalCandidateEmail = interview.candidateEmail;
+    let mappedCandidate = null;
+
+    if (interview.candidateName === 'Pending Assignment') {
+      const [waitingCandidate] = await dbClient
+        .select()
+        .from(schema.uploadedCandidates)
+        .where(eq(schema.uploadedCandidates.status, 'WAITING'))
+        .orderBy(schema.uploadedCandidates.createdAt)
+        .limit(1);
+
+      if (waitingCandidate) {
+        finalCandidateName = waitingCandidate.name;
+        finalCandidateEmail = waitingCandidate.email;
+        mappedCandidate = waitingCandidate;
+
+        // Update candidate in DB
+        await dbClient
+          .update(schema.uploadedCandidates)
+          .set({ status: 'MAPPED', mappedInterviewId: interview.id })
+          .where(eq(schema.uploadedCandidates.id, waitingCandidate.id));
+
+        // Update interview details in DB
+        await dbClient
+          .update(schema.interviews)
+          .set({
+            candidateName: finalCandidateName,
+            candidateEmail: finalCandidateEmail,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.interviews.id, interview.id));
+      }
+    }
+
     // 3. Create Microsoft Teams calendar event
-    const description = `Interview scheduled by panelist ${panel.name} selecting slot option.`;
+    const description = mappedCandidate
+      ? `Interview scheduled by panelist ${panel.name} selecting slot option. Candidate automatically mapped from bulk upload queue.`
+      : `Interview scheduled by panelist ${panel.name} selecting slot option.`;
+
     const meeting = await graph.createTeamsMeeting(
       tokenInfo.email,
       {
-        candidateName: interview.candidateName,
-        candidateEmail: interview.candidateEmail,
+        candidateName: finalCandidateName,
+        candidateEmail: finalCandidateEmail,
         role: interview.role,
         description,
         startTime,

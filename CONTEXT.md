@@ -34,6 +34,8 @@ src/
 │       ├── auth/                 # /api/auth/callback, /api/auth/signout
 │       ├── users/                # /api/users/search  — Graph user search proxy
 │       ├── panelists/            # /api/panelists — GET/POST/DELETE panelist directory
+│       ├── candidates/           # GET/POST candidates queue & upload
+│       │   └── [id]/             # DELETE single candidate
 │       └── interviews/
 │           ├── create/           # POST — create interview + panels
 │           ├── [id]/             # GET/PATCH/DELETE single interview
@@ -73,6 +75,7 @@ Connection string env var: `DATABASE_URL`
 | `interview_panels` | `id`, `interview_id` (FK→interviews cascade), `user_id` (Graph ID), `name`, `email`, `token` (unique URL token), `status` (PENDING/SUBMITTED), `submitted_at` |
 | `panel_availabilities` | `id`, `panel_id` (FK→interview_panels cascade), `start_time`, `end_time` |
 | `panelists` | `id` (Graph user ID), `display_name`, `email`, `roles` (text[] e.g. ['L1','L2']), `created_at` |
+| `uploaded_candidates` | `id`, `name`, `email`, `status` (WAITING/MAPPED), `mapped_interview_id` (FK→interviews cascade), `created_at` |
 
 ### Interview Status Flow
 ```
@@ -98,6 +101,10 @@ All methods are async. Key ones:
 - `db.getPanelists()` — panelist directory
 - `db.addPanelist(user, roles)` — upsert
 - `db.removePanelist(id)`
+- `db.getUploadedCandidates()` — get all candidates in queue
+- `db.addUploadedCandidates(candidates)` — bulk insert candidates
+- `db.deleteUploadedCandidate(id)` — delete candidate from queue
+- `db.autoMapPendingCandidates(tokenInfo)` — map waiting candidates to ready L1 panels
 
 ---
 
@@ -190,7 +197,24 @@ Later, candidate is attached via `POST /api/interviews/assign-candidate`.
 
 ---
 
-## 8. Availability Submission (`src/app/availability/[token]`)
+## 8. Candidate Bulk Upload and Automated Mapping Flow (New Flow)
+
+> This flow handles bulk uploads of candidates and their automatic pairing to L1 interview slots.
+
+1. Recruiter uploads an Excel (.xlsx, .xls) or CSV template in the **Candidate Queue** dashboard tab.
+2. The candidates are saved into `uploaded_candidates` table with status `WAITING`.
+3. The system immediately checks for any "ready" L1 interviews (which have `candidateName = 'Pending Assignment'`, status is `COLLECTED`, and have a confirmed/booked slot).
+4. If found, it automatically maps the oldest waiting candidates to these L1 interviews:
+   - Updates the interview's candidate details.
+   - Sets the interview status to `SCHEDULED`.
+   - Patches the Microsoft Teams calendar event with candidate name and email.
+   - Marks the candidate as `MAPPED` in the database.
+5. If no ready panels are available, candidates wait in the queue (`WAITING`).
+6. Once a panelist accepts/books a slot for a pending assignment L1 interview (calling `/api/availability/select-slot`), the system checks for waiting candidates and automatically maps the oldest waiting candidate to that interview immediately.
+
+---
+
+## 9. Availability Submission (`src/app/availability/[token]`)
 
 - Public page, no auth required
 - Token in URL → `db.getInterviewByPanelToken(token)` → shows interview details
@@ -200,7 +224,7 @@ Later, candidate is attached via `POST /api/interviews/assign-candidate`.
 
 ---
 
-## 9. Environment Variables
+## 10. Environment Variables
 
 ```env
 DATABASE_URL=                    # Neon Postgres connection string
@@ -213,7 +237,7 @@ SESSION_SECRET=                  # JWT signing secret (for session cookies)
 
 ---
 
-## 10. Key Conventions & Gotchas
+## 11. Key Conventions & Gotchas
 
 - **Next.js 16 App Router** — all server components in `page.tsx`, client logic in `*Client.tsx` files
 - **No Tailwind** — vanilla CSS only; design tokens live in `globals.css` as CSS custom properties (`--primary`, `--border-glass`, `--radius-md`, etc.)
@@ -227,7 +251,7 @@ SESSION_SECRET=                  # JWT signing secret (for session cookies)
 
 ---
 
-## 11. Running Locally
+## 12. Running Locally
 
 ```bash
 npm run dev        # Start dev server (Next.js on port 3000)

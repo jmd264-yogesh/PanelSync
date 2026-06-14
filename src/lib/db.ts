@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import * as schema from './schema';
 
 export interface PanelAvailability {
@@ -47,6 +47,17 @@ export interface Panelist {
   roles: ('L1' | 'L2')[]; // L1 or L2 panel capabilities
   createdAt: string;
 }
+
+export interface UploadedCandidate {
+  id: string;
+  name: string;
+  email: string;
+  status: 'WAITING' | 'MAPPED';
+  mappedInterviewId?: string;
+  preferredDate?: string;
+  createdAt: string;
+}
+
 
 // 1. Initialize Drizzle Neon HTTP Serverless client
 const connectionString = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
@@ -450,5 +461,192 @@ export const db = {
     }
     await dbClient.delete(schema.allowedRecruiters).where(eq(schema.allowedRecruiters.email, normalizedEmail));
     return true;
+  },
+
+  // Get uploaded candidates
+  getUploadedCandidates: async (): Promise<UploadedCandidate[]> => {
+    const res = await dbClient.select().from(schema.uploadedCandidates).orderBy(desc(schema.uploadedCandidates.createdAt));
+    return res.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      status: row.status as 'WAITING' | 'MAPPED',
+      mappedInterviewId: row.mappedInterviewId || undefined,
+      preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : undefined,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  // Add uploaded candidates
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate?: string }[]): Promise<boolean> => {
+    for (const c of candidates) {
+      const id = crypto.randomUUID();
+      await dbClient.insert(schema.uploadedCandidates).values({
+        id,
+        name: c.name,
+        email: c.email,
+        status: 'WAITING',
+        preferredDate: c.preferredDate ? new Date(c.preferredDate) : null,
+      });
+    }
+    return true;
+  },
+
+  // Update candidate date
+  updateCandidateDate: async (id: string, preferredDate: string | null): Promise<boolean> => {
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({
+        preferredDate: preferredDate ? new Date(preferredDate) : null,
+      })
+      .where(eq(schema.uploadedCandidates.id, id));
+    return true;
+  },
+
+  // Delete uploaded candidate
+  deleteUploadedCandidate: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.uploadedCandidates).where(eq(schema.uploadedCandidates.id, id));
+    return true;
+  },
+
+  // Auto-map pending candidates to L1 interviews
+  autoMapPendingCandidates: async (tokenInfo?: { token: string; email: string }): Promise<{ mappedCount: number }> => {
+    let mappedCount = 0;
+    try {
+      // a. Fetch all WAITING candidates ordered by oldest first
+      const waitingCandidates = await dbClient
+        .select()
+        .from(schema.uploadedCandidates)
+        .where(eq(schema.uploadedCandidates.status, 'WAITING'))
+        .orderBy(schema.uploadedCandidates.createdAt);
+        
+      if (waitingCandidates.length === 0) {
+        return { mappedCount };
+      }
+      
+      // b. Fetch all L1 interviews that have candidateName = 'Pending Assignment' and status = 'COLLECTED'
+      const allInterviews = await db.getInterviews();
+      const readyL1Interviews = allInterviews.filter((i) => {
+        const isL1 = i.role.toLowerCase().includes('l1');
+        const isPending = i.candidateName === 'Pending Assignment';
+        const isCollected = i.status === 'COLLECTED';
+        const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
+        return isL1 && isPending && isCollected && hasSlot;
+      });
+      
+      if (readyL1Interviews.length === 0) {
+        return { mappedCount };
+      }
+      
+      const limit = Math.min(waitingCandidates.length, readyL1Interviews.length);
+      
+      // Avoid circular dependency by importing session and graph dynamically
+      const { getAnyValidAccessToken } = await import('./session');
+      const { graph } = await import('./graph');
+      
+      let activeToken = tokenInfo?.token;
+      let recruiterEmail = tokenInfo?.email;
+      if (!activeToken || !recruiterEmail) {
+        const anyToken = await getAnyValidAccessToken();
+        if (anyToken) {
+          activeToken = anyToken.token;
+          recruiterEmail = anyToken.email;
+        }
+      }
+      
+      for (let i = 0; i < limit; i++) {
+        const candidate = waitingCandidates[i];
+        const interview = readyL1Interviews[i];
+        const now = new Date();
+        
+        // 1. Update database interview record
+        await dbClient
+          .update(schema.interviews)
+          .set({
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            status: 'SCHEDULED',
+            updatedAt: now,
+          })
+          .where(eq(schema.interviews.id, interview.id));
+          
+        // 2. Update candidate record in queue
+        await dbClient
+          .update(schema.uploadedCandidates)
+          .set({
+            status: 'MAPPED',
+            mappedInterviewId: interview.id,
+          })
+          .where(eq(schema.uploadedCandidates.id, candidate.id));
+          
+        // 3. Update Microsoft Graph calendar event
+        if (activeToken && interview.calendarEventId) {
+          try {
+            const panelEmails = interview.panels.map((p) => p.email);
+            const description = `Interview scheduled via Microsoft Teams Scheduler. Candidate automatically mapped from bulk upload queue.`;
+            
+            await graph.updateTeamsMeeting(
+              interview.calendarEventId,
+              {
+                candidateName: candidate.name,
+                candidateEmail: candidate.email,
+                role: interview.role,
+                description,
+                panelEmails,
+                sendAsTeamsMeeting: true,
+                teamsMeetingUrl: interview.teamsMeetingUrl || undefined,
+              },
+              activeToken
+            );
+          } catch (graphError: any) {
+            console.error(`Failed to update MS Graph event ${interview.calendarEventId} for auto-mapped candidate ${candidate.email}:`, graphError);
+            
+            const errMsg = graphError instanceof Error ? graphError.message : String(graphError);
+            if (errMsg.includes('404') || errMsg.includes('ErrorItemNotFound')) {
+              console.log('Calendar event not found in Outlook store during auto-mapping. Re-creating calendar event on the fly...');
+              try {
+                if (interview.scheduledSlotStart && interview.scheduledSlotEnd && recruiterEmail) {
+                  const panelEmails = interview.panels.map((p) => p.email);
+                  const description = `Interview scheduled via Microsoft Teams Scheduler. Re-created after original event was not found during auto-mapping.`;
+                  
+                  const meeting = await graph.createTeamsMeeting(
+                    recruiterEmail,
+                    {
+                      candidateName: candidate.name,
+                      candidateEmail: candidate.email,
+                      role: interview.role,
+                      description,
+                      startTime: interview.scheduledSlotStart,
+                      endTime: interview.scheduledSlotEnd,
+                      panelEmails,
+                    },
+                    activeToken
+                  );
+                  
+                  // Update database record with new calendar details
+                  await dbClient
+                    .update(schema.interviews)
+                    .set({
+                      teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',
+                      calendarEventId: meeting.id || '',
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(schema.interviews.id, interview.id));
+                    
+                  console.log('Successfully re-created calendar event:', meeting.id);
+                }
+              } catch (recreateError) {
+                console.error('Failed to re-create calendar event during auto-mapping:', recreateError);
+              }
+            }
+          }
+        }
+        
+        mappedCount++;
+      }
+    } catch (err) {
+      console.error('Error in autoMapPendingCandidates:', err);
+    }
+    return { mappedCount };
   },
 };

@@ -5,8 +5,10 @@ import {
   Interview, 
   InterviewPanel, 
   PanelAvailability,
-  Panelist
+  Panelist,
+  UploadedCandidate
 } from '@/lib/db';
+import * as XLSX from 'xlsx';
 import { GraphUser } from '@/lib/graph';
 import {
   Plus,
@@ -36,10 +38,20 @@ interface DashboardClientProps {
 
 export default function DashboardClient({ initialInterviews, initialPanelists }: DashboardClientProps) {
   // Navigation & DB States
-  const [activeTab, setActiveTab] = useState<'interviews' | 'panelists' | 'recruiters'>('interviews');
+  const [activeTab, setActiveTab] = useState<'interviews' | 'panelists' | 'recruiters' | 'candidates'>('interviews');
   const [interviews, setInterviews] = useState<Interview[]>(initialInterviews);
   const [panelists, setPanelists] = useState<Panelist[]>(initialPanelists);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
+
+  // Candidates Queue States
+  const [candidates, setCandidates] = useState<UploadedCandidate[]>([]);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
+  const [isUploadingCandidates, setIsUploadingCandidates] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
+  const [uploadDefaultDate, setUploadDefaultDate] = useState('');
 
   // View States
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -74,6 +86,185 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       fetchRecruiters();
     }
   }, [activeTab]);
+
+  const fetchCandidates = async () => {
+    setIsLoadingCandidates(true);
+    try {
+      const res = await fetch('/api/candidates');
+      if (res.ok) {
+        const data = await res.json();
+        setCandidates(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch candidates:', err);
+    } finally {
+      setIsLoadingCandidates(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'candidates') {
+      fetchCandidates();
+    }
+  }, [activeTab]);
+
+  const parseExcelDate = (value: any): string | undefined => {
+    if (!value) return undefined;
+    
+    // JS Date object
+    if (value instanceof Date) {
+      return value.toISOString().split('T')[0];
+    }
+    
+    // Excel numeric date value
+    if (typeof value === 'number') {
+      const date = new Date((value - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+    }
+    
+    // General date parsing
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    
+    return undefined;
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = 'data:text/csv;charset=utf-8,Name,Email,Date\nJohn Doe,john.doe@example.com,2026-06-15\nJane Smith,jane.smith@example.com,';
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'candidate_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingCandidates(true);
+    setUploadError(null);
+    setUploadSuccessMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (!data) throw new Error('Could not read file data');
+
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json<any>(sheet);
+
+        if (json.length === 0) {
+          throw new Error('The spreadsheet is empty.');
+        }
+
+        const parsedCandidates = json
+          .map((row) => {
+            const keys = Object.keys(row);
+            const nameKey = keys.find((k) => k.toLowerCase() === 'name');
+            const emailKey = keys.find((k) => k.toLowerCase() === 'email');
+            const dateKey = keys.find((k) => k.toLowerCase() === 'date' || k.toLowerCase() === 'preferred date' || k.toLowerCase() === 'interview date');
+            
+            if (nameKey && emailKey) {
+              const name = String(row[nameKey]).trim();
+              const email = String(row[emailKey]).trim();
+              const rawDate = dateKey ? row[dateKey] : undefined;
+              const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
+
+              return {
+                name,
+                email,
+                preferredDate,
+              };
+            }
+            return null;
+          })
+          .filter((c): c is { name: string; email: string; preferredDate: string | undefined } => c !== null && c.name !== '' && c.email !== '');
+
+        if (parsedCandidates.length === 0) {
+          throw new Error("Could not find matching 'Name' and 'Email' columns in the uploaded file.");
+        }
+
+        const res = await fetch('/api/candidates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidates: parsedCandidates }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Failed to upload candidates');
+        }
+
+        const result = await res.json();
+        setCandidates(result.candidates);
+        setInterviews(result.interviews);
+        setUploadSuccessMessage(
+          `Successfully uploaded ${parsedCandidates.length} candidate(s). ${result.mappedCount} candidate(s) were automatically mapped to L1 panels.`
+        );
+      } catch (err: any) {
+        console.error(err);
+        setUploadError(err.message || 'An error occurred during file parsing or upload.');
+      } finally {
+        setIsUploadingCandidates(false);
+        e.target.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      setUploadError('Failed to read file.');
+      setIsUploadingCandidates(false);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUpdateCandidateDate = async (id: string, preferredDate: string) => {
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate: preferredDate || null }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update candidate preferred date');
+      }
+
+      const result = await res.json();
+      setCandidates(result.candidates);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error updating candidate date');
+    }
+  };
+
+  const handleDeleteCandidate = async (id: string) => {
+    if (!confirm('Are you sure you want to remove this candidate from the queue?')) return;
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(result.candidates);
+      } else {
+        alert('Failed to delete candidate.');
+      }
+    } catch (err) {
+      console.error('Error deleting candidate:', err);
+    }
+  };
 
   const handleAddRecruiter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +362,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   });
   const [defaultEndDate, setDefaultEndDate] = useState(() => {
     const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 2); // 2 days default window
+    tomorrow.setDate(tomorrow.getDate() + 1); // Same day default window
     return tomorrow.toISOString().split('T')[0];
   });
 
@@ -993,6 +1184,21 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
           }}
         >
           Recruiters
+        </button>
+        <button
+          onClick={() => { setActiveTab('candidates'); setSelectedInterview(null); setShowCreateForm(false); }}
+          className="btn btn-sm"
+          style={{
+            background: activeTab === 'candidates' ? 'rgba(99,102,241,0.1)' : 'transparent',
+            border: activeTab === 'candidates' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
+            color: activeTab === 'candidates' ? 'var(--primary)' : 'var(--text-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '0.4rem 1rem',
+            fontWeight: 600,
+            fontSize: '0.85rem',
+          }}
+        >
+          Candidate Queue
         </button>
       </div>
 
@@ -2880,6 +3086,273 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
           </div>
         </div>
       )}
+
+      {/* VIEW D: CANDIDATES QUEUE TAB */}
+      {activeTab === 'candidates' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+            
+            {/* Left Column: Upload area */}
+            <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Users size={18} className="text-primary" />
+                Candidate Bulk Upload
+              </h3>
+              <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
+                Upload an Excel template or CSV containing candidate <strong>Name</strong> and <strong>Email</strong> to add them to the queue.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                {/* Default Date Selection (Optional) */}
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Default Interview Date (Optional)</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={uploadDefaultDate}
+                    onChange={(e) => setUploadDefaultDate(e.target.value)}
+                    min={todayStr}
+                    style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+                  />
+                </div>
+                <div style={{
+                  border: '2px dashed var(--border-glass)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '2.5rem 1.5rem',
+                  textAlign: 'center',
+                  background: 'rgba(0, 0, 0, 0.15)',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'var(--transition-fast)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = ''}
+                >
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleExcelUpload}
+                    disabled={isUploadingCandidates}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer'
+                    }}
+                  />
+                  {isUploadingCandidates ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <Loader2 size={32} className="animate-spin text-primary" />
+                      <span className="text-xs text-muted">Parsing & Uploading File...</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <Plus size={32} className="text-muted" />
+                      <span className="text-xs font-semibold text-main">Click or Drag File Here</span>
+                      <span className="text-xxs text-muted">Supports XLSX, XLS, CSV</span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleDownloadTemplate}
+                  className="btn btn-secondary"
+                  style={{ width: '100%' }}
+                >
+                  Download CSV Template
+                </button>
+
+                {uploadError && (
+                  <div style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem',
+                    color: '#f87171',
+                    fontSize: '0.8rem'
+                  }}>
+                    {uploadError}
+                  </div>
+                )}
+
+                {uploadSuccessMessage && (
+                  <div style={{
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem',
+                    color: '#34d399',
+                    fontSize: '0.8rem'
+                  }}>
+                    {uploadSuccessMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Queue Listing */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', fontFamily: 'var(--font-heading)' }}>
+                    Authorized Candidate Queue
+                  </h3>
+                  <p className="text-muted text-xs">
+                    List of candidates uploaded and waiting for/mapped to L1 interviews.
+                  </p>
+                </div>
+
+                {/* Filters */}
+                <div className="flex-gap-2">
+                  <div style={{ position: 'relative', width: '180px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search candidate..."
+                      className="form-input"
+                      value={candidateSearchQuery}
+                      onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                      style={{ paddingLeft: '28px', fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)' }}
+                    />
+                  </div>
+                  <select
+                    className="form-input"
+                    value={candidateStatusFilter}
+                    onChange={(e) => setCandidateStatusFilter(e.target.value as any)}
+                    style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)' }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="WAITING">Waiting</option>
+                    <option value="MAPPED">Mapped</option>
+                  </select>
+                </div>
+              </div>
+
+              {isLoadingCandidates ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                  <Loader2 size={32} className="animate-spin text-primary" />
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Preferred Date</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
+                        <th style={{ padding: '0.75rem 1rem', width: '60px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {candidates
+                        .filter((c) => {
+                          const matchesQuery = c.name.toLowerCase().includes(candidateSearchQuery.toLowerCase()) ||
+                                               c.email.toLowerCase().includes(candidateSearchQuery.toLowerCase());
+                          const matchesStatus = candidateStatusFilter === 'all' || c.status === candidateStatusFilter;
+                          return matchesQuery && matchesStatus;
+                        })
+                        .map((candidate) => {
+                          const mappedIntv = candidate.mappedInterviewId 
+                            ? interviews.find((i) => i.id === candidate.mappedInterviewId)
+                            : null;
+
+                          return (
+                            <tr key={candidate.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }} className="search-item-hover">
+                              <td style={{ padding: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>{candidate.name}</td>
+                              <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{candidate.email}</td>
+                              <td style={{ padding: '1rem' }}>
+                                {candidate.status === 'WAITING' ? (
+                                  <input
+                                    type="date"
+                                    className="form-input"
+                                    value={candidate.preferredDate || ''}
+                                    onChange={(e) => handleUpdateCandidateDate(candidate.id, e.target.value)}
+                                    style={{
+                                      fontSize: '0.8rem',
+                                      padding: '0.2rem 0.4rem',
+                                      height: '28px',
+                                      width: '135px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: 'rgba(0, 0, 0, 0.3)',
+                                      border: '1px solid var(--border-glass)',
+                                      color: 'var(--text-main)'
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                    {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : 'N/A'}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                {new Date(candidate.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </td>
+                              <td style={{ padding: '1rem' }}>
+                                {candidate.status === 'WAITING' ? (
+                                  <span className="badge badge-pending">Waiting</span>
+                                ) : (
+                                  <span className="badge badge-success">Mapped</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
+                                {mappedIntv ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
+                                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                      {mappedIntv.scheduledSlotStart 
+                                        ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                        : 'Pending Slot'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted font-italic">—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                <button
+                                  onClick={() => handleDeleteCandidate(candidate.id)}
+                                  disabled={candidate.status === 'MAPPED'}
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
+                                    color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                    padding: '0.2rem'
+                                  }}
+                                  onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
+                                  onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
+                                  title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                      {candidates.length === 0 && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            No candidates registered in the queue. Download the template on the left and upload candidates.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Request Slot Overlay Modal (New Automagic Flow) */}
       {reqPanelists.length > 0 && (
