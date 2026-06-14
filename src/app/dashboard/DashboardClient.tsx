@@ -52,6 +52,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [uploadDefaultDate, setUploadDefaultDate] = useState('');
+  const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
 
   // View States
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -246,6 +247,26 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Error updating candidate date');
+    }
+  };
+
+  const handleMarkAsSelected = async (id: string) => {
+    if (!confirm('Mark this candidate as SELECTED? This is the final outcome and cannot be changed by panelists.')) return;
+    setSelectingCandidateId(id);
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcomeStatus: 'SELECTED' }),
+      });
+      if (!res.ok) throw new Error('Failed to mark as selected');
+      const result = await res.json();
+      setCandidates(result.candidates);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error marking candidate as selected');
+    } finally {
+      setSelectingCandidateId(null);
     }
   };
 
@@ -3245,9 +3266,10 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Preferred Date</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
-                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Outcome</th>
                         <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
-                        <th style={{ padding: '0.75rem 1rem', width: '60px' }}></th>
+                        <th style={{ padding: '0.75rem 1rem', width: '80px' }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3301,12 +3323,23 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                                   <span className="badge badge-success">Mapped</span>
                                 )}
                               </td>
+                              <td style={{ padding: '1rem' }}>
+                                {(() => {
+                                  const os = (candidate as any).outcomeStatus;
+                                  if (!os || os === 'PENDING') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending</span>;
+                                  if (os === 'PASSED_L1') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Passed L1</span>;
+                                  if (os === 'PASSED_L2') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Passed L2</span>;
+                                  if (os === 'SELECTED') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Selected</span>;
+                                  if (os === 'REJECTED') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                                  return <span className="badge" style={{ fontSize: '0.62rem' }}>{os}</span>;
+                                })()}
+                              </td>
                               <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
                                 {mappedIntv ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                     <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
                                     <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                      {mappedIntv.scheduledSlotStart 
+                                      {mappedIntv.scheduledSlotStart
                                         ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
                                         : 'Pending Slot'}
                                     </span>
@@ -3316,22 +3349,36 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                                 )}
                               </td>
                               <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                <button
-                                  onClick={() => handleDeleteCandidate(candidate.id)}
-                                  disabled={candidate.status === 'MAPPED'}
-                                  style={{
-                                    border: 'none',
-                                    background: 'transparent',
-                                    cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
-                                    color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
-                                    padding: '0.2rem'
-                                  }}
-                                  onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
-                                  onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
-                                  title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                  {(candidate as any).outcomeStatus === 'PASSED_L2' && (
+                                    <button
+                                      onClick={() => handleMarkAsSelected(candidate.id)}
+                                      disabled={selectingCandidateId === candidate.id}
+                                      className="btn btn-sm"
+                                      style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
+                                      title="Mark as Selected (final outcome)"
+                                    >
+                                      {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
+                                      Select
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteCandidate(candidate.id)}
+                                    disabled={candidate.status === 'MAPPED'}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
+                                      color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                      padding: '0.2rem'
+                                    }}
+                                    onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
+                                    onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
+                                    title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -3339,7 +3386,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
                       {candidates.length === 0 && (
                         <tr>
-                          <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                          <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                             No candidates registered in the queue. Download the template on the left and upload candidates.
                           </td>
                         </tr>

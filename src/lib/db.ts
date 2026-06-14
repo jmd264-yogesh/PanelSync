@@ -55,7 +55,25 @@ export interface UploadedCandidate {
   status: 'WAITING' | 'MAPPED';
   mappedInterviewId?: string;
   preferredDate?: string;
+  outcomeStatus?: string;
   createdAt: string;
+}
+
+export interface PanelistInterview {
+  interviewId: string;
+  role: string;
+  duration: number;
+  scheduledSlotStart: string;
+  scheduledSlotEnd: string;
+  teamsMeetingUrl: string | null;
+  candidateName: string;
+  candidateEmail: string;
+  candidateId: string | null;
+  outcomeStatus: string | null;
+  panelId: string;
+  panelDecision: string | null;
+  panelFeedback: string | null;
+  panelistRoles: string[];
 }
 
 
@@ -473,6 +491,7 @@ export const db = {
       status: row.status as 'WAITING' | 'MAPPED',
       mappedInterviewId: row.mappedInterviewId || undefined,
       preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : undefined,
+      outcomeStatus: row.outcomeStatus || undefined,
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
   },
@@ -648,5 +667,89 @@ export const db = {
       console.error('Error in autoMapPendingCandidates:', err);
     }
     return { mappedCount };
+  },
+
+  // --- Panelist helpers ---
+
+  isPanelist: async (email: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const [row] = await dbClient
+      .select()
+      .from(schema.panelists)
+      .where(eq(schema.panelists.email, normalizedEmail))
+      .limit(1);
+    return !!row;
+  },
+
+  getPanelistByEmail: async (email: string): Promise<{ id: string; displayName: string; email: string; roles: string[] } | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.panelists)
+      .where(eq(schema.panelists.email, email.trim().toLowerCase()))
+      .limit(1);
+    if (!row) return null;
+    return { id: row.id, displayName: row.displayName, email: row.email, roles: row.roles };
+  },
+
+  getPanelistInterviews: async (panelistEmail: string): Promise<PanelistInterview[]> => {
+    const normalizedEmail = panelistEmail.trim().toLowerCase();
+
+    const panelRows = await dbClient
+      .select()
+      .from(schema.interviewPanels)
+      .where(eq(schema.interviewPanels.email, normalizedEmail));
+
+    const panelistRow = await db.getPanelistByEmail(normalizedEmail);
+    const panelistRoles = panelistRow?.roles ?? [];
+
+    const result: PanelistInterview[] = [];
+    for (const panel of panelRows) {
+      const [interview] = await dbClient
+        .select()
+        .from(schema.interviews)
+        .where(and(eq(schema.interviews.id, panel.interviewId), eq(schema.interviews.status, 'SCHEDULED')))
+        .limit(1);
+      if (!interview) continue;
+
+      const [candidate] = await dbClient
+        .select()
+        .from(schema.uploadedCandidates)
+        .where(eq(schema.uploadedCandidates.mappedInterviewId, interview.id))
+        .limit(1);
+
+      result.push({
+        interviewId: interview.id,
+        role: interview.role,
+        duration: interview.duration,
+        scheduledSlotStart: interview.scheduledSlotStart!.toISOString(),
+        scheduledSlotEnd: interview.scheduledSlotEnd!.toISOString(),
+        teamsMeetingUrl: interview.teamsMeetingUrl,
+        candidateName: interview.candidateName,
+        candidateEmail: interview.candidateEmail,
+        candidateId: candidate?.id ?? null,
+        outcomeStatus: candidate?.outcomeStatus ?? null,
+        panelId: panel.id,
+        panelDecision: (panel as any).decision ?? null,
+        panelFeedback: (panel as any).feedback ?? null,
+        panelistRoles,
+      });
+    }
+    return result;
+  },
+
+  submitPanelFeedback: async (panelId: string, feedback: string, decision: 'PASSED' | 'REJECTED'): Promise<boolean> => {
+    await dbClient
+      .update(schema.interviewPanels)
+      .set({ feedback, decision } as any)
+      .where(eq(schema.interviewPanels.id, panelId));
+    return true;
+  },
+
+  updateCandidateOutcome: async (candidateId: string, outcomeStatus: string): Promise<boolean> => {
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({ outcomeStatus } as any)
+      .where(eq(schema.uploadedCandidates.id, candidateId));
+    return true;
   },
 };

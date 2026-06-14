@@ -42,6 +42,8 @@ export const interviewPanels = pgTable('interview_panels', {
   token: varchar('token', { length: 255 }).unique().notNull(), // Link token
   status: varchar('status', { length: 50 }).notNull(), // PENDING, SUBMITTED
   submittedAt: timestamp('submitted_at'),
+  feedback: text('feedback'),
+  decision: varchar('decision', { length: 50 }), // PASSED | REJECTED
 }, (t) => [
   unique('unique_interview_email').on(t.interviewId, t.email)
 ]);
@@ -81,6 +83,7 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
   mappedInterviewId: varchar('mapped_interview_id', { length: 255 })
     .references(() => interviews.id, { onDelete: 'cascade' }),
   preferredDate: timestamp('preferred_date'),
+  outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
   createdAt: timestamp('created_at').defaultNow(),
 });
 

@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const clientId = process.env.AZURE_CLIENT_ID;
   const tenantId = process.env.AZURE_TENANT_ID || 'common';
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/callback`;
@@ -9,7 +9,8 @@ export async function GET() {
     return NextResponse.json({ error: 'AZURE_CLIENT_ID is not configured' }, { status: 500 });
   }
 
-  // Required Graph scopes for logging in, directory searching, chat sending, and scheduling events
+  const role = new URL(request.url).searchParams.get('role') || 'recruiter';
+
   const scopes = [
     'openid',
     'profile',
@@ -21,7 +22,8 @@ export async function GET() {
     'Calendars.ReadWrite',
   ].join(' ');
 
-  const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&response_mode=query&scope=${encodeURIComponent(scopes)}&state=mcp-auth`;
+  const state = `panelsync-auth|role=${role}`;
+  const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&response_mode=query&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`;
 
   return NextResponse.redirect(authUrl);
 }

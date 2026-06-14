@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
+  const stateParam = searchParams.get('state') || '';
+  const isPanelistLogin = stateParam.includes('role=panelist');
 
   if (error) {
     console.error('OAuth Callback Error:', error, errorDescription);
@@ -70,12 +72,21 @@ export async function GET(request: NextRequest) {
     const userData = await userResponse.json();
     const userEmail = (userData.mail || userData.userPrincipalName || '').toLowerCase().trim();
 
-    // 3. Verify that the user is an authorized recruiter
+    // 3. Verify role-based access
     const { db } = await import('@/lib/db');
-    const isAllowed = await db.isEmailAllowed(userEmail);
-    if (!isAllowed) {
-      console.warn(`Unauthorized sign-in attempt by email: ${userEmail}`);
-      return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
+
+    if (isPanelistLogin) {
+      const isPanelist = await db.isPanelist(userEmail);
+      if (!isPanelist) {
+        console.warn(`Panelist sign-in attempt by unregistered email: ${userEmail}`);
+        return NextResponse.redirect(new URL('/?error=not_a_panelist', request.url));
+      }
+    } else {
+      const isAllowed = await db.isEmailAllowed(userEmail);
+      if (!isAllowed) {
+        console.warn(`Unauthorized recruiter sign-in attempt by email: ${userEmail}`);
+        return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
+      }
     }
 
     // 4. Save session to server store and get sessionId
@@ -90,8 +101,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // 4. Construct response and set sessionId cookie directly
-    const response = NextResponse.redirect(new URL('/dashboard', request.url));
+    const redirectPath = isPanelistLogin ? '/panelist' : '/dashboard';
+    const response = NextResponse.redirect(new URL(redirectPath, request.url));
     response.cookies.set('sessionId', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

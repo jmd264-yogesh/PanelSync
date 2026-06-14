@@ -46,9 +46,17 @@ export async function PATCH(
       return NextResponse.json({ error: 'Missing candidate ID' }, { status: 400 });
     }
 
-    const { preferredDate } = await request.json();
+    const body = await request.json();
+
+    if ('outcomeStatus' in body) {
+      await db.updateCandidateOutcome(id, body.outcomeStatus);
+      const updatedList = await db.getUploadedCandidates();
+      return NextResponse.json({ success: true, candidates: updatedList });
+    }
+
+    const { preferredDate } = body;
     await db.updateCandidateDate(id, preferredDate || null);
-    
+
     const updatedList = await db.getUploadedCandidates();
     return NextResponse.json({ success: true, candidates: updatedList });
   } catch (error) {
