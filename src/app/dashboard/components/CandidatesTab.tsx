@@ -74,17 +74,57 @@ export default function CandidatesTab({
   }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  const parseExcelDate = (value: any): string | undefined => {
-    if (!value) return undefined;
-    if (value instanceof Date) return value.toISOString().split('T')[0];
-    if (typeof value === 'number') {
-      const date = new Date((value - 25569) * 86400 * 1000);
-      if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+  const formatDateParts = (year: number, month: number, day: number): string | undefined => {
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return undefined;
     }
-    const parsed = new Date(value);
-    if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+
+    return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+  };
+
+  const parseExcelDate = (value: unknown): string | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return formatDateParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+
+    if (typeof value === 'number') {
+      const parsed = XLSX.SSF.parse_date_code(value);
+      return parsed ? formatDateParts(parsed.y, parsed.m, parsed.d) : undefined;
+    }
+
+    const text = String(value).trim();
+    const isoMatch = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (isoMatch) {
+      return formatDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+    }
+
+    const dayFirstMatch = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (dayFirstMatch) {
+      return formatDateParts(Number(dayFirstMatch[3]), Number(dayFirstMatch[2]), Number(dayFirstMatch[1]));
+    }
+
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatDateParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    }
+
     return undefined;
   };
+
+  const normalizeHeader = (value: string) =>
+    value
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .toLowerCase()
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ');
 
   const handleDownloadTemplate = () => {
     const csvContent =
@@ -109,7 +149,7 @@ export default function CandidatesTab({
       try {
         const data = evt.target?.result;
         if (!data) throw new Error('Could not read file data');
-        const workbook = XLSX.read(data, { type: 'binary' });
+        const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<any>(sheet);
         if (json.length === 0) throw new Error('The spreadsheet is empty.');
@@ -118,22 +158,22 @@ export default function CandidatesTab({
         for (let i = 0; i < json.length; i++) {
           const row = json[i];
           const keys = Object.keys(row);
-          const nameKey = keys.find((k) => k.toLowerCase() === 'name');
-          const emailKey = keys.find((k) => k.toLowerCase() === 'email');
+          const nameKey = keys.find((k) => normalizeHeader(k) === 'name');
+          const emailKey = keys.find((k) => normalizeHeader(k) === 'email');
           if (nameKey && emailKey) {
             const name = String(row[nameKey]).trim();
             const email = String(row[emailKey]).trim();
             if (name === '' || email === '') continue;
 
             const dateKey = keys.find((k) => {
-              const val = k.toLowerCase();
+              const val = normalizeHeader(k);
               return val === 'date' || val === 'preferred date' || val === 'interview date' || val === 'drive date' || val === 'date of drive';
             });
             const rawDate = dateKey ? row[dateKey] : undefined;
             const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
 
             const collegeKey = keys.find((k) => {
-              const val = k.toLowerCase();
+              const val = normalizeHeader(k);
               return val === 'college' || val === 'institution' || val === 'university' || val === 'college name' || val === 'college name of drive';
             });
             const rawCollege = collegeKey ? String(row[collegeKey]).trim() : undefined;
@@ -327,7 +367,7 @@ export default function CandidatesTab({
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+      <div className="dashboard-two-column dashboard-two-column-wide" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
 
         {/* Left Column: Upload area and Single Add */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>

@@ -74,7 +74,7 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
+      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
         
         {/* Left: Add College Form */}
         <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>

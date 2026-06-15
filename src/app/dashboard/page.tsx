@@ -1,68 +1,67 @@
-import { getSession } from '@/lib/session';
+import { Calendar, LogOut, Sparkles } from 'lucide-react';
 import { redirect } from 'next/navigation';
+
+import { ThemeToggle } from '@/components/theme-toggle';
 import { db } from '@/lib/db';
+import { getSession } from '@/lib/session';
+
 import DashboardClient from './DashboardClient';
-import { Calendar } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const session = await getSession();
 
-  // If not logged in, redirect to login page
-  if (!session) {
-    redirect('/');
-  }
+  if (!session) redirect('/');
 
-  // Load interviews from JSON database
-  const interviews = await db.getInterviews();
-  const panelists = await db.getPanelists();
-  const colleges = await db.getColleges();
+  const [interviews, panelists, colleges] = await Promise.all([
+    db.getInterviews(),
+    db.getPanelists(),
+    db.getColleges(),
+  ]);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header navbar */}
-      <header style={{ borderBottom: '1px solid var(--border-glass)', padding: '1rem 0', background: 'rgba(0, 0, 0, 0.2)' }}>
-        <div className="container flex-between">
-          <div className="flex-gap-4">
-            <div style={{ backgroundColor: 'var(--primary)', padding: '0.4rem', borderRadius: 'var(--radius-sm)', display: 'flex' }}>
-              <Calendar size={20} color="#ffffff" />
-            </div>
-            <span style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
-              Panel<span className="gradient-accent-text">Sync</span>
-            </span>
-            <div style={{ borderLeft: '1px solid var(--border-glass)', height: '20px', marginLeft: '8px', paddingLeft: '12px' }} className="text-muted text-sm">
-              Recruiter Portal
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="app-container app-header-inner">
+          <div className="brand-lockup">
+            <div className="brand-mark"><Calendar size={20} /></div>
+            <div>
+              <div className="brand-name">Panel<span>Sync</span></div>
+              <div className="brand-context"><Sparkles size={11} /> Recruiter workspace</div>
             </div>
           </div>
-          
-          <div className="flex-gap-4">
-            <div className="text-right" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{session.user.displayName}</span>
-              <span className="text-muted text-xs">{session.user.email}</span>
+
+          <div className="header-actions">
+            <ThemeToggle />
+            <div className="user-summary">
+              <div className="user-avatar">{session.user.displayName.slice(0, 1).toUpperCase()}</div>
+              <div className="user-copy">
+                <span>{session.user.displayName}</span>
+                <small>{session.user.email}</small>
+              </div>
             </div>
-            <a href="/api/auth/signout" className="btn btn-secondary btn-sm" style={{ padding: '0.4rem 1rem' }}>
-              Sign Out
+            <a href="/api/auth/signout" className="header-signout">
+              <LogOut size={15} /> <span>Sign out</span>
             </a>
           </div>
         </div>
       </header>
 
-      {/* Main Dashboard Panel */}
-      <main style={{ flex: 1, padding: '2rem 0' }}>
-        <div className="container">
-          <DashboardClient 
-            initialInterviews={interviews} 
-            initialPanelists={panelists} 
-            initialColleges={colleges} 
+      <main className="app-main">
+        <div className="app-container">
+          <DashboardClient
+            initialInterviews={interviews}
+            initialPanelists={panelists}
+            initialColleges={colleges}
           />
         </div>
       </main>
 
-      <footer style={{ borderTop: '1px solid var(--border-glass)', padding: '1.5rem 0', marginTop: 'auto', background: 'rgba(0, 0, 0, 0.1)' }}>
-        <div className="container flex-between text-muted text-xs">
+      <footer className="app-footer">
+        <div className="app-container flex-between text-muted text-xs">
           <p>© 2026 PanelSync. Authenticated session active.</p>
-          <p>Connected to MS Tenant ID: {process.env.AZURE_TENANT_ID || 'common'}</p>
+          <p>Connected to Microsoft tenant</p>
         </div>
       </footer>
     </div>
