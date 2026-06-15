@@ -116,6 +116,14 @@ export default function InterviewsTab({
   const filteredInterviews = statusFilter === 'all' ? interviews : interviews.filter((i) => i.status === statusFilter);
   const commonSlots = selectedInterview ? getOverlappingSlots(selectedInterview) : [];
 
+  // L1 / L2 type derived counts
+  const statsL1Total = interviews.filter((i) => i.role.toLowerCase().includes('l1')).length;
+  const statsL2Total = interviews.filter((i) => i.role.toLowerCase().includes('l2')).length;
+  const statsL1Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l1')).length;
+  const statsL2Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l2')).length;
+  const statsL1Pending = interviews.filter((i) => i.status === 'PENDING' && i.role.toLowerCase().includes('l1')).length;
+  const statsL2Pending = interviews.filter((i) => i.status === 'PENDING' && i.role.toLowerCase().includes('l2')).length;
+
   const allNominations = interviews.flatMap((interview) =>
     interview.panels.map((p) => ({ ...p, interview }))
   );
@@ -391,18 +399,37 @@ export default function InterviewsTab({
       {/* Left: Interviews list & Panelist Tracker */}
       <div>
         {/* Stats Bar */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
-          {[
-            { label: 'Total', value: interviews.length, color: 'var(--text-muted)', active: statusFilter === 'all', onClick: () => setStatusFilter('all') },
-            { label: 'Pending', value: statsPending, color: '#f59e0b', active: statusFilter === 'PENDING', onClick: () => setStatusFilter('PENDING') },
-            { label: 'Ready', value: statsCollected, color: '#0ea5e9', active: statusFilter === 'COLLECTED', onClick: () => setStatusFilter('COLLECTED') },
-            { label: 'Scheduled', value: statsScheduled, color: '#10b981', active: statusFilter === 'SCHEDULED', onClick: () => setStatusFilter('SCHEDULED') },
-          ].map((stat) => (
-            <button key={stat.label} onClick={stat.onClick} style={{ background: stat.active ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${stat.active ? stat.color : 'var(--border-glass)'}`, borderRadius: 'var(--radius-md)', padding: '0.75rem 0.5rem', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition-fast)', color: 'inherit' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</div>
-            </button>
-          ))}
+        <div style={{ marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {/* Status filter row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+            {[
+              { label: 'Total', value: interviews.length, color: 'var(--text-muted)', active: statusFilter === 'all', onClick: () => setStatusFilter('all') },
+              { label: 'Pending', value: statsPending, color: '#f59e0b', active: statusFilter === 'PENDING', onClick: () => setStatusFilter('PENDING') },
+              { label: 'Ready', value: statsCollected, color: '#0ea5e9', active: statusFilter === 'COLLECTED', onClick: () => setStatusFilter('COLLECTED') },
+              { label: 'Scheduled', value: statsScheduled, color: '#10b981', active: statusFilter === 'SCHEDULED', onClick: () => setStatusFilter('SCHEDULED') },
+            ].map((stat) => (
+              <button key={stat.label} onClick={stat.onClick} style={{ background: stat.active ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${stat.active ? stat.color : 'var(--border-glass)'}`, borderRadius: 'var(--radius-md)', padding: '0.6rem 0.5rem', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition-fast)', color: 'inherit' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '0.15rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</div>
+              </button>
+            ))}
+          </div>
+          {/* L1 / L2 breakdown row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '0.4rem' }}>
+            {[
+              { label: 'L1 Total', value: statsL1Total, color: '#60a5fa', bg: 'rgba(96,165,250,0.06)', border: 'rgba(96,165,250,0.2)' },
+              { label: 'L1 Pending', value: statsL1Pending, color: '#fbbf24', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)' },
+              { label: 'L1 Scheduled', value: statsL1Scheduled, color: '#34d399', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.2)' },
+              { label: 'L2 Total', value: statsL2Total, color: '#a78bfa', bg: 'rgba(167,139,250,0.06)', border: 'rgba(167,139,250,0.2)' },
+              { label: 'L2 Pending', value: statsL2Pending, color: '#fbbf24', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)' },
+              { label: 'L2 Scheduled', value: statsL2Scheduled, color: '#34d399', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.2)' },
+            ].map((s) => (
+              <div key={s.label} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 'var(--radius-sm)', padding: '0.3rem 0.25rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Segmented Toggle */}
@@ -459,7 +486,13 @@ export default function InterviewsTab({
                       style={{ padding: '1rem 1.25rem 1rem 0', cursor: 'pointer', display: 'flex', gap: '0', overflow: 'hidden', transition: 'var(--transition-fast)' }}
                       onClick={() => { setSelectedInterview(interview); setShowCreateForm(false); setSelectedSlot(null); setDetailTab('overview'); }}
                     >
-                      <div style={{ width: '4px', background: statusBorderColor, flexShrink: 0, marginRight: '1rem', borderRadius: '4px 0 0 4px' }} />
+                      {/* Left accent: L1=blue, L2=purple, else status color */}
+                      {(() => {
+                        const isL1 = interview.role.toLowerCase().includes('l1');
+                        const isL2 = interview.role.toLowerCase().includes('l2');
+                        const typeColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : statusBorderColor;
+                        return <div style={{ width: '4px', background: typeColor, flexShrink: 0, marginRight: '1rem', borderRadius: '4px 0 0 4px' }} />;
+                      })()}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.65rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
@@ -467,10 +500,19 @@ export default function InterviewsTab({
                               {initials}
                             </div>
                             <div style={{ minWidth: 0 }}>
-                              <h4 style={{ fontSize: '0.95rem', marginBottom: '0', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
-                              </h4>
-                              <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{interview.role}</p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1px', flexWrap: 'wrap' }}>
+                                {/* L1 / L2 type pill */}
+                                {interview.role.toLowerCase().includes('l1') && (
+                                  <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', color: '#60a5fa', letterSpacing: '0.04em', flexShrink: 0 }}>L1</span>
+                                )}
+                                {interview.role.toLowerCase().includes('l2') && (
+                                  <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa', letterSpacing: '0.04em', flexShrink: 0 }}>L2</span>
+                                )}
+                                <h4 style={{ fontSize: '0.95rem', marginBottom: '0', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
+                                </h4>
+                              </div>
+                              <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{interview.role}</p>
                             </div>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
@@ -572,7 +614,15 @@ export default function InterviewsTab({
                     <div key={nom.id} className="glass-card" style={{ padding: '1.25rem' }}>
                       <div className="flex-between" style={{ marginBottom: '0.5rem' }}>
                         <div>
-                          <strong style={{ fontSize: '0.95rem' }}>{nom.name}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2px' }}>
+                            {nom.interview.role.toLowerCase().includes('l1') && (
+                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa' }}>L1</span>
+                            )}
+                            {nom.interview.role.toLowerCase().includes('l2') && (
+                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa' }}>L2</span>
+                            )}
+                            <strong style={{ fontSize: '0.95rem' }}>{nom.name}</strong>
+                          </div>
                           <span className="text-muted text-xs block" style={{ opacity: 0.8 }}>{nom.email}</span>
                         </div>
                         <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Responded</span>
@@ -635,9 +685,17 @@ export default function InterviewsTab({
                     <div key={interview.id} className="glass-card" style={{ padding: '1.25rem' }}>
                       <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                         <div>
-                          <strong style={{ fontSize: '0.95rem' }}>
-                            {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
-                          </strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2px' }}>
+                            {interview.role.toLowerCase().includes('l1') && (
+                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa' }}>L1</span>
+                            )}
+                            {interview.role.toLowerCase().includes('l2') && (
+                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa' }}>L2</span>
+                            )}
+                            <strong style={{ fontSize: '0.95rem' }}>
+                              {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
+                            </strong>
+                          </div>
                           <span className="text-muted text-xs block" style={{ opacity: 0.8, marginTop: '2px' }}>{interview.role} ({interview.duration} mins)</span>
                         </div>
                         <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>Awaiting Panels</span>

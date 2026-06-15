@@ -76,13 +76,37 @@ export default function PanelistsTab({
   const allL2Selected =
     l2Panelists.length > 0 && l2Panelists.every((p) => bulkSelectedL2Ids.includes(p.id));
 
-  // ── Active interview count per panelist ───────────────────────────────────
-  const activePanelistInterviewCount = (panelistId: string) =>
+  // ── Per-panelist stats helpers ────────────────────────────────────────────
+  /** Interviews where panelist has submitted availability (PENDING or COLLECTED — slot provided) */
+  const panelistSubmittedCount = (panelistId: string, type?: 'L1' | 'L2') =>
+    interviews.filter((i) => {
+      if (type && !i.role.toLowerCase().includes(type.toLowerCase())) return false;
+      return (
+        (i.status === 'PENDING' || i.status === 'COLLECTED' || i.status === 'SCHEDULED') &&
+        i.panels.some((p) => p.userId === panelistId && p.status === 'SUBMITTED')
+      );
+    }).length;
+
+  /** Completed (SCHEDULED) interviews where panelist participated */
+  const panelistScheduledCount = (panelistId: string, type?: 'L1' | 'L2') =>
+    interviews.filter((i) => {
+      if (type && !i.role.toLowerCase().includes(type.toLowerCase())) return false;
+      return i.status === 'SCHEDULED' && i.panels.some((p) => p.userId === panelistId);
+    }).length;
+
+  /** Interviews awaiting panelist response */
+  const panelistPendingCount = (panelistId: string) =>
     interviews.filter(
       (i) =>
-        (i.status === 'PENDING' || i.status === 'COLLECTED') &&
-        i.panels.some((p) => p.userId === panelistId)
+        i.status === 'PENDING' &&
+        i.panels.some((p) => p.userId === panelistId && p.status === 'PENDING')
     ).length;
+
+  // ── Column summary stats ──────────────────────────────────────────────────
+  const l1AvailableCount = l1Panelists.filter((p) => panelistPendingCount(p.id) === 0).length;
+  const l2AvailableCount = l2Panelists.filter((p) => panelistPendingCount(p.id) === 0).length;
+  const l1ScheduledTotal = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l1')).length;
+  const l2ScheduledTotal = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l2')).length;
 
   // ── Debounced admin Entra directory search ────────────────────────────────
   useEffect(() => {
@@ -96,10 +120,8 @@ export default function PanelistsTab({
         const res = await fetch(`/api/users/search?q=${encodeURIComponent(adminQuery)}`);
         if (res.ok) {
           const data = await res.json();
-          const filtered = data.filter(
-            (u: GraphUser) => !panelists.some((p) => p.id === u.id)
-          );
-          setAdminSearchResults(filtered);
+          // Allow already-registered panelists in results so their roles can be updated
+          setAdminSearchResults(data);
         }
       } catch (err) {
         console.error('Error in admin search:', err);
@@ -402,7 +424,9 @@ export default function PanelistsTab({
                   borderRadius: 'var(--radius-md)', boxShadow: '0 8px 16px rgba(0,0,0,0.5)',
                   marginTop: '4px', maxHeight: '180px', overflowY: 'auto'
                 }}>
-                  {adminSearchResults.map((user) => (
+                  {adminSearchResults.map((user) => {
+                    const alreadyRegistered = panelists.find((p) => p.id === user.id);
+                    return (
                     <div
                       key={user.id}
                       style={{ padding: '0.5rem 1rem', cursor: 'pointer', transition: 'var(--transition-fast)' }}
@@ -411,12 +435,25 @@ export default function PanelistsTab({
                         setAdminSelectedUser(user);
                         setAdminQuery(user.displayName);
                         setAdminSearchResults([]);
+                        // Pre-fill existing roles if updating
+                        if (alreadyRegistered) setAdminRoles(alreadyRegistered.roles);
                       }}
                     >
-                      <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user.displayName}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user.displayName}</div>
+                        {alreadyRegistered && (
+                          <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                            {alreadyRegistered.roles.map((r) => (
+                              <span key={r} style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', borderRadius: '3px', background: r === 'L1' ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)', border: r === 'L1' ? '1px solid rgba(96,165,250,0.3)' : '1px solid rgba(167,139,250,0.3)', color: r === 'L1' ? '#60a5fa' : '#a78bfa', fontWeight: 700 }}>{r}</span>
+                            ))}
+                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', borderRadius: '3px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981', fontWeight: 600 }}>registered</span>
+                          </div>
+                        )}
+                      </div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{user.mail || user.userPrincipalName}</div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -504,7 +541,22 @@ export default function PanelistsTab({
 
               {/* L1 Column */}
               <div>
-                <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                {/* L1 Column summary stats */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div style={{ flex: 1, background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#60a5fa', lineHeight: 1 }}>{l1Panelists.length}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total L1</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l1ScheduledTotal}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#4ade80', lineHeight: 1 }}>{l1AvailableCount}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available</div>
+                  </div>
+                </div>
+                <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(96,165,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
                   <input
                     type="checkbox"
                     checked={allL1Selected}
@@ -512,7 +564,8 @@ export default function PanelistsTab({
                     style={{ accentColor: '#60a5fa', cursor: 'pointer' }}
                     title="Select All L1 Panelists"
                   />
-                  L1 Screening Panels ({l1Panelists.length})
+                  <span style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700 }}>L1</span>
+                  Screening Panels ({l1Panelists.length})
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                   {l1Panelists.length === 0 ? (
@@ -520,13 +573,16 @@ export default function PanelistsTab({
                   ) : (
                     l1Panelists.map((p) => {
                       const isSelected = bulkSelectedL1Ids.includes(p.id);
+                      const scheduled = panelistScheduledCount(p.id, 'L1');
+                      const submitted = panelistSubmittedCount(p.id, 'L1');
+                      const pending = panelistPendingCount(p.id);
                       return (
                         <div
                           key={p.id}
                           style={{
-                            display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem',
-                            background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)',
-                            border: isSelected ? '1px solid rgba(99, 102, 241, 0.35)' : '1px solid var(--border-glass)',
+                            display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.65rem',
+                            background: isSelected ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.01)',
+                            border: isSelected ? '1px solid rgba(96,165,250,0.35)' : '1px solid var(--border-glass)',
                             borderRadius: 'var(--radius-md)', transition: 'var(--transition-fast)'
                           }}
                         >
@@ -538,20 +594,34 @@ export default function PanelistsTab({
                                 if (isSelected) setBulkSelectedL1Ids(bulkSelectedL1Ids.filter((id) => id !== p.id));
                                 else setBulkSelectedL1Ids([...bulkSelectedL1Ids, p.id]);
                               }}
-                              style={{ accentColor: 'var(--primary)', marginTop: '3px', cursor: 'pointer' }}
+                              style={{ accentColor: '#60a5fa', marginTop: '3px', cursor: 'pointer' }}
                             />
-                            <div style={{ minWidth: 0 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                              <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
                             </div>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                          {/* Per-panelist stats row */}
+                          <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '1.5rem' }}>
+                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: scheduled > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', border: scheduled > 0 ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-glass)', color: scheduled > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 600 }}>
+                              ✓ {scheduled} scheduled
+                            </span>
+                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: submitted > 0 ? 'rgba(96,165,250,0.08)' : 'rgba(255,255,255,0.03)', border: submitted > 0 ? '1px solid rgba(96,165,250,0.2)' : '1px solid var(--border-glass)', color: submitted > 0 ? '#60a5fa' : 'var(--text-muted)', fontWeight: 600 }}>
+                              ◎ {submitted} slots given
+                            </span>
+                            {pending > 0 && (
+                              <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
+                                ⏳ {pending} pending
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
                             <button
                               onClick={() => handleOpenSlotRequest(p, 'L1')}
                               className="btn btn-primary btn-xs"
-                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa' }}
+                              style={{ padding: '0.2rem 0.45rem', fontSize: '0.65rem', height: 'auto', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa' }}
                             >
-                              Send Request
+                              Request Slots
                             </button>
                             <button
                               onClick={() => handleDeletePanelist(p.id)}
@@ -571,7 +641,22 @@ export default function PanelistsTab({
 
               {/* L2 Column */}
               <div>
-                <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.4rem', fontWeight: 600 }}>
+                {/* L2 Column summary stats */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div style={{ flex: 1, background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{l2Panelists.length}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total L2</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l2ScheduledTotal}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#4ade80', lineHeight: 1 }}>{l2AvailableCount}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available</div>
+                  </div>
+                </div>
+                <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(167,139,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
                   <input
                     type="checkbox"
                     checked={allL2Selected}
@@ -579,7 +664,8 @@ export default function PanelistsTab({
                     style={{ accentColor: '#a78bfa', cursor: 'pointer' }}
                     title="Select All L2 Panelists"
                   />
-                  L2 System/Mgmt Panels ({l2Panelists.length})
+                  <span style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.75rem', color: '#a78bfa', fontWeight: 700 }}>L2</span>
+                  System/Mgmt Panels ({l2Panelists.length})
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                   {l2Panelists.length === 0 ? (
@@ -587,13 +673,16 @@ export default function PanelistsTab({
                   ) : (
                     l2Panelists.map((p) => {
                       const isSelected = bulkSelectedL2Ids.includes(p.id);
+                      const scheduled = panelistScheduledCount(p.id, 'L2');
+                      const submitted = panelistSubmittedCount(p.id, 'L2');
+                      const pending = panelistPendingCount(p.id);
                       return (
                         <div
                           key={p.id}
                           style={{
-                            display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem',
-                            background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255, 255, 255, 0.01)',
-                            border: isSelected ? '1px solid rgba(99, 102, 241, 0.35)' : '1px solid var(--border-glass)',
+                            display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.65rem',
+                            background: isSelected ? 'rgba(167,139,250,0.06)' : 'rgba(255,255,255,0.01)',
+                            border: isSelected ? '1px solid rgba(167,139,250,0.35)' : '1px solid var(--border-glass)',
                             borderRadius: 'var(--radius-md)', transition: 'var(--transition-fast)'
                           }}
                         >
@@ -605,20 +694,34 @@ export default function PanelistsTab({
                                 if (isSelected) setBulkSelectedL2Ids(bulkSelectedL2Ids.filter((id) => id !== p.id));
                                 else setBulkSelectedL2Ids([...bulkSelectedL2Ids, p.id]);
                               }}
-                              style={{ accentColor: 'var(--primary)', marginTop: '3px', cursor: 'pointer' }}
+                              style={{ accentColor: '#a78bfa', marginTop: '3px', cursor: 'pointer' }}
                             />
-                            <div style={{ minWidth: 0 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ wordBreak: 'break-all', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                              <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
                             </div>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                          {/* Per-panelist stats row */}
+                          <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '1.5rem' }}>
+                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: scheduled > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', border: scheduled > 0 ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-glass)', color: scheduled > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 600 }}>
+                              ✓ {scheduled} scheduled
+                            </span>
+                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: submitted > 0 ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.03)', border: submitted > 0 ? '1px solid rgba(167,139,250,0.2)' : '1px solid var(--border-glass)', color: submitted > 0 ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600 }}>
+                              ◎ {submitted} slots given
+                            </span>
+                            {pending > 0 && (
+                              <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
+                                ⏳ {pending} pending
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
                             <button
                               onClick={() => handleOpenSlotRequest(p, 'L2')}
                               className="btn btn-primary btn-xs"
-                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto', background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#c084fc' }}
+                              style={{ padding: '0.2rem 0.45rem', fontSize: '0.65rem', height: 'auto', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c084fc' }}
                             >
-                              Send Request
+                              Request Slots
                             </button>
                             <button
                               onClick={() => handleDeletePanelist(p.id)}
