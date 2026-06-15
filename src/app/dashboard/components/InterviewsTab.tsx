@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Calendar, User, Users, Clock, CheckCircle, XCircle,
   Search, Loader2, Trash2, Video, Check, Info, CalendarCheck,
-  ListFilter, MessageSquare
+  ListFilter, MessageSquare, Bell, Send
 } from 'lucide-react';
 import { Interview, Panelist, UploadedCandidate, InterviewPanel } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
@@ -75,6 +75,7 @@ export default function InterviewsTab({
 }: InterviewsTabProps) {
   // ── UI States ─────────────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'L1' | 'L2'>('all');
   const [cockpitView, setCockpitView] = useState<'list' | 'tracker'>('list');
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -101,6 +102,7 @@ export default function InterviewsTab({
   const [isBooking, setIsBooking] = useState(false);
   const [isCancellingBooking, setIsCancellingBooking] = useState(false);
   const [resendingPanelId, setResendingPanelId] = useState<string | null>(null);
+  const [sendingFeedbackReminderId, setSendingFeedbackReminderId] = useState<string | null>(null);
 
   // ── Date Edit States ───────────────────────────────────────────────────────
   const [isEditingDates, setIsEditingDates] = useState(false);
@@ -392,6 +394,28 @@ export default function InterviewsTab({
     }
   };
 
+  // ── Send Feedback Reminder ────────────────────────────────────────────────
+  const handleSendFeedbackReminder = async (interviewId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSendingFeedbackReminderId(interviewId);
+    try {
+      const res = await fetch('/api/interviews/send-feedback-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interviewId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send reminder');
+      const sentCount = data.sent?.length ?? 0;
+      const skippedCount = data.skipped?.length ?? 0;
+      alert(`✓ Feedback reminder sent to ${sentCount} panelist${sentCount !== 1 ? 's' : ''}${skippedCount > 0 ? ` (${skippedCount} skipped — same user)` : ''}.`);
+    } catch (err: any) {
+      alert(`Failed to send reminder: ${err.message}`);
+    } finally {
+      setSendingFeedbackReminderId(null);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem' }}>
@@ -578,6 +602,32 @@ export default function InterviewsTab({
                                 <Video size={9} /> Join
                               </a>
                             )}
+                            {/* Feedback reminder button — always shown for SCHEDULED, highlighted after slot ends */}
+                            {interview.status === 'SCHEDULED' && (() => {
+                              const slotEndTime = interview.scheduledSlotEnd ? new Date(interview.scheduledSlotEnd).getTime() : null;
+                              const slotEnded = slotEndTime ? Date.now() > slotEndTime : false;
+                              const isSending = sendingFeedbackReminderId === interview.id;
+                              return (
+                                <button
+                                  className="btn btn-xs"
+                                  disabled={isSending}
+                                  onClick={(e) => handleSendFeedbackReminder(interview.id, e)}
+                                  style={{
+                                    fontSize: '0.65rem', padding: '0.15rem 0.5rem', borderRadius: '4px',
+                                    height: 'auto', display: 'flex', alignItems: 'center', gap: '3px',
+                                    background: slotEnded ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.04)',
+                                    border: slotEnded ? '1px solid rgba(167,139,250,0.4)' : '1px solid var(--border-glass)',
+                                    color: slotEnded ? '#a78bfa' : 'var(--text-muted)',
+                                    fontWeight: slotEnded ? 700 : 400,
+                                    cursor: 'pointer',
+                                  }}
+                                  title={slotEnded ? 'Slot ended — send feedback reminder now' : 'Send feedback reminder to panelists'}
+                                >
+                                  {isSending ? <Loader2 size={9} className="animate-spin" /> : <Bell size={9} />}
+                                  {slotEnded ? 'Remind Feedback' : 'Remind'}
+                                </button>
+                              );
+                            })()}
                             {interview.status === 'PENDING' && (
                               <button className="btn btn-secondary btn-xs" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-glass)', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(255,255,255,0.02)' }}
                                 onClick={(e) => { e.stopPropagation(); setSelectedInterview(interview); setShowCreateForm(false); setDetailTab('panels'); }}>
