@@ -37,6 +37,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or empty candidates list' }, { status: 400 });
     }
 
+    // Validate that each candidate has a name, email, preferredDate, and college
+    for (const c of candidates) {
+      if (!c.name || !c.name.trim()) {
+        return NextResponse.json({ error: 'Candidate name is required for all candidates.' }, { status: 400 });
+      }
+      if (!c.email || !c.email.trim()) {
+        return NextResponse.json({ error: `Candidate email is required for ${c.name || 'all candidates'}.` }, { status: 400 });
+      }
+      if (!c.preferredDate || !c.preferredDate.trim()) {
+        return NextResponse.json({ error: `Drive Date is required for candidate "${c.name}".` }, { status: 400 });
+      }
+      if (!c.college || !c.college.trim()) {
+        return NextResponse.json({ error: `College Name of Drive is required for candidate "${c.name}".` }, { status: 400 });
+      }
+    }
+
     // 1. Add candidates to database
     await db.addUploadedCandidates(candidates);
 

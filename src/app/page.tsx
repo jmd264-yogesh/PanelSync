@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { getSession } from '@/lib/session';
+import { getSession, getPanelistSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { Calendar, Shield, Cpu, Users } from 'lucide-react';
 
@@ -15,9 +15,15 @@ export default async function Home(props: PageProps) {
   const error = resolvedParams?.error;
   const session = await getSession();
 
-  // If already authenticated, redirect to dashboard
+  // If already authenticated as recruiter, redirect to dashboard
   if (session) {
     redirect('/dashboard');
+  }
+
+  // If already authenticated as panelist, redirect to panelist portal
+  const panelistSession = await getPanelistSession();
+  if (panelistSession) {
+    redirect('/panelist');
   }
 
   return (

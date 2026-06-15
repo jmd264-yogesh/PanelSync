@@ -73,6 +73,8 @@ export async function POST(request: NextRequest) {
       ? `Interview scheduled by panelist ${panel.name} selecting slot option. Candidate automatically mapped from bulk upload queue.`
       : `Interview scheduled by panelist ${panel.name} selecting slot option.`;
 
+    const ccEmails = await db.getRecruiterCCEmails(tokenInfo.email);
+
     const meeting = await graph.createTeamsMeeting(
       tokenInfo.email,
       {
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
         startTime,
         endTime,
         panelEmails: [panel.email],
+        ccEmails,
       },
       tokenInfo.token
     );

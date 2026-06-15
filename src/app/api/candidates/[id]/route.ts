@@ -55,7 +55,10 @@ export async function PATCH(
     }
 
     const { preferredDate } = body;
-    await db.updateCandidateDate(id, preferredDate || null);
+    if (!preferredDate || !preferredDate.trim()) {
+      return NextResponse.json({ error: 'Drive Date is required.' }, { status: 400 });
+    }
+    await db.updateCandidateDate(id, preferredDate);
 
     const updatedList = await db.getUploadedCandidates();
     return NextResponse.json({ success: true, candidates: updatedList });

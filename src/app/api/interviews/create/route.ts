@@ -40,11 +40,16 @@ export async function POST(request: NextRequest) {
     
     for (const panel of interview.panels) {
       try {
-        // Create 1:1 chat between Recruiter (session user) and Panel member
-        const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
-        
         // Link to the web availability selection interface
         const availabilityLink = `${appUrl}/availability/${panel.token}`;
+
+        if (session.user.id === panel.userId) {
+          console.warn(`[Self-Request Warning] Recruiter and panelist are the same user (${panel.email}). Skipping Teams 1:1 chat creation. You can manually copy the slot selection link: ${availabilityLink}`);
+          continue;
+        }
+
+        // Create 1:1 chat between Recruiter (session user) and Panel member
+        const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
         
         // Format HTML rich card style message for Microsoft Teams
         const htmlMessage = `

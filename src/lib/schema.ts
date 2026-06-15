@@ -84,6 +84,14 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
     .references(() => interviews.id, { onDelete: 'cascade' }),
   preferredDate: timestamp('preferred_date'),
   outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
+  college: varchar('college', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 8. Colleges Table
+export const colleges = pgTable('colleges', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

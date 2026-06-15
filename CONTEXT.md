@@ -75,7 +75,8 @@ Connection string env var: `DATABASE_URL`
 | `interview_panels` | `id`, `interview_id` (FK→interviews cascade), `user_id` (Graph ID), `name`, `email`, `token` (unique URL token), `status` (PENDING/SUBMITTED), `submitted_at` |
 | `panel_availabilities` | `id`, `panel_id` (FK→interview_panels cascade), `start_time`, `end_time` |
 | `panelists` | `id` (Graph user ID), `display_name`, `email`, `roles` (text[] e.g. ['L1','L2']), `created_at` |
-| `uploaded_candidates` | `id`, `name`, `email`, `status` (WAITING/MAPPED), `mapped_interview_id` (FK→interviews cascade), `created_at` |
+| `uploaded_candidates` | `id`, `name`, `email`, `status` (WAITING/MAPPED), `mapped_interview_id` (FK→interviews cascade), `college`, `created_at` |
+| `colleges` | `id`, `name` (unique), `created_at` |
 
 ### Interview Status Flow
 ```
@@ -105,6 +106,9 @@ All methods are async. Key ones:
 - `db.addUploadedCandidates(candidates)` — bulk insert candidates
 - `db.deleteUploadedCandidate(id)` — delete candidate from queue
 - `db.autoMapPendingCandidates(tokenInfo)` — map waiting candidates to ready L1 panels
+- `db.getColleges()` — get all registered colleges
+- `db.addCollege(name)` — register a new college with a generated UUID
+- `db.deleteCollege(id)` — remove college by ID
 
 ---
 
@@ -126,14 +130,15 @@ All methods accept `accessToken: string` from the current session.
 
 ## 6. Main Dashboard (`src/app/dashboard/DashboardClient.tsx`)
 
-2800+ line `'use client'` component. Two tabs: **Interviews** and **Panelists**.
+3600+ line `'use client'` component. Five tabs: **Interviews**, **Panelists**, **Recruiters**, **Candidate Queue**, and **Colleges**.
 
 ### Key State Variables
 ```ts
-activeTab: 'interviews' | 'panelists'
+activeTab: 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges'
 interviews: Interview[]
 panelists: Panelist[]
 selectedInterview: Interview | null
+collegesList: College[]
 
 // Create interview form
 candidateName, candidateEmail, role, duration, startDate, endDate
@@ -176,7 +181,11 @@ collegeName: string              // default college/institution name shown in sl
   - L1 Timing Period (start/end time for L1 scheduling window)
   - L2 Timing Period (start/end time for L2 scheduling window)
   - Default Proposed Date Range (start/end date pre-filled in slot request modals)
-  - College / Institution (`collegeName` state) — default institution name displayed in slot request messages
+  - College / Institution dropdown — default college selected from the central colleges directory
+
+### Colleges Tab
+- Central directory to view, register, and delete colleges we will be going for interviews.
+- Single source of truth: adding colleges here populates dropdowns across scheduler settings, slot request modals, and candidate bulk uploads.
 
 ---
 
@@ -185,13 +194,13 @@ collegeName: string              // default college/institution name shown in sl
 > This is the "Panelist-first" scheduling flow — collect slots before assigning a candidate.
 
 1. Manager selects panelists from the directory (bulk or individual)
-2. Opens slot request modal: sets date range, duration, interview type
+2. Opens slot request modal: sets date range, duration, interview type, and select College/Institution (pre-filled from defaults)
 3. App generates proposed time slots (respecting L1/L2 time windows)
 4. Manager selects which slots to include
 5. Clicks send → `POST /api/interviews/request-panelist`
-6. API creates an interview record with `candidateName = 'Pending Assignment'`
+6. API creates an interview record with `candidateName = 'Pending Assignment'` and appends the college name to the role (e.g. `L1 Interview - IIT Bombay`)
 7. Inserts a panel row for each panelist, generates unique token
-8. Sends a Teams 1:1 message (HTML card) with availability link
+8. Sends a Teams 1:1 message (HTML card) with availability link, showing the college name in the request card description
 
 Later, candidate is attached via `POST /api/interviews/assign-candidate`.
 
@@ -201,8 +210,8 @@ Later, candidate is attached via `POST /api/interviews/assign-candidate`.
 
 > This flow handles bulk uploads of candidates and their automatic pairing to L1 interview slots.
 
-1. Recruiter uploads an Excel (.xlsx, .xls) or CSV template in the **Candidate Queue** dashboard tab.
-2. The candidates are saved into `uploaded_candidates` table with status `WAITING`.
+1. Recruiter selects a college under "College Name of Drive (Optional)" from the dropdown and/or specifies a drive date under "Drive Date (Optional)" and uploads an Excel (.xlsx, .xls) or CSV template in the **Candidate Queue** dashboard tab.
+2. The candidates are parsed, pulling from the spreadsheet columns such as "Name", "Email", "College Name of Drive" (or "College", "Institution", "University", "College Name"), and "Drive Date" (or "Date", "Preferred Date", "Interview Date", "Date of Drive") with fallback to the default selections in the upload card. The parsed records are saved into the `uploaded_candidates` table with status `WAITING`.
 3. The system immediately checks for any "ready" L1 interviews (which have `candidateName = 'Pending Assignment'`, status is `COLLECTED`, and have a confirmed/booked slot).
 4. If found, it automatically maps the oldest waiting candidates to these L1 interviews:
    - Updates the interview's candidate details.

@@ -17,6 +17,7 @@ export default async function DashboardPage() {
   // Load interviews from JSON database
   const interviews = await db.getInterviews();
   const panelists = await db.getPanelists();
+  const colleges = await db.getColleges();
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -50,7 +51,11 @@ export default async function DashboardPage() {
       {/* Main Dashboard Panel */}
       <main style={{ flex: 1, padding: '2rem 0' }}>
         <div className="container">
-          <DashboardClient initialInterviews={interviews} initialPanelists={panelists} />
+          <DashboardClient 
+            initialInterviews={interviews} 
+            initialPanelists={panelists} 
+            initialColleges={colleges} 
+          />
         </div>
       </main>
 

@@ -19,6 +19,8 @@ export interface InterviewPanel {
   token: string;        // Secure unique token for URL access
   status: 'PENDING' | 'SUBMITTED';
   submittedAt?: string; // ISO string
+  feedback?: string | null;
+  decision?: string | null;
   availabilities: PanelAvailability[];
 }
 
@@ -54,8 +56,15 @@ export interface UploadedCandidate {
   email: string;
   status: 'WAITING' | 'MAPPED';
   mappedInterviewId?: string;
-  preferredDate?: string;
+  preferredDate: string;  // Required field
   outcomeStatus?: string;
+  college: string;        // Required field
+  createdAt: string;
+}
+
+export interface College {
+  id: string;
+  name: string;
   createdAt: string;
 }
 
@@ -74,6 +83,7 @@ export interface PanelistInterview {
   panelDecision: string | null;
   panelFeedback: string | null;
   panelistRoles: string[];
+  panelSubmittedAt: string | null;
 }
 
 
@@ -129,6 +139,8 @@ export const db = {
           token: p.token,
           status: p.status as 'PENDING' | 'SUBMITTED',
           submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+          feedback: p.feedback,
+          decision: p.decision,
           availabilities: avRes.map((av) => ({
             id: av.id,
             panelId: av.panelId,
@@ -186,6 +198,8 @@ export const db = {
         token: p.token,
         status: p.status as 'PENDING' | 'SUBMITTED',
         submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+        feedback: p.feedback,
+        decision: p.decision,
         availabilities: avRes.map((av) => ({
           id: av.id,
           panelId: av.panelId,
@@ -490,14 +504,15 @@ export const db = {
       email: row.email,
       status: row.status as 'WAITING' | 'MAPPED',
       mappedInterviewId: row.mappedInterviewId || undefined,
-      preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : undefined,
+      preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : '',
       outcomeStatus: row.outcomeStatus || undefined,
+      college: row.college || '',
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
   },
 
   // Add uploaded candidates
-  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate?: string }[]): Promise<boolean> => {
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string }[]): Promise<boolean> => {
     for (const c of candidates) {
       const id = crypto.randomUUID();
       await dbClient.insert(schema.uploadedCandidates).values({
@@ -505,18 +520,19 @@ export const db = {
         name: c.name,
         email: c.email,
         status: 'WAITING',
-        preferredDate: c.preferredDate ? new Date(c.preferredDate) : null,
+        preferredDate: new Date(c.preferredDate),
+        college: c.college,
       });
     }
     return true;
   },
 
   // Update candidate date
-  updateCandidateDate: async (id: string, preferredDate: string | null): Promise<boolean> => {
+  updateCandidateDate: async (id: string, preferredDate: string): Promise<boolean> => {
     await dbClient
       .update(schema.uploadedCandidates)
       .set({
-        preferredDate: preferredDate ? new Date(preferredDate) : null,
+        preferredDate: new Date(preferredDate),
       })
       .where(eq(schema.uploadedCandidates.id, id));
     return true;
@@ -528,7 +544,6 @@ export const db = {
     return true;
   },
 
-  // Auto-map pending candidates to L1 interviews
   autoMapPendingCandidates: async (tokenInfo?: { token: string; email: string }): Promise<{ mappedCount: number }> => {
     let mappedCount = 0;
     try {
@@ -543,8 +558,13 @@ export const db = {
         return { mappedCount };
       }
       
-      // b. Fetch all L1 interviews that have candidateName = 'Pending Assignment' and status = 'COLLECTED'
+      // Separate waiting candidates: fresh vs passed L1 (ready for L2)
+      const waitingForL1 = waitingCandidates.filter((c) => !c.outcomeStatus || c.outcomeStatus === 'PENDING');
+      const waitingForL2 = waitingCandidates.filter((c) => c.outcomeStatus === 'PASSED_L1');
+
+      // b. Fetch all ready L1 and L2 interviews
       const allInterviews = await db.getInterviews();
+      
       const readyL1Interviews = allInterviews.filter((i) => {
         const isL1 = i.role.toLowerCase().includes('l1');
         const isPending = i.candidateName === 'Pending Assignment';
@@ -552,13 +572,15 @@ export const db = {
         const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
         return isL1 && isPending && isCollected && hasSlot;
       });
-      
-      if (readyL1Interviews.length === 0) {
-        return { mappedCount };
-      }
-      
-      const limit = Math.min(waitingCandidates.length, readyL1Interviews.length);
-      
+
+      const readyL2Interviews = allInterviews.filter((i) => {
+        const isL2 = i.role.toLowerCase().includes('l2');
+        const isPending = i.candidateName === 'Pending Assignment';
+        const isCollected = i.status === 'COLLECTED';
+        const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
+        return isL2 && isPending && isCollected && hasSlot;
+      });
+
       // Avoid circular dependency by importing session and graph dynamically
       const { getAnyValidAccessToken } = await import('./session');
       const { graph } = await import('./graph');
@@ -573,9 +595,9 @@ export const db = {
         }
       }
       
-      for (let i = 0; i < limit; i++) {
-        const candidate = waitingCandidates[i];
-        const interview = readyL1Interviews[i];
+      const ccEmails = recruiterEmail ? await db.getRecruiterCCEmails(recruiterEmail) : [];
+      
+      const mapOne = async (candidate: typeof waitingCandidates[0], interview: typeof allInterviews[0]) => {
         const now = new Date();
         
         // 1. Update database interview record
@@ -614,6 +636,7 @@ export const db = {
                 panelEmails,
                 sendAsTeamsMeeting: true,
                 teamsMeetingUrl: interview.teamsMeetingUrl || undefined,
+                ccEmails,
               },
               activeToken
             );
@@ -638,6 +661,7 @@ export const db = {
                       startTime: interview.scheduledSlotStart,
                       endTime: interview.scheduledSlotEnd,
                       panelEmails,
+                      ccEmails,
                     },
                     activeToken
                   );
@@ -660,9 +684,21 @@ export const db = {
             }
           }
         }
-        
         mappedCount++;
+      };
+
+      // Map L1
+      const l1Limit = Math.min(waitingForL1.length, readyL1Interviews.length);
+      for (let i = 0; i < l1Limit; i++) {
+        await mapOne(waitingForL1[i], readyL1Interviews[i]);
       }
+
+      // Map L2
+      const l2Limit = Math.min(waitingForL2.length, readyL2Interviews.length);
+      for (let i = 0; i < l2Limit; i++) {
+        await mapOne(waitingForL2[i], readyL2Interviews[i]);
+      }
+
     } catch (err) {
       console.error('Error in autoMapPendingCandidates:', err);
     }
@@ -732,17 +768,50 @@ export const db = {
         panelDecision: (panel as any).decision ?? null,
         panelFeedback: (panel as any).feedback ?? null,
         panelistRoles,
+        panelSubmittedAt: panel.submittedAt ? panel.submittedAt.toISOString() : null,
       });
     }
     return result;
   },
 
   submitPanelFeedback: async (panelId: string, feedback: string, decision: 'PASSED' | 'REJECTED'): Promise<boolean> => {
+    // Keep the original submission timestamp if it was already submitted (for editing)
+    const [existing] = await dbClient
+      .select({ submittedAt: schema.interviewPanels.submittedAt })
+      .from(schema.interviewPanels)
+      .where(eq(schema.interviewPanels.id, panelId))
+      .limit(1);
+
+    const submittedAtVal = existing?.submittedAt ? existing.submittedAt : new Date();
+
     await dbClient
       .update(schema.interviewPanels)
-      .set({ feedback, decision } as any)
+      .set({
+        feedback,
+        decision,
+        status: 'SUBMITTED',
+        submittedAt: submittedAtVal,
+      } as any)
       .where(eq(schema.interviewPanels.id, panelId));
     return true;
+  },
+
+  getRecruiterCCEmails: async (organizerEmail?: string): Promise<string[]> => {
+    const dbRecruiters = await db.getAllowedRecruiters();
+    const allEmails = new Set<string>();
+    
+    // Add initial recruiters
+    INITIAL_RECRUITERS.forEach(email => allEmails.add(email.trim().toLowerCase()));
+    
+    // Add DB allowed recruiters
+    dbRecruiters.forEach(r => allEmails.add(r.email.trim().toLowerCase()));
+    
+    // Exclude organizer email
+    if (organizerEmail) {
+      allEmails.delete(organizerEmail.trim().toLowerCase());
+    }
+    
+    return Array.from(allEmails);
   },
 
   updateCandidateOutcome: async (candidateId: string, outcomeStatus: string): Promise<boolean> => {
@@ -750,6 +819,45 @@ export const db = {
       .update(schema.uploadedCandidates)
       .set({ outcomeStatus } as any)
       .where(eq(schema.uploadedCandidates.id, candidateId));
+    return true;
+  },
+
+  getColleges: async (): Promise<College[]> => {
+    const res = await dbClient.select().from(schema.colleges).orderBy(desc(schema.colleges.createdAt));
+    return res.map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  addCollege: async (name: string): Promise<boolean> => {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      throw new Error('College name cannot be empty');
+    }
+    // Case-insensitive duplicate check
+    const [existing] = await dbClient
+      .select()
+      .from(schema.colleges)
+      .where(eq(schema.colleges.name, normalizedName))
+      .limit(1);
+    
+    if (existing) {
+      throw new Error('College name already exists');
+    }
+
+    const id = crypto.randomUUID();
+    await dbClient.insert(schema.colleges).values({
+      id,
+      name: normalizedName,
+      createdAt: new Date(),
+    });
+    return true;
+  },
+
+  deleteCollege: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.colleges).where(eq(schema.colleges.id, id));
     return true;
   },
 };
