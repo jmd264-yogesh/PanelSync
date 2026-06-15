@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import * as schema from './schema';
 
 export interface PanelAvailability {
@@ -19,6 +19,8 @@ export interface InterviewPanel {
   token: string;        // Secure unique token for URL access
   status: 'PENDING' | 'SUBMITTED';
   submittedAt?: string; // ISO string
+  feedback?: string | null;
+  decision?: string | null;
   availabilities: PanelAvailability[];
 }
 
@@ -47,6 +49,43 @@ export interface Panelist {
   roles: ('L1' | 'L2')[]; // L1 or L2 panel capabilities
   createdAt: string;
 }
+
+export interface UploadedCandidate {
+  id: string;
+  name: string;
+  email: string;
+  status: 'WAITING' | 'MAPPED';
+  mappedInterviewId?: string;
+  preferredDate: string;  // Required field
+  outcomeStatus?: string;
+  college: string;        // Required field
+  createdAt: string;
+}
+
+export interface College {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface PanelistInterview {
+  interviewId: string;
+  role: string;
+  duration: number;
+  scheduledSlotStart: string;
+  scheduledSlotEnd: string;
+  teamsMeetingUrl: string | null;
+  candidateName: string;
+  candidateEmail: string;
+  candidateId: string | null;
+  outcomeStatus: string | null;
+  panelId: string;
+  panelDecision: string | null;
+  panelFeedback: string | null;
+  panelistRoles: string[];
+  panelSubmittedAt: string | null;
+}
+
 
 // 1. Initialize Drizzle Neon HTTP Serverless client
 const connectionString = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
@@ -100,6 +139,8 @@ export const db = {
           token: p.token,
           status: p.status as 'PENDING' | 'SUBMITTED',
           submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+          feedback: p.feedback,
+          decision: p.decision,
           availabilities: avRes.map((av) => ({
             id: av.id,
             panelId: av.panelId,
@@ -157,6 +198,8 @@ export const db = {
         token: p.token,
         status: p.status as 'PENDING' | 'SUBMITTED',
         submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
+        feedback: p.feedback,
+        decision: p.decision,
         availabilities: avRes.map((av) => ({
           id: av.id,
           panelId: av.panelId,
@@ -449,6 +492,372 @@ export const db = {
       throw new Error('Cannot remove initial system pre-approved recruiters');
     }
     await dbClient.delete(schema.allowedRecruiters).where(eq(schema.allowedRecruiters.email, normalizedEmail));
+    return true;
+  },
+
+  // Get uploaded candidates
+  getUploadedCandidates: async (): Promise<UploadedCandidate[]> => {
+    const res = await dbClient.select().from(schema.uploadedCandidates).orderBy(desc(schema.uploadedCandidates.createdAt));
+    return res.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      status: row.status as 'WAITING' | 'MAPPED',
+      mappedInterviewId: row.mappedInterviewId || undefined,
+      preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : '',
+      outcomeStatus: row.outcomeStatus || undefined,
+      college: row.college || '',
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  // Add uploaded candidates
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string }[]): Promise<boolean> => {
+    for (const c of candidates) {
+      const id = crypto.randomUUID();
+      await dbClient.insert(schema.uploadedCandidates).values({
+        id,
+        name: c.name,
+        email: c.email,
+        status: 'WAITING',
+        preferredDate: new Date(c.preferredDate),
+        college: c.college,
+      });
+    }
+    return true;
+  },
+
+  // Update candidate date
+  updateCandidateDate: async (id: string, preferredDate: string): Promise<boolean> => {
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({
+        preferredDate: new Date(preferredDate),
+      })
+      .where(eq(schema.uploadedCandidates.id, id));
+    return true;
+  },
+
+  // Delete uploaded candidate
+  deleteUploadedCandidate: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.uploadedCandidates).where(eq(schema.uploadedCandidates.id, id));
+    return true;
+  },
+
+  autoMapPendingCandidates: async (tokenInfo?: { token: string; email: string }): Promise<{ mappedCount: number }> => {
+    let mappedCount = 0;
+    try {
+      // a. Fetch all WAITING candidates ordered by oldest first
+      const waitingCandidates = await dbClient
+        .select()
+        .from(schema.uploadedCandidates)
+        .where(eq(schema.uploadedCandidates.status, 'WAITING'))
+        .orderBy(schema.uploadedCandidates.createdAt);
+        
+      if (waitingCandidates.length === 0) {
+        return { mappedCount };
+      }
+      
+      // Separate waiting candidates: fresh vs passed L1 (ready for L2)
+      const waitingForL1 = waitingCandidates.filter((c) => !c.outcomeStatus || c.outcomeStatus === 'PENDING');
+      const waitingForL2 = waitingCandidates.filter((c) => c.outcomeStatus === 'PASSED_L1');
+
+      // b. Fetch all ready L1 and L2 interviews
+      const allInterviews = await db.getInterviews();
+      
+      const readyL1Interviews = allInterviews.filter((i) => {
+        const isL1 = i.role.toLowerCase().includes('l1');
+        const isPending = i.candidateName === 'Pending Assignment';
+        const isCollected = i.status === 'COLLECTED';
+        const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
+        return isL1 && isPending && isCollected && hasSlot;
+      });
+
+      const readyL2Interviews = allInterviews.filter((i) => {
+        const isL2 = i.role.toLowerCase().includes('l2');
+        const isPending = i.candidateName === 'Pending Assignment';
+        const isCollected = i.status === 'COLLECTED';
+        const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
+        return isL2 && isPending && isCollected && hasSlot;
+      });
+
+      // Avoid circular dependency by importing session and graph dynamically
+      const { getAnyValidAccessToken } = await import('./session');
+      const { graph } = await import('./graph');
+      
+      let activeToken = tokenInfo?.token;
+      let recruiterEmail = tokenInfo?.email;
+      if (!activeToken || !recruiterEmail) {
+        const anyToken = await getAnyValidAccessToken();
+        if (anyToken) {
+          activeToken = anyToken.token;
+          recruiterEmail = anyToken.email;
+        }
+      }
+      
+      const ccEmails = recruiterEmail ? await db.getRecruiterCCEmails(recruiterEmail) : [];
+      
+      const mapOne = async (candidate: typeof waitingCandidates[0], interview: typeof allInterviews[0]) => {
+        const now = new Date();
+        
+        // 1. Update database interview record
+        await dbClient
+          .update(schema.interviews)
+          .set({
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            status: 'SCHEDULED',
+            updatedAt: now,
+          })
+          .where(eq(schema.interviews.id, interview.id));
+          
+        // 2. Update candidate record in queue
+        await dbClient
+          .update(schema.uploadedCandidates)
+          .set({
+            status: 'MAPPED',
+            mappedInterviewId: interview.id,
+          })
+          .where(eq(schema.uploadedCandidates.id, candidate.id));
+          
+        // 3. Update Microsoft Graph calendar event
+        if (activeToken && interview.calendarEventId) {
+          try {
+            const panelEmails = interview.panels.map((p) => p.email);
+            const description = `Interview scheduled via Microsoft Teams Scheduler. Candidate automatically mapped from bulk upload queue.`;
+            
+            await graph.updateTeamsMeeting(
+              interview.calendarEventId,
+              {
+                candidateName: candidate.name,
+                candidateEmail: candidate.email,
+                role: interview.role,
+                description,
+                panelEmails,
+                sendAsTeamsMeeting: true,
+                teamsMeetingUrl: interview.teamsMeetingUrl || undefined,
+                ccEmails,
+              },
+              activeToken
+            );
+          } catch (graphError: any) {
+            console.error(`Failed to update MS Graph event ${interview.calendarEventId} for auto-mapped candidate ${candidate.email}:`, graphError);
+            
+            const errMsg = graphError instanceof Error ? graphError.message : String(graphError);
+            if (errMsg.includes('404') || errMsg.includes('ErrorItemNotFound')) {
+              console.log('Calendar event not found in Outlook store during auto-mapping. Re-creating calendar event on the fly...');
+              try {
+                if (interview.scheduledSlotStart && interview.scheduledSlotEnd && recruiterEmail) {
+                  const panelEmails = interview.panels.map((p) => p.email);
+                  const description = `Interview scheduled via Microsoft Teams Scheduler. Re-created after original event was not found during auto-mapping.`;
+                  
+                  const meeting = await graph.createTeamsMeeting(
+                    recruiterEmail,
+                    {
+                      candidateName: candidate.name,
+                      candidateEmail: candidate.email,
+                      role: interview.role,
+                      description,
+                      startTime: interview.scheduledSlotStart,
+                      endTime: interview.scheduledSlotEnd,
+                      panelEmails,
+                      ccEmails,
+                    },
+                    activeToken
+                  );
+                  
+                  // Update database record with new calendar details
+                  await dbClient
+                    .update(schema.interviews)
+                    .set({
+                      teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',
+                      calendarEventId: meeting.id || '',
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(schema.interviews.id, interview.id));
+                    
+                  console.log('Successfully re-created calendar event:', meeting.id);
+                }
+              } catch (recreateError) {
+                console.error('Failed to re-create calendar event during auto-mapping:', recreateError);
+              }
+            }
+          }
+        }
+        mappedCount++;
+      };
+
+      // Map L1
+      const l1Limit = Math.min(waitingForL1.length, readyL1Interviews.length);
+      for (let i = 0; i < l1Limit; i++) {
+        await mapOne(waitingForL1[i], readyL1Interviews[i]);
+      }
+
+      // Map L2
+      const l2Limit = Math.min(waitingForL2.length, readyL2Interviews.length);
+      for (let i = 0; i < l2Limit; i++) {
+        await mapOne(waitingForL2[i], readyL2Interviews[i]);
+      }
+
+    } catch (err) {
+      console.error('Error in autoMapPendingCandidates:', err);
+    }
+    return { mappedCount };
+  },
+
+  // --- Panelist helpers ---
+
+  isPanelist: async (email: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const [row] = await dbClient
+      .select()
+      .from(schema.panelists)
+      .where(eq(schema.panelists.email, normalizedEmail))
+      .limit(1);
+    return !!row;
+  },
+
+  getPanelistByEmail: async (email: string): Promise<{ id: string; displayName: string; email: string; roles: string[] } | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.panelists)
+      .where(eq(schema.panelists.email, email.trim().toLowerCase()))
+      .limit(1);
+    if (!row) return null;
+    return { id: row.id, displayName: row.displayName, email: row.email, roles: row.roles };
+  },
+
+  getPanelistInterviews: async (panelistEmail: string): Promise<PanelistInterview[]> => {
+    const normalizedEmail = panelistEmail.trim().toLowerCase();
+
+    const panelRows = await dbClient
+      .select()
+      .from(schema.interviewPanels)
+      .where(eq(schema.interviewPanels.email, normalizedEmail));
+
+    const panelistRow = await db.getPanelistByEmail(normalizedEmail);
+    const panelistRoles = panelistRow?.roles ?? [];
+
+    const result: PanelistInterview[] = [];
+    for (const panel of panelRows) {
+      const [interview] = await dbClient
+        .select()
+        .from(schema.interviews)
+        .where(and(eq(schema.interviews.id, panel.interviewId), eq(schema.interviews.status, 'SCHEDULED')))
+        .limit(1);
+      if (!interview) continue;
+
+      const [candidate] = await dbClient
+        .select()
+        .from(schema.uploadedCandidates)
+        .where(eq(schema.uploadedCandidates.mappedInterviewId, interview.id))
+        .limit(1);
+
+      result.push({
+        interviewId: interview.id,
+        role: interview.role,
+        duration: interview.duration,
+        scheduledSlotStart: interview.scheduledSlotStart!.toISOString(),
+        scheduledSlotEnd: interview.scheduledSlotEnd!.toISOString(),
+        teamsMeetingUrl: interview.teamsMeetingUrl,
+        candidateName: interview.candidateName,
+        candidateEmail: interview.candidateEmail,
+        candidateId: candidate?.id ?? null,
+        outcomeStatus: candidate?.outcomeStatus ?? null,
+        panelId: panel.id,
+        panelDecision: (panel as any).decision ?? null,
+        panelFeedback: (panel as any).feedback ?? null,
+        panelistRoles,
+        panelSubmittedAt: panel.submittedAt ? panel.submittedAt.toISOString() : null,
+      });
+    }
+    return result;
+  },
+
+  submitPanelFeedback: async (panelId: string, feedback: string, decision: 'PASSED' | 'REJECTED'): Promise<boolean> => {
+    // Keep the original submission timestamp if it was already submitted (for editing)
+    const [existing] = await dbClient
+      .select({ submittedAt: schema.interviewPanels.submittedAt })
+      .from(schema.interviewPanels)
+      .where(eq(schema.interviewPanels.id, panelId))
+      .limit(1);
+
+    const submittedAtVal = existing?.submittedAt ? existing.submittedAt : new Date();
+
+    await dbClient
+      .update(schema.interviewPanels)
+      .set({
+        feedback,
+        decision,
+        status: 'SUBMITTED',
+        submittedAt: submittedAtVal,
+      } as any)
+      .where(eq(schema.interviewPanels.id, panelId));
+    return true;
+  },
+
+  getRecruiterCCEmails: async (organizerEmail?: string): Promise<string[]> => {
+    const dbRecruiters = await db.getAllowedRecruiters();
+    const allEmails = new Set<string>();
+    
+    // Add initial recruiters
+    INITIAL_RECRUITERS.forEach(email => allEmails.add(email.trim().toLowerCase()));
+    
+    // Add DB allowed recruiters
+    dbRecruiters.forEach(r => allEmails.add(r.email.trim().toLowerCase()));
+    
+    // Exclude organizer email
+    if (organizerEmail) {
+      allEmails.delete(organizerEmail.trim().toLowerCase());
+    }
+    
+    return Array.from(allEmails);
+  },
+
+  updateCandidateOutcome: async (candidateId: string, outcomeStatus: string): Promise<boolean> => {
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({ outcomeStatus } as any)
+      .where(eq(schema.uploadedCandidates.id, candidateId));
+    return true;
+  },
+
+  getColleges: async (): Promise<College[]> => {
+    const res = await dbClient.select().from(schema.colleges).orderBy(desc(schema.colleges.createdAt));
+    return res.map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  addCollege: async (name: string): Promise<boolean> => {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      throw new Error('College name cannot be empty');
+    }
+    // Case-insensitive duplicate check
+    const [existing] = await dbClient
+      .select()
+      .from(schema.colleges)
+      .where(eq(schema.colleges.name, normalizedName))
+      .limit(1);
+    
+    if (existing) {
+      throw new Error('College name already exists');
+    }
+
+    const id = crypto.randomUUID();
+    await dbClient.insert(schema.colleges).values({
+      id,
+      name: normalizedName,
+      createdAt: new Date(),
+    });
+    return true;
+  },
+
+  deleteCollege: async (id: string): Promise<boolean> => {
+    await dbClient.delete(schema.colleges).where(eq(schema.colleges.id, id));
     return true;
   },
 };

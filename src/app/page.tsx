@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { getSession } from '@/lib/session';
+import { getSession, getPanelistSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { Calendar, Shield, Cpu, Users } from 'lucide-react';
 
@@ -15,9 +15,15 @@ export default async function Home(props: PageProps) {
   const error = resolvedParams?.error;
   const session = await getSession();
 
-  // If already authenticated, redirect to dashboard
+  // If already authenticated as recruiter, redirect to dashboard
   if (session) {
     redirect('/dashboard');
+  }
+
+  // If already authenticated as panelist, redirect to panelist portal
+  const panelistSession = await getPanelistSession();
+  if (panelistSession) {
+    redirect('/panelist');
   }
 
   return (
@@ -64,6 +70,21 @@ export default async function Home(props: PageProps) {
                 </div>
               )}
 
+              {error === 'not_a_panelist' && (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1rem 1.25rem',
+                  marginBottom: '1.5rem',
+                  color: '#f87171',
+                  fontSize: '0.9rem',
+                  lineHeight: 1.5,
+                }}>
+                  <strong style={{ color: '#ef4444' }}>Access Denied:</strong> Your email is not registered as a panelist. Please ask your recruiter to add you to the panelist directory first.
+                </div>
+              )}
+
               {error && error !== 'unauthorized_recruiter' && (
                 <div style={{
                   backgroundColor: 'rgba(239, 68, 68, 0.12)',
@@ -87,9 +108,12 @@ export default async function Home(props: PageProps) {
               <p className="text-muted" style={{ fontSize: '1.05rem', marginBottom: '2.5rem', maxWidth: '500px', lineHeight: 1.6 }}>
                 Stop chasing panels manually. Send request invites directly inside Teams, collect individual panel availabilities, calculate overlapping free slots, and book Teams online meetings instantly.
               </p>
-              <div style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <a href="/api/auth/signin" className="btn btn-primary" style={{ padding: '0.9rem 2rem' }}>
                   Recruiter Sign In
+                </a>
+                <a href="/api/auth/signin?role=panelist" className="btn btn-secondary" style={{ padding: '0.9rem 2rem' }}>
+                  Panelist Sign In
                 </a>
               </div>
             </div>

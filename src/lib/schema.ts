@@ -42,6 +42,8 @@ export const interviewPanels = pgTable('interview_panels', {
   token: varchar('token', { length: 255 }).unique().notNull(), // Link token
   status: varchar('status', { length: 50 }).notNull(), // PENDING, SUBMITTED
   submittedAt: timestamp('submitted_at'),
+  feedback: text('feedback'),
+  decision: varchar('decision', { length: 50 }), // PASSED | REJECTED
 }, (t) => [
   unique('unique_interview_email').on(t.interviewId, t.email)
 ]);
@@ -71,3 +73,25 @@ export const allowedRecruiters = pgTable('allowed_recruiters', {
   addedBy: varchar('added_by', { length: 255 }), // email of recruiter who added this recruiter
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+// 7. Bulk Uploaded Candidates
+export const uploadedCandidates = pgTable('uploaded_candidates', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  email: varchar('email', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).notNull(), // WAITING, MAPPED
+  mappedInterviewId: varchar('mapped_interview_id', { length: 255 })
+    .references(() => interviews.id, { onDelete: 'cascade' }),
+  preferredDate: timestamp('preferred_date'),
+  outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
+  college: varchar('college', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 8. Colleges Table
+export const colleges = pgTable('colleges', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+

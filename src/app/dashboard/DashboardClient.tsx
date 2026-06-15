@@ -5,8 +5,11 @@ import {
   Interview, 
   InterviewPanel, 
   PanelAvailability,
-  Panelist
+  Panelist,
+  UploadedCandidate,
+  College
 } from '@/lib/db';
+import * as XLSX from 'xlsx';
 import { GraphUser } from '@/lib/graph';
 import {
   Plus,
@@ -26,20 +29,101 @@ import {
   Shield,
   Settings,
   ListFilter,
-  Building2
+  Building2,
+  MessageSquare
 } from 'lucide-react';
 
 interface DashboardClientProps {
   initialInterviews: Interview[];
   initialPanelists: Panelist[];
+  initialColleges: College[];
 }
 
-export default function DashboardClient({ initialInterviews, initialPanelists }: DashboardClientProps) {
+export default function DashboardClient({ initialInterviews, initialPanelists, initialColleges }: DashboardClientProps) {
   // Navigation & DB States
-  const [activeTab, setActiveTab] = useState<'interviews' | 'panelists' | 'recruiters'>('interviews');
+  const [activeTab, setActiveTab] = useState<'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges'>('interviews');
   const [interviews, setInterviews] = useState<Interview[]>(initialInterviews);
   const [panelists, setPanelists] = useState<Panelist[]>(initialPanelists);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
+
+  // Candidates Queue States
+  const [candidates, setCandidates] = useState<UploadedCandidate[]>([]);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
+  const [isUploadingCandidates, setIsUploadingCandidates] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
+  const [uploadDefaultDate, setUploadDefaultDate] = useState('');
+  const [uploadDefaultCollege, setUploadDefaultCollege] = useState('');
+  const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
+
+  // Single Candidate Form States
+  const [singleCandidateName, setSingleCandidateName] = useState('');
+  const [singleCandidateEmail, setSingleCandidateEmail] = useState('');
+  const [singleCandidateDate, setSingleCandidateDate] = useState('');
+  const [singleCandidateCollege, setSingleCandidateCollege] = useState('');
+  const [isAddingSingleCandidate, setIsAddingSingleCandidate] = useState(false);
+  const [singleCandidateError, setSingleCandidateError] = useState<string | null>(null);
+
+  const handleAddSingleCandidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSingleCandidateError(null);
+
+    if (!singleCandidateName.trim()) {
+      setSingleCandidateError('Please enter candidate name.');
+      return;
+    }
+    if (!singleCandidateEmail.trim()) {
+      setSingleCandidateError('Please enter candidate email.');
+      return;
+    }
+    if (!singleCandidateDate.trim()) {
+      setSingleCandidateError('Please select a drive date.');
+      return;
+    }
+    if (!singleCandidateCollege.trim()) {
+      setSingleCandidateError('Please select a college.');
+      return;
+    }
+
+    setIsAddingSingleCandidate(true);
+    try {
+      const res = await fetch('/api/candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidates: [{
+            name: singleCandidateName.trim(),
+            email: singleCandidateEmail.trim(),
+            preferredDate: singleCandidateDate,
+            college: singleCandidateCollege,
+          }]
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to add candidate');
+      }
+
+      const result = await res.json();
+      setCandidates(result.candidates);
+      setInterviews(result.interviews);
+      
+      // Reset fields
+      setSingleCandidateName('');
+      setSingleCandidateEmail('');
+      setSingleCandidateDate('');
+      setSingleCandidateCollege('');
+      alert(`Candidate ${singleCandidateName} successfully added to the queue!`);
+    } catch (err: any) {
+      console.error(err);
+      setSingleCandidateError(err.message || 'An error occurred adding candidate.');
+    } finally {
+      setIsAddingSingleCandidate(false);
+    }
+  };
 
   // View States
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -74,6 +158,228 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
       fetchRecruiters();
     }
   }, [activeTab]);
+
+  const fetchCandidates = async () => {
+    setIsLoadingCandidates(true);
+    try {
+      const res = await fetch('/api/candidates');
+      if (res.ok) {
+        const data = await res.json();
+        setCandidates(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch candidates:', err);
+    } finally {
+      setIsLoadingCandidates(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'candidates') {
+      fetchCandidates();
+    }
+  }, [activeTab]);
+
+  const parseExcelDate = (value: any): string | undefined => {
+    if (!value) return undefined;
+    
+    // JS Date object
+    if (value instanceof Date) {
+      return value.toISOString().split('T')[0];
+    }
+    
+    // Excel numeric date value
+    if (typeof value === 'number') {
+      const date = new Date((value - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+    }
+    
+    // General date parsing
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    
+    return undefined;
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = 'data:text/csv;charset=utf-8,Name,Email,College Name of Drive,Drive Date\nJohn Doe,john.doe@example.com,IIT Bombay,2026-06-15\nJane Smith,jane.smith@example.com,NIT Trichy,';
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'candidate_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingCandidates(true);
+    setUploadError(null);
+    setUploadSuccessMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (!data) throw new Error('Could not read file data');
+
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json<any>(sheet);
+
+        if (json.length === 0) {
+          throw new Error('The spreadsheet is empty.');
+        }
+
+        const parsedCandidates = [];
+        for (let i = 0; i < json.length; i++) {
+          const row = json[i];
+          const keys = Object.keys(row);
+          const nameKey = keys.find((k) => k.toLowerCase() === 'name');
+          const emailKey = keys.find((k) => k.toLowerCase() === 'email');
+          
+          if (nameKey && emailKey) {
+            const name = String(row[nameKey]).trim();
+            const email = String(row[emailKey]).trim();
+            if (name === '' || email === '') continue; // Skip incomplete or empty rows
+
+            const dateKey = keys.find((k) => {
+              const val = k.toLowerCase();
+              return val === 'date' || val === 'preferred date' || val === 'interview date' || val === 'drive date' || val === 'date of drive';
+            });
+            const rawDate = dateKey ? row[dateKey] : undefined;
+            const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
+
+            const collegeKey = keys.find((k) => {
+              const val = k.toLowerCase();
+              return val === 'college' || val === 'institution' || val === 'university' || val === 'college name' || val === 'college name of drive';
+            });
+            const rawCollege = collegeKey ? String(row[collegeKey]).trim() : undefined;
+            const college = rawCollege || (uploadDefaultCollege ? uploadDefaultCollege : undefined);
+
+            if (!preferredDate) {
+              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive Date. Please specify a date in the sheet or set a default Drive Date above.`);
+            }
+            if (!college) {
+              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a College Name. Please specify a college name in the sheet or select a default College Name of Drive above.`);
+            }
+
+            parsedCandidates.push({
+              name,
+              email,
+              preferredDate,
+              college,
+            });
+          }
+        }
+
+        if (parsedCandidates.length === 0) {
+          throw new Error("Could not find any candidates with valid 'Name' and 'Email' columns in the uploaded file.");
+        }
+
+        const res = await fetch('/api/candidates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidates: parsedCandidates }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Failed to upload candidates');
+        }
+
+        const result = await res.json();
+        setCandidates(result.candidates);
+        setInterviews(result.interviews);
+        setUploadSuccessMessage(
+          `Successfully uploaded ${parsedCandidates.length} candidate(s). ${result.mappedCount} candidate(s) were automatically mapped to L1 panels.`
+        );
+      } catch (err: any) {
+        console.error(err);
+        setUploadError(err.message || 'An error occurred during file parsing or upload.');
+      } finally {
+        setIsUploadingCandidates(false);
+        e.target.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      setUploadError('Failed to read file.');
+      setIsUploadingCandidates(false);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUpdateCandidateDate = async (id: string, preferredDate: string) => {
+    if (!preferredDate || !preferredDate.trim()) {
+      alert('Drive Date is required.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update candidate preferred date');
+      }
+
+      const result = await res.json();
+      setCandidates(result.candidates);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error updating candidate date');
+    }
+  };
+
+  const handleMarkAsSelected = async (id: string) => {
+    if (!confirm('Mark this candidate as SELECTED? This is the final outcome and cannot be changed by panelists.')) return;
+    setSelectingCandidateId(id);
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcomeStatus: 'SELECTED' }),
+      });
+      if (!res.ok) throw new Error('Failed to mark as selected');
+      const result = await res.json();
+      setCandidates(result.candidates);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Error marking candidate as selected');
+    } finally {
+      setSelectingCandidateId(null);
+    }
+  };
+
+  const handleDeleteCandidate = async (id: string) => {
+    if (!confirm('Are you sure you want to remove this candidate from the queue?')) return;
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(result.candidates);
+      } else {
+        alert('Failed to delete candidate.');
+      }
+    } catch (err) {
+      console.error('Error deleting candidate:', err);
+    }
+  };
 
   const handleAddRecruiter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,7 +458,78 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   const [l2TimeStart, setL2TimeStart] = useState('14:00');
   const [l2TimeEnd, setL2TimeEnd] = useState('17:00');
   const [collegeName, setCollegeName] = useState('');
+  const [collegesList, setCollegesList] = useState<College[]>(initialColleges);
+  const [isLoadingColleges, setIsLoadingColleges] = useState(false);
+  const [newCollegeName, setNewCollegeName] = useState('');
+  const [isAddingCollege, setIsAddingCollege] = useState(false);
+  const [collegeError, setCollegeError] = useState<string | null>(null);
+  const [reqCollegeName, setReqCollegeName] = useState('');
 
+  const fetchColleges = async () => {
+    setIsLoadingColleges(true);
+    setCollegeError(null);
+    try {
+      const res = await fetch('/api/colleges');
+      if (!res.ok) throw new Error('Failed to load colleges.');
+      const data = await res.json();
+      setCollegesList(data);
+    } catch (err: any) {
+      console.error(err);
+      setCollegeError(err.message || 'An error occurred loading colleges.');
+    } finally {
+      setIsLoadingColleges(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'panelists' || activeTab === 'colleges') {
+      fetchColleges();
+    }
+  }, [activeTab]);
+
+  const handleAddCollege = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCollegeName.trim()) return;
+    setIsAddingCollege(true);
+    setCollegeError(null);
+    try {
+      const res = await fetch('/api/colleges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCollegeName.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to add college.');
+      }
+      setNewCollegeName('');
+      await fetchColleges();
+    } catch (err: any) {
+      console.error(err);
+      setCollegeError(err.message || 'An error occurred adding college.');
+    } finally {
+      setIsAddingCollege(false);
+    }
+  };
+
+  const handleDeleteCollege = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this college?')) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/colleges/${id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete college.');
+      }
+      await fetchColleges();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'An error occurred deleting college.');
+    }
+  };
   // Panelist-First slot request form states (New Flow)
   const [reqPanelists, setReqPanelists] = useState<Panelist[]>([]);
   const [reqDuration, setReqDuration] = useState('30');
@@ -171,7 +548,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   });
   const [defaultEndDate, setDefaultEndDate] = useState(() => {
     const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 2); // 2 days default window
+    tomorrow.setDate(tomorrow.getDate() + 1); // Same day default window
     return tomorrow.toISOString().split('T')[0];
   });
 
@@ -193,7 +570,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
 
   // UI / UX States
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
-  const [detailTab, setDetailTab] = useState<'overview' | 'panels' | 'booking'>('overview');
+  const [detailTab, setDetailTab] = useState<'overview' | 'panels' | 'booking' | 'feedback'>('overview');
   const [createError, setCreateError] = useState<string | null>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -369,12 +746,18 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     setReqDuration('30');
     setReqStartDate(defaultStartDate);
     setReqEndDate(defaultEndDate);
+    setReqCollegeName(collegeName);
   };
 
   // Submit L1/L2 Automagic Slot request
   const handleSendSlotRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (reqPanelists.length === 0) return;
+
+    if (!reqCollegeName || !reqCollegeName.trim()) {
+      alert('College / Institution name is required.');
+      return;
+    }
 
     if (reqStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
     if (reqEndDate < reqStartDate) { alert('End date cannot be before the start date.'); return; }
@@ -397,6 +780,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
           endDate: reqEndDate,
           interviewType: reqInterviewType,
           slots: selectedProposedSlots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
+          collegeName: reqCollegeName,
         }),
       });
 
@@ -829,6 +1213,25 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
     }
   };
 
+  const renderStarsStatic = (rating: number) => {
+    return (
+      <div style={{ display: 'flex', gap: '2px' }}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <span
+            key={star}
+            style={{
+              color: star <= rating ? '#fbbf24' : 'rgba(255, 255, 255, 0.12)',
+              fontSize: '1rem',
+              lineHeight: 1,
+            }}
+          >
+            ★
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   // Overlap calculation (Original Flow)
   const getOverlappingSlots = (interview: Interview) => {
     const panels = interview.panels;
@@ -948,51 +1351,36 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
   return (
     <div>
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '1rem' }}>
+      <div className="nav-tabs-container">
         <button
           onClick={() => { setActiveTab('interviews'); setAdminSelectedUser(null); }}
-          className="btn btn-sm"
-          style={{
-            background: activeTab === 'interviews' ? 'rgba(99,102,241,0.1)' : 'transparent',
-            border: activeTab === 'interviews' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
-            color: activeTab === 'interviews' ? 'var(--primary)' : 'var(--text-muted)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '0.4rem 1rem',
-            fontWeight: 600,
-            fontSize: '0.85rem',
-          }}
+          className={`tab-btn ${activeTab === 'interviews' ? 'active' : ''}`}
         >
           Interviews
         </button>
         <button
           onClick={() => { setActiveTab('panelists'); setSelectedInterview(null); setShowCreateForm(false); }}
-          className="btn btn-sm"
-          style={{
-            background: activeTab === 'panelists' ? 'rgba(99,102,241,0.1)' : 'transparent',
-            border: activeTab === 'panelists' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
-            color: activeTab === 'panelists' ? 'var(--primary)' : 'var(--text-muted)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '0.4rem 1rem',
-            fontWeight: 600,
-            fontSize: '0.85rem',
-          }}
+          className={`tab-btn ${activeTab === 'panelists' ? 'active' : ''}`}
         >
           Panelists
         </button>
         <button
           onClick={() => { setActiveTab('recruiters'); setSelectedInterview(null); setShowCreateForm(false); }}
-          className="btn btn-sm"
-          style={{
-            background: activeTab === 'recruiters' ? 'rgba(99,102,241,0.1)' : 'transparent',
-            border: activeTab === 'recruiters' ? '1px solid rgba(99,102,241,0.3)' : '1px solid var(--border-glass)',
-            color: activeTab === 'recruiters' ? 'var(--primary)' : 'var(--text-muted)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '0.4rem 1rem',
-            fontWeight: 600,
-            fontSize: '0.85rem',
-          }}
+          className={`tab-btn ${activeTab === 'recruiters' ? 'active' : ''}`}
         >
           Recruiters
+        </button>
+        <button
+          onClick={() => { setActiveTab('candidates'); setSelectedInterview(null); setShowCreateForm(false); }}
+          className={`tab-btn ${activeTab === 'candidates' ? 'active' : ''}`}
+        >
+          Candidate Queue
+        </button>
+        <button
+          onClick={() => { setActiveTab('colleges'); setSelectedInterview(null); setShowCreateForm(false); }}
+          className={`tab-btn ${activeTab === 'colleges' ? 'active' : ''}`}
+        >
+          Colleges
         </button>
       </div>
 
@@ -1934,6 +2322,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     { key: 'overview', label: 'Overview', icon: <User size={13} /> },
                     { key: 'panels', label: 'Panels', icon: <Users size={13} /> },
                     { key: 'booking', label: 'Booking', icon: <Calendar size={13} /> },
+                    { key: 'feedback', label: 'Feedback', icon: <MessageSquare size={13} /> },
                   ] as { key: typeof detailTab; label: string; icon: React.ReactNode }[]).map((tab) => (
                     <button
                       key={tab.key}
@@ -2254,6 +2643,166 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                     )}
                   </div>
                 )}
+
+                {/* TAB: Feedback */}
+                {detailTab === 'feedback' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--primary)' }}>
+                      <MessageSquare size={15} /> Panel Feedback &amp; Ratings
+                    </h4>
+
+                    {selectedInterview.panels.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                        No panels nominated for this interview.
+                      </div>
+                    ) : (
+                      selectedInterview.panels.map((p) => {
+                        let parsed: any = null;
+                        let isJson = false;
+                        try {
+                          if (p.feedback && p.feedback.startsWith('{')) {
+                            parsed = JSON.parse(p.feedback);
+                            isJson = true;
+                          }
+                        } catch (e) {}
+
+                        const hasSubmitted = p.status === 'SUBMITTED' && (p.feedback || p.decision);
+
+                        return (
+                          <div key={p.id} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                            {/* Panel header info */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.5rem' }}>
+                              <div>
+                                <strong style={{ fontSize: '0.85rem', display: 'block' }}>{p.name}</strong>
+                                <span className="text-muted text-xs block">{p.email}</span>
+                              </div>
+                              <div>
+                                {hasSubmitted ? (
+                                  <span className={`badge ${p.decision === 'PASSED' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.6rem' }}>
+                                    {p.decision === 'PASSED' ? 'Passed' : 'Rejected'}
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}>Pending</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Panel feedback body */}
+                            {!hasSubmitted ? (
+                              <p className="text-muted text-xs font-italic" style={{ margin: 0 }}>Waiting for panelist feedback submission.</p>
+                            ) : isJson && parsed ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Round: {parsed.type || 'L1/L2'}
+                                </div>
+
+                                {/* L1 Render */}
+                                {parsed.type === 'L1' && parsed.scores && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Coding &amp; Problem Solving:</span>
+                                        {renderStarsStatic(parsed.scores.coding)}
+                                      </div>
+                                      {parsed.notes?.codingNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.codingNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Technical Communication:</span>
+                                        {renderStarsStatic(parsed.scores.communication)}
+                                      </div>
+                                      {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>CS Fundamentals:</span>
+                                        {renderStarsStatic(parsed.scores.fundamentals)}
+                                      </div>
+                                      {parsed.notes?.fundamentalsNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.fundamentalsNotes}</p>}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* L2 Render */}
+                                {parsed.type === 'L2' && parsed.scores && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>System Design &amp; Scalability:</span>
+                                        {renderStarsStatic(parsed.scores.systemDesign)}
+                                      </div>
+                                      {parsed.notes?.systemDesignNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.systemDesignNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Technical Depth &amp; Experience:</span>
+                                        {renderStarsStatic(parsed.scores.technicalDepth)}
+                                      </div>
+                                      {parsed.notes?.technicalDepthNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalDepthNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Leadership &amp; Ownership:</span>
+                                        {renderStarsStatic(parsed.scores.leadership)}
+                                      </div>
+                                      {parsed.notes?.leadershipNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.leadershipNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Cultural Fit &amp; MS Values:</span>
+                                        {renderStarsStatic(parsed.scores.culturalFit)}
+                                      </div>
+                                      {parsed.notes?.culturalFitNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.culturalFitNotes}</p>}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* General Render */}
+                                {parsed.type === 'General' && parsed.scores && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Technical Depth:</span>
+                                        {renderStarsStatic(parsed.scores.technical)}
+                                      </div>
+                                      {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Communication:</span>
+                                        {renderStarsStatic(parsed.scores.communication)}
+                                      </div>
+                                      {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                    </div>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 600 }}>Collaboration &amp; Teamwork:</span>
+                                        {renderStarsStatic(parsed.scores.collaboration)}
+                                      </div>
+                                      {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.collaborationNotes}</p>}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {parsed.comments && (
+                                  <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.4rem', marginTop: '0.2rem' }}>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Overall Comments</span>
+                                    <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.4 }}>{parsed.comments}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              // Legacy string comments display
+                              <div>
+                                {p.feedback && <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.4 }}>{p.feedback}</p>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2332,14 +2881,19 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                 </h4>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '0.7rem' }}>College Name</label>
-                  <input
-                    type="text"
+                  <select
                     className="form-input"
-                    style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px' }}
                     value={collegeName}
                     onChange={(e) => setCollegeName(e.target.value)}
-                    placeholder="e.g. IIT Bombay, NIT Trichy..."
-                  />
+                  >
+                    <option value="">Select College...</option>
+                    {collegesList.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <p className="text-muted" style={{ fontSize: '0.65rem', marginTop: '0.5rem', lineHeight: 1.4 }}>
                   Default institution shown in slot request messages.
@@ -2881,6 +3435,552 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
         </div>
       )}
 
+      {/* VIEW D: CANDIDATES QUEUE TAB */}
+      {activeTab === 'candidates' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+               {/* Left Column: Upload area and Single Add */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              
+              {/* Candidate Bulk Upload Card */}
+              <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Users size={18} className="text-primary" />
+                  Candidate Bulk Upload
+                </h3>
+                <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
+                  Upload an Excel template or CSV containing candidate <strong>Name</strong>, <strong>Email</strong>, <strong>College Name of Drive</strong>, and <strong>Drive Date</strong> to add them to the queue.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {/* Default Date Selection (Fallback Default) */}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date (Fallback Default)</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={uploadDefaultDate}
+                      onChange={(e) => setUploadDefaultDate(e.target.value)}
+                      min={todayStr}
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+                    />
+                  </div>
+
+                  {/* Default College Selection (Fallback Default) */}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive (Fallback Default)</label>
+                    <select
+                      className="form-input"
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px' }}
+                      value={uploadDefaultCollege}
+                      onChange={(e) => setUploadDefaultCollege(e.target.value)}
+                    >
+                      <option value="">Select College...</option>
+                      {collegesList.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{
+                    border: '2px dashed var(--border-glass)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '2.5rem 1.5rem',
+                    textAlign: 'center',
+                    background: 'rgba(0, 0, 0, 0.15)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'var(--transition-fast)'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = ''}
+                  >
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleExcelUpload}
+                      disabled={isUploadingCandidates}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer'
+                      }}
+                    />
+                    {isUploadingCandidates ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                        <Loader2 size={32} className="animate-spin text-primary" />
+                        <span className="text-xs text-muted">Parsing & Uploading File...</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                        <Plus size={32} className="text-muted" />
+                        <span className="text-xs font-semibold text-main">Click or Drag File Here</span>
+                        <span className="text-xxs text-muted">Supports XLSX, XLS, CSV</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleDownloadTemplate}
+                    className="btn btn-secondary"
+                    style={{ width: '100%' }}
+                  >
+                    Download CSV Template
+                  </button>
+
+                  {uploadError && (
+                    <div style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.75rem',
+                      color: '#f87171',
+                      fontSize: '0.8rem'
+                    }}>
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {uploadSuccessMessage && (
+                    <div style={{
+                      backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.75rem',
+                      color: '#34d399',
+                      fontSize: '0.8rem'
+                    }}>
+                      {uploadSuccessMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Add Single Candidate Card */}
+              <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Plus size={18} className="text-primary" />
+                  Add Single Candidate
+                </h3>
+                <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
+                  Manually register a single candidate to the WAITING queue.
+                </p>
+
+                <form onSubmit={handleAddSingleCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Candidate Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="John Doe"
+                      value={singleCandidateName}
+                      onChange={(e) => setSingleCandidateName(e.target.value)}
+                      required
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Candidate Email</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="john.doe@example.com"
+                      value={singleCandidateEmail}
+                      onChange={(e) => setSingleCandidateEmail(e.target.value)}
+                      required
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={singleCandidateDate}
+                      onChange={(e) => setSingleCandidateDate(e.target.value)}
+                      min={todayStr}
+                      required
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive</label>
+                    <select
+                      className="form-input"
+                      style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px' }}
+                      value={singleCandidateCollege}
+                      onChange={(e) => setSingleCandidateCollege(e.target.value)}
+                      required
+                    >
+                      <option value="">Select College...</option>
+                      {collegesList.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {singleCandidateError && (
+                    <div style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.75rem',
+                      color: '#f87171',
+                      fontSize: '0.8rem'
+                    }}>
+                      {singleCandidateError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isAddingSingleCandidate || !singleCandidateName.trim() || !singleCandidateEmail.trim()}
+                    style={{ width: '100%', marginTop: '0.5rem' }}
+                  >
+                    {isAddingSingleCandidate ? (
+                      <><Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} /> Adding...</>
+                    ) : (
+                      'Add Candidate'
+                    )}
+                  </button>
+                </form>
+              </div>
+
+            </div>
+
+            {/* Right Column: Queue Listing */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', fontFamily: 'var(--font-heading)' }}>
+                    Authorized Candidate Queue
+                  </h3>
+                  <p className="text-muted text-xs">
+                    List of candidates uploaded and waiting for/mapped to L1 interviews.
+                  </p>
+                </div>
+
+                {/* Filters */}
+                <div className="flex-gap-2">
+                  <div style={{ position: 'relative', width: '180px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search candidate..."
+                      className="form-input"
+                      value={candidateSearchQuery}
+                      onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                      style={{ paddingLeft: '28px', fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)' }}
+                    />
+                  </div>
+                  <select
+                    className="form-input"
+                    value={candidateStatusFilter}
+                    onChange={(e) => setCandidateStatusFilter(e.target.value as any)}
+                    style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)' }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="WAITING">Waiting</option>
+                    <option value="MAPPED">Mapped</option>
+                  </select>
+                </div>
+              </div>
+
+              {isLoadingCandidates ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                  <Loader2 size={32} className="animate-spin text-primary" />
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>College</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Preferred Date</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Outcome</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
+                        <th style={{ padding: '0.75rem 1rem', width: '80px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {candidates
+                        .filter((c) => {
+                          const matchesQuery = c.name.toLowerCase().includes(candidateSearchQuery.toLowerCase()) ||
+                                               c.email.toLowerCase().includes(candidateSearchQuery.toLowerCase());
+                          const matchesStatus = candidateStatusFilter === 'all' || c.status === candidateStatusFilter;
+                          return matchesQuery && matchesStatus;
+                        })
+                        .map((candidate) => {
+                          const mappedIntv = candidate.mappedInterviewId 
+                            ? interviews.find((i) => i.id === candidate.mappedInterviewId)
+                            : null;
+
+                          return (
+                            <tr key={candidate.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }} className="search-item-hover">
+                              <td style={{ padding: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>{candidate.name}</td>
+                              <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{candidate.email}</td>
+                              <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
+                                {candidate.college ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#fb923c' }}>
+                                    <Building2 size={12} /> {candidate.college}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted font-italic" style={{ fontSize: '0.8rem' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem' }}>
+                                {candidate.status === 'WAITING' ? (
+                                  <input
+                                    type="date"
+                                    className="form-input"
+                                    value={candidate.preferredDate || ''}
+                                    onChange={(e) => handleUpdateCandidateDate(candidate.id, e.target.value)}
+                                    style={{
+                                      fontSize: '0.8rem',
+                                      padding: '0.2rem 0.4rem',
+                                      height: '28px',
+                                      width: '135px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: 'rgba(0, 0, 0, 0.3)',
+                                      border: '1px solid var(--border-glass)',
+                                      color: 'var(--text-main)'
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                    {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : 'N/A'}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                {new Date(candidate.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </td>
+                              <td style={{ padding: '1rem' }}>
+                                {candidate.status === 'WAITING' ? (
+                                  <span className="badge badge-pending">Waiting</span>
+                                ) : (
+                                  <span className="badge badge-success">Mapped</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem' }}>
+                                {(() => {
+                                  const os = (candidate as any).outcomeStatus;
+                                  if (!os || os === 'PENDING') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending</span>;
+                                  if (os === 'PASSED_L1') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Passed L1</span>;
+                                  if (os === 'PASSED_L2') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Passed L2</span>;
+                                  if (os === 'SELECTED') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Selected</span>;
+                                  if (os === 'REJECTED') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                                  return <span className="badge" style={{ fontSize: '0.62rem' }}>{os}</span>;
+                                })()}
+                              </td>
+                              <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
+                                {mappedIntv ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
+                                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                      {mappedIntv.scheduledSlotStart
+                                        ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                        : 'Pending Slot'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted font-italic">—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                  {(candidate as any).outcomeStatus === 'PASSED_L2' && (
+                                    <button
+                                      onClick={() => handleMarkAsSelected(candidate.id)}
+                                      disabled={selectingCandidateId === candidate.id}
+                                      className="btn btn-sm"
+                                      style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
+                                      title="Mark as Selected (final outcome)"
+                                    >
+                                      {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
+                                      Select
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteCandidate(candidate.id)}
+                                    disabled={candidate.status === 'MAPPED'}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
+                                      color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                      padding: '0.2rem'
+                                    }}
+                                    onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
+                                    onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
+                                    title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                      {candidates.length === 0 && (
+                        <tr>
+                          <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            No candidates registered in the queue. Download the template on the left and upload candidates.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW E: MANAGE COLLEGES TAB */}
+      {activeTab === 'colleges' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
+            
+            {/* Left: Add College Form */}
+            <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Building2 size={18} className="text-primary" />
+                Add College / Institution
+              </h3>
+              
+              <form onSubmit={handleAddCollege} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. IIT Bombay, NIT Trichy"
+                    value={newCollegeName}
+                    onChange={(e) => setNewCollegeName(e.target.value)}
+                    required
+                    style={{ marginTop: '0.5rem' }}
+                  />
+                </div>
+                
+                {collegeError && (
+                  <div style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem',
+                    color: '#f87171',
+                    fontSize: '0.8rem'
+                  }}>
+                    {collegeError}
+                  </div>
+                )}
+                
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isAddingCollege || !newCollegeName.trim()}
+                  style={{ width: '100%' }}
+                >
+                  {isAddingCollege ? (
+                    <><Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} /> Adding...</>
+                  ) : (
+                    'Add College'
+                  )}
+                </button>
+              </form>
+            </div>
+            
+            {/* Right: Colleges List */}
+            <div className="glass-card" style={{ padding: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Building2 size={18} className="text-primary" />
+                Registered Colleges Directory
+              </h3>
+              <p className="text-muted text-xs" style={{ marginBottom: '1.5rem' }}>
+                This is the single source of truth for all colleges/institutions we will be visiting for interviews.
+              </p>
+              
+              {isLoadingColleges ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                  <Loader2 size={32} className="animate-spin text-primary" />
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>College / Institution Name</th>
+                        <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Date Registered</th>
+                        <th style={{ padding: '0.75rem 1rem', width: '80px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {collegesList.map((college) => (
+                        <tr key={college.id} style={{ borderBottom: '1px solid var(--border-glass)', transition: 'var(--transition-fast)' }} className="search-item-hover">
+                          <td style={{ padding: '1rem', fontWeight: 500, color: 'var(--text-main)' }}>{college.name}</td>
+                          <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
+                            {new Date(college.createdAt).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </td>
+                          <td style={{ padding: '1rem', textAlign: 'right' }}>
+                            <button
+                              onClick={() => handleDeleteCollege(college.id)}
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--text-muted)',
+                                padding: '0.2rem'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                              title="Delete College"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      
+                      {collegesList.length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            No colleges registered. Add a college name on the left to start populate.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {/* Request Slot Overlay Modal (New Automagic Flow) */}
       {reqPanelists.length > 0 && (
         <div style={{
@@ -2970,6 +4070,24 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                 </div>
               </div>
 
+              <div className="form-group">
+                <label className="form-label">College / Institution</label>
+                <select
+                  className="form-input"
+                  style={{ height: '36px' }}
+                  value={reqCollegeName}
+                  onChange={(e) => setReqCollegeName(e.target.value)}
+                  required
+                >
+                  <option value="">Select College...</option>
+                  {collegesList.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Proposed Slots Builder / Auto-generated slots */}
               <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem' }}>
                 <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--text-main)', fontWeight: 600 }}>Proposed Slot Options Checklist</h4>
@@ -2983,7 +4101,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                       const start = new Date(s.startTime);
                       const end = new Date(s.endTime);
                       return (
-                        <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.75rem' }}>
+                         <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.75rem' }}>
                           <input
                             type="checkbox"
                             checked={s.selected}
@@ -3012,7 +4130,9 @@ export default function DashboardClient({ initialInterviews, initialPanelists }:
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
                     Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,
                   </p>
-                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>You have been requested to conduct an <strong>{reqInterviewType} Interview</strong>.</p>
+                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
+                    You have been requested to conduct an <strong>{reqInterviewType} Interview</strong>{reqCollegeName ? <span> for <strong>{reqCollegeName}</strong></span> : ''}.
+                  </p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
                     Proposed Interview Date Range: <strong>{new Date(reqStartDate || todayStr).toLocaleDateString()} - {new Date(reqEndDate || todayStr).toLocaleDateString()}</strong>
                   </p>

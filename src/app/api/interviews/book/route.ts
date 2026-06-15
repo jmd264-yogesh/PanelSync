@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
     }
 
+    const ccEmails = await db.getRecruiterCCEmails(session.user.email);
+
     // Call Microsoft Graph to create a calendar event with an online Teams meeting link
     const meeting = await graph.createTeamsMeeting(
       session.user.email,
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
         startTime,
         endTime,
         panelEmails: interview.panels.map((p) => p.email),
+        ccEmails,
       },
       token
     );

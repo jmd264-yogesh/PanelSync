@@ -128,6 +128,7 @@ class GraphService {
       startTime: string; // ISO String UTC
       endTime: string;   // ISO String UTC
       panelEmails: string[];
+      ccEmails?: string[];
     },
     accessToken: string
   ): Promise<CalendarEventResponse> {
@@ -153,6 +154,18 @@ class GraphService {
         type: 'required',
       }))
     );
+
+    if (params.ccEmails && params.ccEmails.length > 0) {
+      attendees.push(
+        ...params.ccEmails.map((email) => ({
+          emailAddress: {
+            address: email,
+            name: email.split('@')[0],
+          },
+          type: 'optional',
+        }))
+      );
+    }
 
     const body = {
       subject: `Interview: ${params.candidateName} - ${params.role}`,
@@ -261,6 +274,7 @@ class GraphService {
       panelEmails: string[];
       sendAsTeamsMeeting?: boolean;
       teamsMeetingUrl?: string;
+      ccEmails?: string[];
     },
     accessToken: string
   ): Promise<any> {
@@ -286,6 +300,18 @@ class GraphService {
         type: 'required',
       }))
     );
+
+    if (params.ccEmails && params.ccEmails.length > 0) {
+      attendees.push(
+        ...params.ccEmails.map((email) => ({
+          emailAddress: {
+            address: email,
+            name: email.split('@')[0],
+          },
+          type: 'optional',
+        }))
+      );
+    }
 
     let joinUrl = params.teamsMeetingUrl;
     if (!joinUrl && params.sendAsTeamsMeeting !== false) {

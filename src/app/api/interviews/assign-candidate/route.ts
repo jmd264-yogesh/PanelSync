@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       try {
         const panelEmails = interview.panels.map((p) => p.email);
         const description = 'Interview scheduled via Microsoft Teams Scheduler. Candidate assigned.';
+        const ccEmails = await db.getRecruiterCCEmails(session.user.email);
         
         await graph.updateTeamsMeeting(
           interview.calendarEventId,
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
             panelEmails,
             sendAsTeamsMeeting: sendAsTeamsMeeting !== false, // default to true if not specified
             teamsMeetingUrl: interview.teamsMeetingUrl || undefined,
+            ccEmails,
           },
           token
         );
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
             if (interview.scheduledSlotStart && interview.scheduledSlotEnd) {
               const panelEmails = interview.panels.map((p) => p.email);
               const description = 'Interview scheduled via Microsoft Teams Scheduler. Re-created after original event was not found.';
+              const ccEmails = await db.getRecruiterCCEmails(session.user.email);
               
               const meeting = await graph.createTeamsMeeting(
                 session.user.email,
@@ -83,6 +86,7 @@ export async function POST(request: NextRequest) {
                   startTime: interview.scheduledSlotStart,
                   endTime: interview.scheduledSlotEnd,
                   panelEmails,
+                  ccEmails,
                 },
                 token
               );

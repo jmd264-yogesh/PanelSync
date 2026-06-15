@@ -53,6 +53,40 @@ export async function getSession(): Promise<SessionPayload | null> {
   }
 }
 
+export async function getPanelistSession(): Promise<SessionPayload | null> {
+  try {
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('sessionId')?.value;
+    if (!sessionId) return null;
+
+    const [sessionRow] = await dbClient
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
+
+    if (!sessionRow) return null;
+
+    const { db } = await import('./db');
+    const isPanelist = await db.isPanelist(sessionRow.userEmail);
+    if (!isPanelist) return null;
+
+    return {
+      accessToken: sessionRow.accessToken,
+      refreshToken: sessionRow.refreshToken || undefined,
+      expiresAt: sessionRow.expiresAt.getTime(),
+      user: {
+        id: sessionRow.userId,
+        displayName: sessionRow.userDisplayName,
+        email: sessionRow.userEmail,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching panelist session:', error);
+    return null;
+  }
+}
+
 export async function setSession(payload: SessionPayload): Promise<string> {
   const sessionId = crypto.randomUUID();
   

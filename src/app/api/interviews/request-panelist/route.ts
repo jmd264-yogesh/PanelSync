@@ -14,16 +14,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { panelist, panelists: bodyPanelists, duration, startDate, endDate, interviewType, slots } = body;
+    const { panelist, panelists: bodyPanelists, duration, startDate, endDate, interviewType, slots, collegeName } = body;
 
     const targetPanelists = bodyPanelists || (panelist ? [panelist] : []);
 
-    if (!targetPanelists.length || !duration || !startDate || !endDate || !interviewType || !slots || !slots.length) {
-      return NextResponse.json({ error: 'Missing required request parameters' }, { status: 400 });
+    if (!targetPanelists.length || !duration || !startDate || !endDate || !interviewType || !slots || !slots.length || !collegeName || !collegeName.trim()) {
+      return NextResponse.json({ error: 'Missing required request parameters (including College Name)' }, { status: 400 });
     }
 
     // 1. Create interview request with "Pending Assignment" details
-    const role = `${interviewType} Interview`;
+    const role = collegeName ? `${interviewType} Interview - ${collegeName}` : `${interviewType} Interview`;
     const interview = await db.createInterview({
       candidateName: 'Pending Assignment',
       candidateEmail: 'pending@assign.com',
@@ -57,6 +57,10 @@ export async function POST(request: NextRequest) {
       const availabilityLink = `${appUrl}/availability/${panel.token}`;
 
       try {
+        if (session.user.id === panel.userId) {
+          console.warn(`[Self-Request Warning] Recruiter and panelist are the same user (${panel.email}). Skipping Teams 1:1 chat creation. You can manually copy the slot selection link: ${availabilityLink}`);
+          continue;
+        }
         const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
         
         const htmlMessage = `
