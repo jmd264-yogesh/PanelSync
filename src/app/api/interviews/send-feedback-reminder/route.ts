@@ -1,0 +1,122 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getValidAccessToken, getSession } from '@/lib/session';
+import { db } from '@/lib/db';
+import { graph } from '@/lib/graph';
+
+/**
+ * POST /api/interviews/send-feedback-reminder
+ * Sends a Teams message to every panelist of a SCHEDULED interview
+ * with a link to /feedback/[token] so they can submit their decision.
+ */
+export async function POST(request: NextRequest) {
+  const token = await getValidAccessToken();
+  const session = await getSession();
+
+  if (!token || !session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { interviewId } = body as { interviewId: string };
+
+    if (!interviewId) {
+      return NextResponse.json({ error: 'Missing interviewId' }, { status: 400 });
+    }
+
+    const interview = await db.getInterview(interviewId);
+    if (!interview) {
+      return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+    }
+
+    if (interview.status !== 'SCHEDULED') {
+      return NextResponse.json(
+        { error: 'Feedback reminders can only be sent for SCHEDULED interviews.' },
+        { status: 400 }
+      );
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const skipped: string[] = [];
+    const sent: string[] = [];
+
+    const slotEnd = interview.scheduledSlotEnd
+      ? new Date(interview.scheduledSlotEnd).toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : 'the scheduled slot';
+
+    for (const panel of interview.panels) {
+      const feedbackLink = `${appUrl}/feedback/${panel.token}`;
+
+      // Skip self-messages (recruiter == panelist)
+      if (session.user.id === panel.userId) {
+        skipped.push(panel.email);
+        console.warn(`[FeedbackReminder] Skipping self-message for ${panel.email}`);
+        continue;
+      }
+
+      try {
+        const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
+
+        const isL1 = interview.role.toLowerCase().includes('l1');
+        const isL2 = interview.role.toLowerCase().includes('l2');
+        const roundLabel = isL1 ? 'L1 Technical Screening' : isL2 ? 'L2 System Design / Management' : interview.role;
+        const accentColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#6366f1';
+
+        const htmlMessage = `
+          <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid ${accentColor}; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 520px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <div style="background: ${accentColor}22; border: 1px solid ${accentColor}55; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: ${accentColor};">${isL1 ? 'L1' : isL2 ? 'L2' : 'ROUND'}</div>
+              <h3 style="margin: 0; color: #f8fafc; font-size: 15px; font-weight: 600;">Interview Feedback Required</h3>
+            </div>
+
+            <p style="margin: 0 0 8px; font-size: 14px; color: #cbd5e1;">
+              Hi <strong style="color: #f8fafc;">${panel.name}</strong>,
+            </p>
+            <p style="margin: 0 0 14px; font-size: 14px; color: #94a3b8;">
+              Your <strong style="color: ${accentColor};">${roundLabel}</strong> interview slot has ended at <strong>${slotEnd}</strong>. Please take a moment to submit your feedback and decision for this candidate.
+            </p>
+
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                  <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em;">Candidate</div>
+                  <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.candidateName}</div>
+                </div>
+                <div>
+                  <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em;">Role</div>
+                  <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.role}</div>
+                </div>
+              </div>
+            </div>
+
+            <a href="${feedbackLink}" style="display: inline-block; background: ${accentColor}; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 14px; margin-bottom: 14px;">
+              Submit Feedback →
+            </a>
+
+            <div style="font-size: 11px; color: #475569; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
+              Direct link: <a href="${feedbackLink}" style="color: ${accentColor}; text-decoration: underline;">${feedbackLink}</a>
+            </div>
+          </div>
+        `;
+
+        await graph.sendTeamsMessage(chat.id, htmlMessage, token);
+        sent.push(panel.email);
+      } catch (panelErr) {
+        console.error(`Failed to send feedback reminder to ${panel.email}:`, panelErr);
+        skipped.push(panel.email);
+      }
+    }
+
+    return NextResponse.json({ success: true, sent, skipped });
+  } catch (error) {
+    console.error('Failed to send feedback reminders:', error);
+    return NextResponse.json({ error: 'Failed to send feedback reminders' }, { status: 500 });
+  }
+}

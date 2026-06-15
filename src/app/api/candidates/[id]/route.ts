@@ -54,11 +54,28 @@ export async function PATCH(
       return NextResponse.json({ success: true, candidates: updatedList });
     }
 
-    const { preferredDate } = body;
-    if (!preferredDate || !preferredDate.trim()) {
-      return NextResponse.json({ error: 'Drive Date is required.' }, { status: 400 });
+    const { name, email, preferredDate, college } = body;
+    const updateParams: any = {};
+    if (name !== undefined) {
+      if (!name.trim()) return NextResponse.json({ error: 'Candidate name is required.' }, { status: 400 });
+      updateParams.name = name;
     }
-    await db.updateCandidateDate(id, preferredDate);
+    if (email !== undefined) {
+      if (!email.trim()) return NextResponse.json({ error: 'Candidate email is required.' }, { status: 400 });
+      updateParams.email = email;
+    }
+    if (preferredDate !== undefined) {
+      if (!preferredDate.trim()) return NextResponse.json({ error: 'Drive Date is required.' }, { status: 400 });
+      updateParams.preferredDate = preferredDate;
+    }
+    if (college !== undefined) {
+      if (!college.trim()) return NextResponse.json({ error: 'College Name of Drive is required.' }, { status: 400 });
+      updateParams.college = college;
+    }
+
+    if (Object.keys(updateParams).length > 0) {
+      await db.updateCandidate(id, updateParams);
+    }
 
     const updatedList = await db.getUploadedCandidates();
     return NextResponse.json({ success: true, candidates: updatedList });
