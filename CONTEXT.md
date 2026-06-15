@@ -27,7 +27,13 @@ src/
 │   ├── globals.css               # Design system (CSS variables, glass-card, btn classes)
 │   ├── dashboard/
 │   │   ├── page.tsx              # Server component — fetches initial data, renders DashboardClient
-│   │   └── DashboardClient.tsx   # MAIN UI (~2872 lines, 'use client')
+│   │   ├── DashboardClient.tsx   # Thin orchestrator (~110 lines) — shared state + tab routing
+│   │   └── components/           # One file per tab (all 'use client')
+│   │       ├── InterviewsTab.tsx    # Interviews cockpit, tracker, create form, detail panel
+│   │       ├── PanelistsTab.tsx     # Panelist directory, bulk selection, slot request modal
+│   │       ├── CandidatesTab.tsx    # Candidate queue, bulk upload, mapping
+│   │       ├── RecruitersTab.tsx    # Recruiter access management (self-contained)
+│   │       └── CollegesTab.tsx      # College directory management (self-contained)
 │   ├── availability/[token]/
 │   │   └── AvailabilityClient.tsx  # Public tokenised page for panelist slot submission
 │   └── api/
@@ -128,40 +134,57 @@ All methods accept `accessToken: string` from the current session.
 
 ---
 
-## 6. Main Dashboard (`src/app/dashboard/DashboardClient.tsx`)
+## 6. Main Dashboard Architecture
 
-3600+ line `'use client'` component. Five tabs: **Interviews**, **Panelists**, **Recruiters**, **Candidate Queue**, and **Colleges**.
+`DashboardClient.tsx` is now a **thin orchestrator** (~110 lines) that owns only cross-tab shared state and renders the appropriate tab component.
 
-### Key State Variables
+### Shared State in DashboardClient
 ```ts
 activeTab: 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges'
-interviews: Interview[]
-panelists: Panelist[]
-selectedInterview: Interview | null
-collegesList: College[]
+interviews: Interview[]           // shared between Interviews and Panelists tabs
+panelists: Panelist[]             // shared between Interviews and Panelists tabs
+collegesList: College[]           // shared between Panelists, Candidates, Colleges tabs
+candidates: UploadedCandidate[]   // shared between Interviews and Candidates tabs
+todayStr: string                  // ISO date string for today, passed to children
+```
 
-// Create interview form
+### Tab Components (`src/app/dashboard/components/`)
+
+#### `InterviewsTab.tsx` — self-manages UI state
+```ts
+// UI States (local)
+statusFilter, cockpitView, selectedInterview, showCreateForm, detailTab
 candidateName, candidateEmail, role, duration, startDate, endDate
 interviewType: 'L1' | 'L2' | 'General'
 selectedPanels: GraphUser[]
+selectedSlot, bookingDescription
+isEditingDates, editStartDate, editEndDate
+// Handlers: handleCreateInterview, handleDeleteInterview, handleBookSlot,
+//           handleCancelBooking, handleResendInvite, handleUpdateDates
+```
 
-// Panelist-first slot request (new flow)
-reqPanelists: Panelist[]         // panelists selected for request
+#### `PanelistsTab.tsx` — self-manages UI state
+```ts
+// Key state (local)
+reqPanelists: Panelist[]         // panelists selected for slot request
 reqDuration, reqStartDate, reqEndDate, reqInterviewType
 reqSlots: { startTime, endTime, selected }[]
-
-// Bulk multi-select (SEPARATE per column to avoid collision)
 bulkSelectedL1Ids: string[]      // IDs selected in L1 column only
 bulkSelectedL2Ids: string[]      // IDs selected in L2 column only
-
-// L1/L2 interview time config
 l1TimeStart, l1TimeEnd           // default '10:00' – '13:00'
 l2TimeStart, l2TimeEnd           // default '14:00' – '17:00'
-
-// Default scheduler config
-defaultStartDate, defaultEndDate // default proposed date range pre-filled in slot request modal
-collegeName: string              // default college/institution name shown in slot request messages
+defaultStartDate, defaultEndDate
+collegeName: string
 ```
+
+#### `CandidatesTab.tsx` — self-manages UI state  
+Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews.
+
+#### `RecruitersTab.tsx` — fully self-contained (no props)  
+Manages the recruiter access list, add/delete recruiters.
+
+#### `CollegesTab.tsx` — accepts `collegesList` + `setCollegesList` props  
+Manages college directory; owns its own `fetchColleges` internally.
 
 ### Interviews Tab
 - List view + tracker/cockpit view toggle

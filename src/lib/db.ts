@@ -538,6 +538,29 @@ export const db = {
     return true;
   },
 
+  // Update candidate details (generic)
+  updateCandidate: async (
+    id: string,
+    params: {
+      name?: string;
+      email?: string;
+      preferredDate?: string;
+      college?: string;
+    }
+  ): Promise<boolean> => {
+    const updatePayload: any = {};
+    if (params.name !== undefined) updatePayload.name = params.name;
+    if (params.email !== undefined) updatePayload.email = params.email;
+    if (params.preferredDate !== undefined) updatePayload.preferredDate = new Date(params.preferredDate);
+    if (params.college !== undefined) updatePayload.college = params.college;
+
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set(updatePayload)
+      .where(eq(schema.uploadedCandidates.id, id));
+    return true;
+  },
+
   // Delete uploaded candidate
   deleteUploadedCandidate: async (id: string): Promise<boolean> => {
     await dbClient.delete(schema.uploadedCandidates).where(eq(schema.uploadedCandidates.id, id));
