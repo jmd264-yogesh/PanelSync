@@ -4,10 +4,17 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Settings, Search, Loader2, Trash2, Info, Clock, Building2, Check
 } from 'lucide-react';
-import { Panelist, Interview, College } from '@/lib/db';
+import { Panelist, Interview, College, Drive } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface PanelistsTabProps {
   panelists: Panelist[];
@@ -16,6 +23,7 @@ interface PanelistsTabProps {
   setInterviews: React.Dispatch<React.SetStateAction<Interview[]>>;
   collegesList: College[];
   todayStr: string;
+  activeDrive: Drive | null;
 }
 
 export default function PanelistsTab({
@@ -25,6 +33,7 @@ export default function PanelistsTab({
   setInterviews,
   collegesList,
   todayStr,
+  activeDrive,
 }: PanelistsTabProps) {
   // ── Scheduler Defaults ───────────────────────────────────────────────────
   const [l1TimeStart, setL1TimeStart] = useState('10:00');
@@ -63,6 +72,17 @@ export default function PanelistsTab({
   const [reqSlots, setReqSlots] = useState<{ startTime: string; endTime: string; selected: boolean }[]>([]);
   const [reqCollegeName, setReqCollegeName] = useState('');
   const [isRequestingSlot, setIsRequestingSlot] = useState(false);
+
+  useEffect(() => {
+    if (activeDrive) {
+      setCollegeName(activeDrive.collegeName);
+      setReqCollegeName(activeDrive.collegeName);
+      setDefaultStartDate(activeDrive.driveDate);
+      setDefaultEndDate(activeDrive.driveDate);
+      setReqStartDate(activeDrive.driveDate);
+      setReqEndDate(activeDrive.driveDate);
+    }
+  }, [activeDrive]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredPanelists = panelists.filter(
@@ -256,9 +276,9 @@ export default function PanelistsTab({
     setReqPanelists(arr);
     setReqInterviewType(stage);
     setReqDuration('30');
-    setReqStartDate(defaultStartDate);
-    setReqEndDate(defaultEndDate);
-    setReqCollegeName(collegeName);
+    setReqStartDate(activeDrive ? activeDrive.driveDate : defaultStartDate);
+    setReqEndDate(activeDrive ? activeDrive.driveDate : defaultEndDate);
+    setReqCollegeName(activeDrive ? activeDrive.collegeName : collegeName);
   };
 
   const handleSendSlotRequest = async (e: React.FormEvent) => {
@@ -374,17 +394,17 @@ export default function PanelistsTab({
             </h4>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '0.7rem' }}>College Name</label>
-              <select
-                className="form-input"
-                style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px' }}
-                value={collegeName}
-                onChange={(e) => setCollegeName(e.target.value)}
-              >
-                <option value="">Select College...</option>
-                {collegesList.map((c) => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
+              <Select value={collegeName} onValueChange={(val) => setCollegeName(val || '')}>
+                <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                  <SelectValue placeholder="Select College..." />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-muted" style={{ fontSize: '0.65rem', marginTop: '0.5rem', lineHeight: 1.4 }}>
               Default institution shown in slot request messages.
@@ -834,20 +854,30 @@ export default function PanelistsTab({
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Interview Stage</label>
-                  <select className="form-input" value={reqInterviewType} onChange={(e) => setReqInterviewType(e.target.value as any)}>
-                    <option value="L1">L1 Interview</option>
-                    <option value="L2">L2 Interview</option>
-                    <option value="General">General / Custom</option>
-                  </select>
+                  <Select value={reqInterviewType} onValueChange={(val) => setReqInterviewType(val as any)}>
+                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                      <SelectValue placeholder="Select Stage" />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                      <SelectItem value="L1">L1 Interview</SelectItem>
+                      <SelectItem value="L2">L2 Interview</SelectItem>
+                      <SelectItem value="General">General / Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Duration</label>
-                  <select className="form-input" value={reqDuration} onChange={(e) => setReqDuration(e.target.value)}>
-                    <option value="30">30 mins</option>
-                    <option value="45">45 mins</option>
-                    <option value="60">60 mins</option>
-                    <option value="90">90 mins</option>
-                  </select>
+                  <Select value={reqDuration} onValueChange={(val) => setReqDuration(val || '')}>
+                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                      <SelectValue placeholder="Select Duration" />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                      <SelectItem value="30">30 mins</SelectItem>
+                      <SelectItem value="45">45 mins</SelectItem>
+                      <SelectItem value="60">60 mins</SelectItem>
+                      <SelectItem value="90">90 mins</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -864,12 +894,17 @@ export default function PanelistsTab({
 
               <div className="form-group">
                 <label className="form-label">College / Institution</label>
-                <select className="form-input" style={{ height: '36px' }} value={reqCollegeName} onChange={(e) => setReqCollegeName(e.target.value)} required>
-                  <option value="">Select College...</option>
-                  {collegesList.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={reqCollegeName} onValueChange={(val) => setReqCollegeName(val || '')}>
+                  <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                    <SelectValue placeholder="Select College..." />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                    {collegesList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Proposed Slots Builder */}

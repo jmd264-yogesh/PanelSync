@@ -33,7 +33,8 @@ src/
 │   │       ├── PanelistsTab.tsx     # Panelist directory, bulk selection, slot request modal
 │   │       ├── CandidatesTab.tsx    # Candidate queue, bulk upload, mapping
 │   │       ├── RecruitersTab.tsx    # Recruiter access management (self-contained)
-│   │       └── CollegesTab.tsx      # College directory management (self-contained)
+│   │       ├── CollegesTab.tsx      # College directory management (self-contained)
+│   │       └── DrivesTab.tsx        # Drive schedules management (self-contained)
 │   ├── availability/[token]/
 │   │   └── AvailabilityClient.tsx  # Public tokenised page for panelist slot submission
 │   └── api/
@@ -42,6 +43,8 @@ src/
 │       ├── panelists/            # /api/panelists — GET/POST/DELETE panelist directory
 │       ├── candidates/           # GET/POST candidates queue & upload
 │       │   └── [id]/             # DELETE single candidate
+│       ├── colleges/             # /api/colleges — GET/POST/DELETE colleges directory
+│       ├── drives/               # /api/drives — GET/POST/DELETE drives management
 │       └── interviews/
 │           ├── create/           # POST — create interview + panels
 │           ├── [id]/             # GET/PATCH/DELETE single interview
@@ -83,6 +86,7 @@ Connection string env var: `DATABASE_URL`
 | `panelists` | `id` (Graph user ID), `display_name`, `email`, `roles` (text[] e.g. ['L1','L2']), `created_at` |
 | `uploaded_candidates` | `id`, `name`, `email`, `status` (WAITING/MAPPED), `mapped_interview_id` (FK→interviews cascade), `college`, `created_at` |
 | `colleges` | `id`, `name` (unique), `created_at` |
+| `drives` | `id`, `college_name`, `drive_date`, `is_active` (boolean), `created_at` |
 
 ### Interview Status Flow
 ```
@@ -115,6 +119,11 @@ All methods are async. Key ones:
 - `db.getColleges()` — get all registered colleges
 - `db.addCollege(name)` — register a new college with a generated UUID
 - `db.deleteCollege(id)` — remove college by ID
+- `db.getDrives()` — get all scheduled drives
+- `db.getActiveDrive()` — get the single active drive or null
+- `db.createDrive(collegeName, driveDate)` — schedule a new drive
+- `db.setActiveDrive(id)` — set the active drive (toggling all others inactive)
+- `db.deleteDrive(id)` — delete a drive record
 
 ---
 
@@ -140,11 +149,13 @@ All methods accept `accessToken: string` from the current session.
 
 ### Shared State in DashboardClient
 ```ts
-activeTab: 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges'
+activeTab: 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges' | 'drives'
 interviews: Interview[]           // shared between Interviews and Panelists tabs
 panelists: Panelist[]             // shared between Interviews and Panelists tabs
-collegesList: College[]           // shared between Panelists, Candidates, Colleges tabs
+collegesList: College[]           // shared between Interviews, Panelists, Candidates, Colleges, and Drives tabs
 candidates: UploadedCandidate[]   // shared between Interviews and Candidates tabs
+drives: Drive[]                   // shared drives list
+activeDrive: Drive | null         // single active drive pre-filled across tabs
 todayStr: string                  // ISO date string for today, passed to children
 ```
 
@@ -159,6 +170,7 @@ interviewType: 'L1' | 'L2' | 'General'
 selectedPanels: GraphUser[]
 selectedSlot, bookingDescription
 isEditingDates, editStartDate, editEndDate
+activeDrive: Drive | null (passed prop, updates local filters by default)
 // Handlers: handleCreateInterview, handleDeleteInterview, handleBookSlot,
 //           handleCancelBooking, handleResendInvite, handleUpdateDates
 ```
@@ -175,10 +187,11 @@ l1TimeStart, l1TimeEnd           // default '10:00' – '13:00'
 l2TimeStart, l2TimeEnd           // default '14:00' – '17:00'
 defaultStartDate, defaultEndDate
 collegeName: string
+activeDrive: Drive | null (passed prop, updates default timing configs)
 ```
 
 #### `CandidatesTab.tsx` — self-manages UI state  
-Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews.
+Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews. Integrates `activeDrive` to prefill date and college defaults.
 
 #### `RecruitersTab.tsx` — fully self-contained (no props)  
 Manages the recruiter access list, add/delete recruiters.
@@ -186,8 +199,18 @@ Manages the recruiter access list, add/delete recruiters.
 #### `CollegesTab.tsx` — accepts `collegesList` + `setCollegesList` props  
 Manages college directory; owns its own `fetchColleges` internally.
 
+#### `DrivesTab.tsx` — accepts drives and activeDrive props  
+Manages drive schedule, creates new drives, switches the active drive (synchronized across all tabs), and deletes drives.
+
 ### Interviews Tab
 - List view + tracker/cockpit view toggle
+- Drive Metrics Dashboard at the top:
+  - **Candidates Mapped Card**: Displays the mapped / total candidates ratio, pending candidates count, and a sleek progress bar indicating mapping progress.
+  - **Panel Requests Card (Interactive)**: Combines total requests sent, accepted requests, rejected requests, and requests yet to respond. Clicking this card opens a detailed status dialog listing panel members prioritized by status:
+    1. **Yet to Respond** (status `PENDING`)
+    2. **Rejected** (status `REJECTED`, showing rejection reason)
+    3. **Accepted** (status `SUBMITTED`)
+  - **Interview Results Card (Interactive)**: Displays total passed and rejected counts for the cohort. Clicking this card opens a detailed feedback dialog showing panelist names, ratings, and feedback text for each candidate.
 - Cards show: status badge, candidate, role, duration, date range, panel list with their submission status
 - Status badges: `PENDING` (orange), `COLLECTED` (blue), `SCHEDULED` (green), `CANCELLED` (red)
 - Click a card → side panel with slot overlap matrix, book button, Teams link

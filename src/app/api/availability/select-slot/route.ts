@@ -3,7 +3,7 @@ import { getAnyValidAccessToken } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, gte, lt } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,10 +38,20 @@ export async function POST(request: NextRequest) {
     let mappedCandidate = null;
 
     if (interview.candidateName === 'Pending Assignment') {
+      const slotDate = new Date(startTime);
+      const startOfDay = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
+      const startOfNextDay = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate() + 1);
+
       const [waitingCandidate] = await dbClient
         .select()
         .from(schema.uploadedCandidates)
-        .where(eq(schema.uploadedCandidates.status, 'WAITING'))
+        .where(
+          and(
+            eq(schema.uploadedCandidates.status, 'WAITING'),
+            gte(schema.uploadedCandidates.preferredDate, startOfDay),
+            lt(schema.uploadedCandidates.preferredDate, startOfNextDay)
+          )
+        )
         .orderBy(schema.uploadedCandidates.createdAt)
         .limit(1);
 

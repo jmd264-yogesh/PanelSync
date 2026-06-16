@@ -22,6 +22,10 @@ interface AvailabilityClientProps {
 export default function AvailabilityClient({ interview, panel }: AvailabilityClientProps) {
   // Common states
   const [errorMsg, setErrorMsg] = useState('');
+  const [isRejected, setIsRejected] = useState(panel.status === 'REJECTED');
+  const [rejectReason, setRejectReason] = useState(panel.feedback || '');
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
 
   // Flow A: Panelist-First Booking (candidateName is "Pending Assignment")
   const isPendingAssignment = interview.candidateName === 'Pending Assignment';
@@ -84,6 +88,34 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
     } finally {
       setIsBooking(false);
       setSelectingSlotId(null);
+    }
+  };
+
+  const handleRejectRequest = async () => {
+    if (!rejectReason.trim()) return;
+    setIsRejecting(true);
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/availability/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: panel.token,
+          reason: rejectReason.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to decline request.');
+      }
+
+      setIsRejected(true);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'An error occurred while declining the request.');
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -176,6 +208,26 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
       setIsSubmitting(false);
     }
   };
+
+  // If the panelist declined the nomination
+  if (isRejected) {
+    return (
+      <div className="glass-card text-center animate-pulse-once" style={{ padding: '3rem 2rem' }}>
+        <AlertCircle size={56} style={{ color: '#ef4444', margin: '0 auto 1.5rem' }} />
+        <h2 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>Nomination Declined</h2>
+        <p className="text-muted" style={{ fontSize: '0.95rem', marginBottom: '2rem' }}>
+          Thank you, <strong>{panel.name}</strong>. You have declined the nomination for the <strong>{interview.role}</strong> interview.
+        </p>
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem 1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', textAlign: 'left', marginBottom: '2rem' }}>
+          <span className="text-xs text-muted block" style={{ marginBottom: '0.25rem' }}>Decline Reason</span>
+          <span className="text-sm font-semibold">{rejectReason}</span>
+        </div>
+        <p className="text-muted text-xs">
+          The coordinator has been notified of your response. You can safely close this page now.
+        </p>
+      </div>
+    );
+  }
 
   // If the interview is already scheduled, show the scheduled card to any accessing panelist
   if (interview.status === 'SCHEDULED') {
@@ -367,6 +419,80 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
         <p className="text-muted text-xs text-center">
           Note: This booking will immediately reserve a Teams meeting room and coordinate calendar schedules.
         </p>
+
+        {/* Rejection Option */}
+        <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem' }}>
+          {!showRejectForm ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="text-xs text-muted">Unable to take this interview?</span>
+              <button
+                onClick={() => { setShowRejectForm(true); setErrorMsg(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+              >
+                Decline Nomination
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(239, 68, 68, 0.02)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ef4444', margin: 0 }}>Decline Interview Nomination</h4>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Please let us know why you are declining so we can re-assign the candidate.
+              </p>
+              <textarea
+                placeholder="Reason for declining (required)..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'inherit',
+                  fontSize: '0.9rem',
+                  resize: 'none'
+                }}
+              />
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => { setShowRejectForm(false); setRejectReason(''); }}
+                  disabled={isRejecting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={!rejectReason.trim() || isRejecting}
+                  onClick={handleRejectRequest}
+                  style={{
+                    backgroundColor: '#ef4444',
+                    color: '#fff',
+                    border: 'none',
+                    opacity: (!rejectReason.trim() || isRejecting) ? 0.5 : 1
+                  }}
+                >
+                  {isRejecting ? 'Declining...' : 'Confirm Decline'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -560,6 +686,80 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
           'Submit Availability'
         )}
       </button>
+
+      {/* Rejection Option */}
+      <div style={{ marginTop: '2.5rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem' }}>
+        {!showRejectForm ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-xs text-muted">Unable to take this interview?</span>
+            <button
+              onClick={() => { setShowRejectForm(true); setErrorMsg(''); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ef4444',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                padding: '0.25rem 0.5rem',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+            >
+              Decline Nomination
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(239, 68, 68, 0.02)', border: '1px solid rgba(239, 68, 68, 0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)' }}>
+            <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ef4444', margin: 0 }}>Decline Interview Nomination</h4>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+              Please let us know why you are declining so we can re-assign the candidate.
+            </p>
+            <textarea
+              placeholder="Reason for declining (required)..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '0.5rem 0.75rem',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border-glass)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'inherit',
+                fontSize: '0.9rem',
+                resize: 'none'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setShowRejectForm(false); setRejectReason(''); }}
+                disabled={isRejecting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!rejectReason.trim() || isRejecting}
+                onClick={handleRejectRequest}
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: '#fff',
+                  border: 'none',
+                  opacity: (!rejectReason.trim() || isRejecting) ? 0.5 : 1
+                }}
+              >
+                {isRejecting ? 'Declining...' : 'Confirm Decline'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

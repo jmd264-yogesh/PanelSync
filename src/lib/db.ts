@@ -17,7 +17,7 @@ export interface InterviewPanel {
   name: string;
   email: string;
   token: string;        // Secure unique token for URL access
-  status: 'PENDING' | 'SUBMITTED';
+  status: 'PENDING' | 'SUBMITTED' | 'REJECTED';
   submittedAt?: string; // ISO string
   feedback?: string | null;
   decision?: string | null;
@@ -65,6 +65,14 @@ export interface UploadedCandidate {
 export interface College {
   id: string;
   name: string;
+  createdAt: string;
+}
+
+export interface Drive {
+  id: string;
+  collegeName: string;
+  driveDate: string;
+  isActive: boolean;
   createdAt: string;
 }
 
@@ -137,7 +145,7 @@ export const db = {
           name: p.name,
           email: p.email,
           token: p.token,
-          status: p.status as 'PENDING' | 'SUBMITTED',
+          status: p.status as 'PENDING' | 'SUBMITTED' | 'REJECTED',
           submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
           feedback: p.feedback,
           decision: p.decision,
@@ -196,7 +204,7 @@ export const db = {
         name: p.name,
         email: p.email,
         token: p.token,
-        status: p.status as 'PENDING' | 'SUBMITTED',
+        status: p.status as 'PENDING' | 'SUBMITTED' | 'REJECTED',
         submittedAt: p.submittedAt ? p.submittedAt.toISOString() : undefined,
         feedback: p.feedback,
         decision: p.decision,
@@ -882,5 +890,67 @@ export const db = {
   deleteCollege: async (id: string): Promise<boolean> => {
     await dbClient.delete(schema.colleges).where(eq(schema.colleges.id, id));
     return true;
+  },
+
+  getDrives: async (): Promise<Drive[]> => {
+    const res = await dbClient.select().from(schema.drives).orderBy(desc(schema.drives.createdAt));
+    return res.map((row) => ({
+      id: row.id,
+      collegeName: row.collegeName,
+      driveDate: row.driveDate,
+      isActive: row.isActive,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  getActiveDrive: async (): Promise<Drive | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.drives)
+      .where(eq(schema.drives.isActive, true))
+      .limit(1);
+    if (!row) return null;
+    return {
+      id: row.id,
+      collegeName: row.collegeName,
+      driveDate: row.driveDate,
+      isActive: row.isActive,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    };
+  },
+
+  createDrive: async (collegeName: string, driveDate: string): Promise<Drive> => {
+    const id = crypto.randomUUID();
+    const active = await db.getActiveDrive();
+    const isActive = active === null;
+
+    const newRow = {
+      id,
+      collegeName: collegeName.trim(),
+      driveDate: driveDate.trim(),
+      isActive,
+      createdAt: new Date(),
+    };
+
+    await dbClient.insert(schema.drives).values(newRow);
+
+    return {
+      ...newRow,
+      createdAt: newRow.createdAt.toISOString(),
+    };
+  },
+
+  setActiveDrive: async (id: string): Promise<void> => {
+    await dbClient
+      .update(schema.drives)
+      .set({ isActive: false });
+    await dbClient
+      .update(schema.drives)
+      .set({ isActive: true })
+      .where(eq(schema.drives.id, id));
+  },
+
+  deleteDrive: async (id: string): Promise<void> => {
+    await dbClient.delete(schema.drives).where(eq(schema.drives.id, id));
   },
 };
