@@ -503,7 +503,7 @@ export default function InterviewsTab({
     if (collegeFilter !== 'all') {
       filtered = filtered.filter((i) => {
         const candidate = candidates.find(c => c.email === i.candidateEmail);
-        return candidate && candidate.college && candidate.college.toLowerCase() === collegeFilter.toLowerCase();
+        return candidate && candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
       });
     }
 
@@ -553,7 +553,7 @@ export default function InterviewsTab({
     if (collegeFilter !== 'all') {
       filtered = filtered.filter((i) => {
         const candidate = candidates.find(c => c.email === i.candidateEmail);
-        return candidate && candidate.college && candidate.college.toLowerCase() === collegeFilter.toLowerCase();
+        return candidate && candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
       });
     }
 

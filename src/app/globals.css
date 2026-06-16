@@ -84,8 +84,6 @@
 /* Reset and Global Styles */
 * {
   box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 html, body {
@@ -876,13 +874,13 @@ tbody td { border-bottom-color: var(--border-glass) !important; }
   .app-main { padding-top: 1.25rem; }
   .workspace-heading { align-items: flex-start; flex-direction: column; gap: 0.5rem; }
   .workspace-nav { margin-inline: -0.625rem; border-radius: 0; }
-  .workspace-nav-item { height: 44px !important; padding: 0 0.55rem !important; }
+  .workspace-nav-item { height: 44px ; padding: 0 0.55rem  }
   .workspace-nav-copy { display: none; }
   .workspace-nav-count { margin-left: 0; }
-  .glass-card { border-radius: 14px; padding: 1.1rem !important; }
+  .glass-card { border-radius: 14px; padding: 1.1rem; }
   .flex-between { align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
   .grid-2,
-  .grid-3 { grid-template-columns: 1fr !important; }
+  .grid-3 { grid-template-columns: 1fr ; }
   .app-footer .app-container { display: block; }
   .app-footer p + p { margin-top: 0.25rem; }
 }

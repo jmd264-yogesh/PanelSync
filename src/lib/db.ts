@@ -59,6 +59,7 @@ export interface UploadedCandidate {
   preferredDate: string;  // Required field
   outcomeStatus?: string;
   college: string;        // Required field
+  collegeDrive: string;   // Required field
   createdAt: string;
 }
 
@@ -517,12 +518,13 @@ export const db = {
       preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : '',
       outcomeStatus: row.outcomeStatus || undefined,
       college: row.college || '',
+      collegeDrive: row.collegeDrive || '',
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
   },
 
   // Add uploaded candidates
-  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string }[]): Promise<boolean> => {
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string; collegeDrive: string }[]): Promise<boolean> => {
     for (const c of candidates) {
       const id = crypto.randomUUID();
       await dbClient.insert(schema.uploadedCandidates).values({
@@ -532,6 +534,7 @@ export const db = {
         status: 'WAITING',
         preferredDate: new Date(c.preferredDate),
         college: c.college,
+        collegeDrive: c.collegeDrive,
       });
     }
     return true;
@@ -556,6 +559,7 @@ export const db = {
       email?: string;
       preferredDate?: string;
       college?: string;
+      collegeDrive?: string;
     }
   ): Promise<boolean> => {
     const updatePayload: any = {};
@@ -563,6 +567,7 @@ export const db = {
     if (params.email !== undefined) updatePayload.email = params.email;
     if (params.preferredDate !== undefined) updatePayload.preferredDate = new Date(params.preferredDate);
     if (params.college !== undefined) updatePayload.college = params.college;
+    if (params.collegeDrive !== undefined) updatePayload.collegeDrive = params.collegeDrive;
 
     await dbClient
       .update(schema.uploadedCandidates)

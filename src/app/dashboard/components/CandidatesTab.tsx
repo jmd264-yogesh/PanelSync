@@ -49,6 +49,7 @@ export default function CandidatesTab({
   const [singleCandidateEmail, setSingleCandidateEmail] = useState('');
   const [singleCandidateDate, setSingleCandidateDate] = useState('');
   const [singleCandidateCollege, setSingleCandidateCollege] = useState('');
+  const [singleCandidateCollegeDrive, setSingleCandidateCollegeDrive] = useState('');
   const [isAddingSingleCandidate, setIsAddingSingleCandidate] = useState(false);
   const [singleCandidateError, setSingleCandidateError] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export default function CandidatesTab({
   const [editCandidateName, setEditCandidateName] = useState('');
   const [editCandidateEmail, setEditCandidateEmail] = useState('');
   const [editCandidateCollege, setEditCandidateCollege] = useState('');
+  const [editCandidateCollegeDrive, setEditCandidateCollegeDrive] = useState('');
   const [editCandidateDate, setEditCandidateDate] = useState('');
   const [mappingCandidateId, setMappingCandidateId] = useState<string | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export default function CandidatesTab({
       setUploadDefaultCollege(activeDrive.collegeName);
       setSingleCandidateDate(activeDrive.startDate);
       setSingleCandidateCollege(activeDrive.collegeName);
+      setSingleCandidateCollegeDrive(activeDrive.collegeName);
     }
   }, [activeDrive]);
 
@@ -149,7 +152,7 @@ export default function CandidatesTab({
 
   const handleDownloadTemplate = () => {
     const csvContent =
-      'data:text/csv;charset=utf-8,Name,Email,College Name of Drive,Drive Date\nJohn Doe,john.doe@example.com,IIT Bombay,2026-06-15\nJane Smith,jane.smith@example.com,NIT Trichy,';
+      'data:text/csv;charset=utf-8,Name,Email,College Name of Candidate,College Name of Drive,Drive Date\nJohn Doe,john.doe@example.com,IIT Madras,IIT Bombay,2026-06-15\nJane Smith,jane.smith@example.com,NIT Trichy,NIT Trichy,2026-06-16';
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
     link.setAttribute('download', 'candidate_template.csv');
@@ -193,20 +196,30 @@ export default function CandidatesTab({
             const rawDate = dateKey ? row[dateKey] : undefined;
             const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
 
-            const collegeKey = keys.find((k) => {
+            const driveCollegeKey = keys.find((k) => {
               const val = normalizeHeader(k);
-              return val === 'college' || val === 'institution' || val === 'university' || val === 'college name' || val === 'college name of drive';
+              return val === 'college name of drive' || val === 'drive college' || val === 'host college' || val === 'drive location';
             });
-            const rawCollege = collegeKey ? String(row[collegeKey]).trim() : undefined;
-            const college = rawCollege || (uploadDefaultCollege ? uploadDefaultCollege : undefined);
+            const rawDriveCollege = driveCollegeKey && row[driveCollegeKey] !== undefined ? String(row[driveCollegeKey]).trim() : undefined;
+            const collegeDrive = rawDriveCollege || (uploadDefaultCollege ? uploadDefaultCollege : undefined);
+
+            const candidateCollegeKey = keys.find((k) => {
+              const val = normalizeHeader(k);
+              return val === 'college name of candidate' || val === 'candidate college' || val === 'college' || val === 'institution' || val === 'university' || val === 'college name';
+            });
+            const rawCandidateCollege = candidateCollegeKey && row[candidateCollegeKey] !== undefined ? String(row[candidateCollegeKey]).trim() : undefined;
+            const college = rawCandidateCollege || collegeDrive;
 
             if (!preferredDate) {
               throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive Date. Please specify a date in the sheet or set a default Drive Date above.`);
             }
-            if (!college) {
-              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a College Name. Please specify a college name in the sheet or select a default College Name of Drive above.`);
+            if (!collegeDrive) {
+              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive College Name. Please specify a drive college name in the sheet or select a default College Name of Drive above.`);
             }
-            parsedCandidates.push({ name, email, preferredDate, college });
+            if (!college) {
+              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Candidate College Name. Please specify a candidate college name in the sheet or select a default College Name of Drive above.`);
+            }
+            parsedCandidates.push({ name, email, preferredDate, college, collegeDrive });
           }
         }
         if (parsedCandidates.length === 0) {
@@ -249,7 +262,8 @@ export default function CandidatesTab({
     if (!singleCandidateName.trim()) { setSingleCandidateError('Please enter candidate name.'); return; }
     if (!singleCandidateEmail.trim()) { setSingleCandidateError('Please enter candidate email.'); return; }
     if (!singleCandidateDate.trim()) { setSingleCandidateError('Please select a drive date.'); return; }
-    if (!singleCandidateCollege.trim()) { setSingleCandidateError('Please select a college.'); return; }
+    if (!singleCandidateCollege.trim()) { setSingleCandidateError('Please enter candidate college.'); return; }
+    if (!singleCandidateCollegeDrive.trim()) { setSingleCandidateError('Please select drive college.'); return; }
 
     setIsAddingSingleCandidate(true);
     try {
@@ -261,7 +275,8 @@ export default function CandidatesTab({
             name: singleCandidateName.trim(),
             email: singleCandidateEmail.trim(),
             preferredDate: singleCandidateDate,
-            college: singleCandidateCollege,
+            college: singleCandidateCollege.trim(),
+            collegeDrive: singleCandidateCollegeDrive.trim(),
           }]
         }),
       });
@@ -276,6 +291,7 @@ export default function CandidatesTab({
       setSingleCandidateEmail('');
       setSingleCandidateDate('');
       setSingleCandidateCollege('');
+      setSingleCandidateCollegeDrive('');
       toast.success(`Candidate ${singleCandidateName} successfully added to the queue!`);
     } catch (err: any) {
       console.error(err);
@@ -288,7 +304,8 @@ export default function CandidatesTab({
   const handleSaveCandidateEdit = async (id: string) => {
     if (!editCandidateName.trim()) { toast.error('Name is required.'); return; }
     if (!editCandidateEmail.trim()) { toast.error('Email is required.'); return; }
-    if (!editCandidateCollege.trim()) { toast.error('College Name of Drive is required.'); return; }
+    if (!editCandidateCollege.trim()) { toast.error('College Name of Candidate is required.'); return; }
+    if (!editCandidateCollegeDrive.trim()) { toast.error('College Name of Drive is required.'); return; }
     if (!editCandidateDate.trim()) { toast.error('Drive Date is required.'); return; }
     try {
       const res = await fetch(`/api/candidates/${id}`, {
@@ -298,6 +315,7 @@ export default function CandidatesTab({
           name: editCandidateName.trim(),
           email: editCandidateEmail.trim(),
           college: editCandidateCollege.trim(),
+          collegeDrive: editCandidateCollegeDrive.trim(),
           preferredDate: editCandidateDate.trim(),
         }),
       });
@@ -502,8 +520,12 @@ export default function CandidatesTab({
                 <input type="date" className="form-input" value={singleCandidateDate} onChange={(e) => setSingleCandidateDate(e.target.value)} min={todayStr} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Candidate</label>
+                <input type="text" className="form-input" placeholder="e.g. IIT Madras" value={singleCandidateCollege} onChange={(e) => setSingleCandidateCollege(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive</label>
-                <Select value={singleCandidateCollege} onValueChange={(val) => setSingleCandidateCollege(val || '')}>
+                <Select value={singleCandidateCollegeDrive} onValueChange={(val) => setSingleCandidateCollegeDrive(val || '')}>
                   <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                     <SelectValue placeholder="Select College..." />
                   </SelectTrigger>
@@ -584,7 +606,8 @@ export default function CandidatesTab({
                   <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Name</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>College</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Candidate College</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive College</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Date</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
@@ -623,7 +646,17 @@ export default function CandidatesTab({
                               />
                             </td>
                             <td style={{ padding: '0.5rem 1rem' }}>
-                              <Select value={editCandidateCollege} onValueChange={(val) => setEditCandidateCollege(val || '')}>
+                              <input
+                                type="text"
+                                className="form-input text-xs"
+                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}
+                                value={editCandidateCollege}
+                                onChange={(e) => setEditCandidateCollege(e.target.value)}
+                                required
+                              />
+                            </td>
+                            <td style={{ padding: '0.5rem 1rem' }}>
+                              <Select value={editCandidateCollegeDrive} onValueChange={(val) => setEditCandidateCollegeDrive(val || '')}>
                                 <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}>
                                   <SelectValue placeholder="Select College..." />
                                 </SelectTrigger>
@@ -653,8 +686,17 @@ export default function CandidatesTab({
                             <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{candidate.email}</td>
                             <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
                               {candidate.college ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#fb923c' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#60a5fa' }}>
                                   <Building2 size={12} /> {candidate.college}
+                                </span>
+                              ) : (
+                                <span className="text-muted font-italic" style={{ fontSize: '0.8rem' }}>—</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
+                              {candidate.collegeDrive ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#fb923c' }}>
+                                  <Building2 size={12} /> {candidate.collegeDrive}
                                 </span>
                               ) : (
                                 <span className="text-muted font-italic" style={{ fontSize: '0.8rem' }}>—</span>
@@ -758,6 +800,7 @@ export default function CandidatesTab({
                                     setEditCandidateName(candidate.name);
                                     setEditCandidateEmail(candidate.email);
                                     setEditCandidateCollege(candidate.college || '');
+                                    setEditCandidateCollegeDrive(candidate.collegeDrive || '');
                                     setEditCandidateDate(candidate.preferredDate || '');
                                   }}
                                   className="btn btn-secondary btn-sm"

@@ -85,6 +85,7 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
   preferredDate: timestamp('preferred_date'),
   outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
   college: varchar('college', { length: 255 }),
+  collegeDrive: varchar('college_drive', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
