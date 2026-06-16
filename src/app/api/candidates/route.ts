@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or empty candidates list' }, { status: 400 });
     }
 
-    // Validate that each candidate has a name, email, preferredDate, and college
+    // Validate that each candidate has a name, email, preferredDate, college, and collegeDrive
     for (const c of candidates) {
       if (!c.name || !c.name.trim()) {
         return NextResponse.json({ error: 'Candidate name is required for all candidates.' }, { status: 400 });
@@ -49,6 +49,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Drive Date is required for candidate "${c.name}".` }, { status: 400 });
       }
       if (!c.college || !c.college.trim()) {
+        c.college = c.collegeDrive;
+      }
+      if (!c.college || !c.college.trim()) {
+        return NextResponse.json({ error: `College Name of Candidate is required for candidate "${c.name}".` }, { status: 400 });
+      }
+      if (!c.collegeDrive || !c.collegeDrive.trim()) {
         return NextResponse.json({ error: `College Name of Drive is required for candidate "${c.name}".` }, { status: 400 });
       }
     }

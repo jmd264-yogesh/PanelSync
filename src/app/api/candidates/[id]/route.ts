@@ -54,7 +54,7 @@ export async function PATCH(
       return NextResponse.json({ success: true, candidates: updatedList });
     }
 
-    const { name, email, preferredDate, college } = body;
+    const { name, email, preferredDate, college, collegeDrive } = body;
     const updateParams: any = {};
     if (name !== undefined) {
       if (!name.trim()) return NextResponse.json({ error: 'Candidate name is required.' }, { status: 400 });
@@ -69,8 +69,12 @@ export async function PATCH(
       updateParams.preferredDate = preferredDate;
     }
     if (college !== undefined) {
-      if (!college.trim()) return NextResponse.json({ error: 'College Name of Drive is required.' }, { status: 400 });
+      if (!college.trim()) return NextResponse.json({ error: 'College Name of Candidate is required.' }, { status: 400 });
       updateParams.college = college;
+    }
+    if (collegeDrive !== undefined) {
+      if (!collegeDrive.trim()) return NextResponse.json({ error: 'College Name of Drive is required.' }, { status: 400 });
+      updateParams.collegeDrive = collegeDrive;
     }
 
     if (Object.keys(updateParams).length > 0) {

@@ -77,10 +77,10 @@ export default function PanelistsTab({
     if (activeDrive) {
       setCollegeName(activeDrive.collegeName);
       setReqCollegeName(activeDrive.collegeName);
-      setDefaultStartDate(activeDrive.driveDate);
-      setDefaultEndDate(activeDrive.driveDate);
-      setReqStartDate(activeDrive.driveDate);
-      setReqEndDate(activeDrive.driveDate);
+      setDefaultStartDate(activeDrive.startDate);
+      setDefaultEndDate(activeDrive.endDate);
+      setReqStartDate(activeDrive.startDate);
+      setReqEndDate(activeDrive.endDate);
     }
   }, [activeDrive]);
 
@@ -276,8 +276,8 @@ export default function PanelistsTab({
     setReqPanelists(arr);
     setReqInterviewType(stage);
     setReqDuration('30');
-    setReqStartDate(activeDrive ? activeDrive.driveDate : defaultStartDate);
-    setReqEndDate(activeDrive ? activeDrive.driveDate : defaultEndDate);
+    setReqStartDate(activeDrive ? activeDrive.startDate : defaultStartDate);
+    setReqEndDate(activeDrive ? activeDrive.endDate : defaultEndDate);
     setReqCollegeName(activeDrive ? activeDrive.collegeName : collegeName);
   };
 
@@ -288,7 +288,9 @@ export default function PanelistsTab({
       toast.error('College / Institution name is required.');
       return;
     }
-    if (reqStartDate < todayStr) { toast.error('Start date cannot be in the past.'); return; }
+    if (!reqStartDate || !reqEndDate) { toast.error('No drive window available. Set an active drive in the Drives tab.'); return; }
+    // Past-date guard only applies to manual entry; active-drive dates are trusted (a multi-day drive may already be underway).
+    if (!activeDrive && reqStartDate < todayStr) { toast.error('Start date cannot be in the past.'); return; }
     if (reqEndDate < reqStartDate) { toast.error('End date cannot be before the start date.'); return; }
     const selectedProposedSlots = reqSlots.filter((s) => s.selected);
     if (selectedProposedSlots.length === 0) {
@@ -881,31 +883,53 @@ export default function PanelistsTab({
                 </div>
               </div>
 
-              <div className="grid-2">
+              {activeDrive ? (
                 <div className="form-group">
-                  <label className="form-label">Proposed Range Start</label>
-                  <input type="date" className="form-input" value={reqStartDate} min={todayStr} onChange={(e) => setReqStartDate(e.target.value)} required />
+                  <label className="form-label">Drive Window &amp; Location (from Active Drive)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', fontSize: '0.8rem' }}>
+                    <Building2 size={14} style={{ color: 'var(--primary)' }} />
+                    <strong>{activeDrive.collegeName}</strong>
+                    <span className="text-muted">·</span>
+                    <Clock size={13} style={{ color: 'var(--text-muted)' }} />
+                    <span>
+                      {activeDrive.startDate === activeDrive.endDate
+                        ? new Date(activeDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                        : `${new Date(activeDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(activeDrive.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted" style={{ marginTop: '0.4rem' }}>
+                    Slots are generated across the active drive window. Change it in the <strong>Drives</strong> tab.
+                  </p>
                 </div>
+              ) : (
                 <div className="form-group">
-                  <label className="form-label">Proposed Range End</label>
-                  <input type="date" className="form-input" value={reqEndDate} min={reqStartDate || todayStr} onChange={(e) => setReqEndDate(e.target.value)} required />
+                  <label className="form-label">College / Institution</label>
+                  <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', color: '#fbbf24', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
+                    No active drive selected. Set an active drive in the <strong>Drives</strong> tab so the slot window and college are picked automatically. Falling back to a default date range below.
+                  </div>
+                  <Select value={reqCollegeName} onValueChange={(val) => setReqCollegeName(val || '')}>
+                    <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                      <SelectValue placeholder="Select College..." />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                      <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                      {collegesList.map((c) => (
+                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="grid-2" style={{ marginTop: '0.75rem' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Proposed Range Start</label>
+                      <input type="date" className="form-input" value={reqStartDate} min={todayStr} onChange={(e) => setReqStartDate(e.target.value)} required />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Proposed Range End</label>
+                      <input type="date" className="form-input" value={reqEndDate} min={reqStartDate || todayStr} onChange={(e) => setReqEndDate(e.target.value)} required />
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">College / Institution</label>
-                <Select value={reqCollegeName} onValueChange={(val) => setReqCollegeName(val || '')}>
-                  <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
-                    <SelectValue placeholder="Select College..." />
-                  </SelectTrigger>
-                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
-                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
-                    {collegesList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              )}
 
               {/* Proposed Slots Builder */}
               <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem' }}>

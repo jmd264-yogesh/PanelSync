@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Compass, Trash2, Loader2, CalendarRange, Star, Check } from 'lucide-react';
+import { Compass, Trash2, Loader2, CalendarRange, Check, Lock, Unlock } from 'lucide-react';
 import { Drive, College } from '@/lib/db';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -22,14 +22,20 @@ interface DrivesTabProps {
 
 export default function DrivesTab({ drives, activeDrive, onDrivesChange, collegesList }: DrivesTabProps) {
   const [selectedCollege, setSelectedCollege] = useState('');
-  const [driveDate, setDriveDate] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [isAddingDrive, setIsAddingDrive] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
+  const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
 
   const handleAddDrive = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCollege.trim() || !driveDate.trim()) return;
+    if (!selectedCollege.trim() || !startDate.trim() || !endDate.trim()) return;
+    if (endDate < startDate) {
+      setDriveError('End date cannot be before the start date.');
+      return;
+    }
 
     setIsAddingDrive(true);
     setDriveError(null);
@@ -39,7 +45,8 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           collegeName: selectedCollege.trim(),
-          driveDate: driveDate.trim(),
+          startDate: startDate.trim(),
+          endDate: endDate.trim(),
         }),
       });
 
@@ -49,7 +56,8 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
       }
 
       setSelectedCollege('');
-      setDriveDate('');
+      setStartDate('');
+      setEndDate('');
       await onDrivesChange();
       toast.success('Drive scheduled successfully.');
     } catch (err: any) {
@@ -57,6 +65,28 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
       setDriveError(err.message || 'An error occurred scheduled drive.');
     } finally {
       setIsAddingDrive(false);
+    }
+  };
+
+  const handleSetStatus = async (id: string, status: 'OPEN' | 'CLOSED') => {
+    setStatusChangingId(id);
+    try {
+      const res = await fetch(`/api/drives/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update drive status.');
+      }
+      await onDrivesChange();
+      toast.success(status === 'CLOSED' ? 'Drive closed.' : 'Drive reopened.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'An error occurred updating drive status.');
+    } finally {
+      setStatusChangingId(null);
     }
   };
 
@@ -133,17 +163,30 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date</label>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Start Date</label>
               <input
                 type="date"
                 className="form-input"
-                value={driveDate}
-                onChange={(e) => setDriveDate(e.target.value)}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
                 required
                 style={{ marginTop: '0.5rem' }}
               />
             </div>
-            
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive End Date</label>
+              <input
+                type="date"
+                className="form-input"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+                required
+                style={{ marginTop: '0.5rem' }}
+              />
+            </div>
+
             {driveError && (
               <div style={{
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -160,7 +203,7 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={isAddingDrive || !selectedCollege || !driveDate}
+              disabled={isAddingDrive || !selectedCollege || !startDate || !endDate}
               style={{ width: '100%' }}
             >
               {isAddingDrive ? (
@@ -187,26 +230,30 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
                   <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>College Name</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Date</th>
+                  <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Window</th>
                   <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', width: '220px', textAlign: 'right' }}>Actions</th>
+                  <th style={{ padding: '0.75rem 1rem', width: '300px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {drives.map((drive) => {
                   const isActive = activeDrive?.id === drive.id;
+                  const isClosed = drive.status === 'CLOSED';
+                  const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
                   return (
-                    <tr key={drive.id} style={{ borderBottom: '1px solid var(--border-glass)', transition: 'var(--transition-fast)' }} className="search-item-hover">
+                    <tr key={drive.id} style={{ borderBottom: '1px solid var(--border-glass)', transition: 'var(--transition-fast)', opacity: isClosed ? 0.7 : 1 }} className="search-item-hover">
                       <td style={{ padding: '1rem', fontWeight: 500, color: 'var(--text-main)' }}>{drive.collegeName}</td>
                       <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-                        {new Date(drive.driveDate).toLocaleDateString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
+                        {drive.startDate === drive.endDate
+                          ? fmt(drive.startDate)
+                          : `${fmt(drive.startDate)} – ${fmt(drive.endDate)}`}
                       </td>
                       <td style={{ padding: '1rem' }}>
-                        {isActive ? (
+                        {isClosed ? (
+                          <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', width: 'fit-content' }}>
+                            <Lock size={10} /> Closed
+                          </span>
+                        ) : isActive ? (
                           <span className="badge badge-success flex-gap-1" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', width: 'fit-content' }}>
                             <Check size={10} /> Active Drive
                           </span>
@@ -216,21 +263,49 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                          {!isActive && (
+                          {isClosed ? (
                             <button
                               className="btn btn-secondary btn-sm"
-                              onClick={() => handleSetActive(drive.id)}
-                              disabled={settingActiveId === drive.id}
-                              style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', height: 'auto' }}
+                              onClick={() => handleSetStatus(drive.id, 'OPEN')}
+                              disabled={statusChangingId === drive.id}
+                              style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', height: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                             >
-                              {settingActiveId === drive.id ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                'Set Active'
-                              )}
+                              {statusChangingId === drive.id ? <Loader2 size={12} className="animate-spin" /> : <><Unlock size={12} /> Reopen</>}
                             </button>
+                          ) : (
+                            <>
+                              {!isActive && (
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => handleSetActive(drive.id)}
+                                  disabled={settingActiveId === drive.id}
+                                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', height: 'auto' }}
+                                >
+                                  {settingActiveId === drive.id ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    'Set Active'
+                                  )}
+                                </button>
+                              )}
+
+                              <ConfirmDialog
+                                trigger={
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={statusChangingId === drive.id}
+                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', height: 'auto', color: '#fbbf24', borderColor: 'rgba(245,158,11,0.3)' }}
+                                  />
+                                }
+                                triggerChildren={statusChangingId === drive.id ? <Loader2 size={12} className="animate-spin" /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Lock size={12} /> Close Drive</span>}
+                                title="Close this drive?"
+                                description="Closing marks the drive as completed and removes it as the active drive. You can reopen it later."
+                                confirmLabel="Yes, Close"
+                                onConfirm={() => handleSetStatus(drive.id, 'CLOSED')}
+                              />
+                            </>
                           )}
-                          
+
                           <ConfirmDialog
                             trigger={
                               <button

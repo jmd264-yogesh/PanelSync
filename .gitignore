@@ -44,3 +44,6 @@ next-env.d.ts
 sessions.json
 db.json
 
+# agent scratch / skills tooling
+.agents/
+skills-lock.json

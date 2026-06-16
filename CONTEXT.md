@@ -86,7 +86,7 @@ Connection string env var: `DATABASE_URL`
 | `panelists` | `id` (Graph user ID), `display_name`, `email`, `roles` (text[] e.g. ['L1','L2']), `created_at` |
 | `uploaded_candidates` | `id`, `name`, `email`, `status` (WAITING/MAPPED), `mapped_interview_id` (FK→interviews cascade), `college`, `created_at` |
 | `colleges` | `id`, `name` (unique), `created_at` |
-| `drives` | `id`, `college_name`, `drive_date`, `is_active` (boolean), `created_at` |
+| `drives` | `id`, `college_name`, `start_date`, `end_date` (drive window range), `status` (OPEN/CLOSED), `is_active` (boolean), `created_at` |
 
 ### Interview Status Flow
 ```
@@ -121,8 +121,9 @@ All methods are async. Key ones:
 - `db.deleteCollege(id)` — remove college by ID
 - `db.getDrives()` — get all scheduled drives
 - `db.getActiveDrive()` — get the single active drive or null
-- `db.createDrive(collegeName, driveDate)` — schedule a new drive
-- `db.setActiveDrive(id)` — set the active drive (toggling all others inactive)
+- `db.createDrive(collegeName, startDate, endDate)` — schedule a new drive spanning a date range
+- `db.setActiveDrive(id)` — set the active drive (toggling all others inactive); only an OPEN drive can be made active
+- `db.setDriveStatus(id, 'OPEN' | 'CLOSED')` — open/close a drive; closing also clears its active flag
 - `db.deleteDrive(id)` — delete a drive record
 
 ---
@@ -170,10 +171,13 @@ interviewType: 'L1' | 'L2' | 'General'
 selectedPanels: GraphUser[]
 selectedSlot, bookingDescription
 isEditingDates, editStartDate, editEndDate
-activeDrive: Drive | null (passed prop, updates local filters by default)
+selectedDriveId: string  // which drive the dashboard scopes to (in-tab selector)
+drives: Drive[] (passed prop)  // populates the "Viewing Drive" selector
+activeDrive: Drive | null (passed prop) // only used to seed the initial selected drive
 // Handlers: handleCreateInterview, handleDeleteInterview, handleBookSlot,
 //           handleCancelBooking, handleResendInvite, handleUpdateDates
 ```
+The dashboard scopes all metrics and lists to the **selected drive** (a "Viewing Drive" dropdown at the top), not the global active drive. It seeds to the active drive on first load, then the recruiter can switch to any drive (including closed ones) without changing the global active drive. Selecting a drive filters interviews to that drive's college **and** date window (start → end); "All Drives" shows everything.
 
 #### `PanelistsTab.tsx` — self-manages UI state
 ```ts
@@ -200,7 +204,7 @@ Manages the recruiter access list, add/delete recruiters.
 Manages college directory; owns its own `fetchColleges` internally.
 
 #### `DrivesTab.tsx` — accepts drives and activeDrive props  
-Manages drive schedule, creates new drives, switches the active drive (synchronized across all tabs), and deletes drives.
+Manages drive schedule, creates new drives spanning a **start/end date range**, switches the active drive (synchronized across all tabs), **closes/reopens drives** (a closed drive can't be active; reopen restores it), and deletes drives. Each drive shows its date window and an OPEN/CLOSED/Active status badge.
 
 ### Interviews Tab
 - List view + tracker/cockpit view toggle
@@ -240,8 +244,8 @@ Manages drive schedule, creates new drives, switches the active drive (synchroni
 > This is the "Panelist-first" scheduling flow — collect slots before assigning a candidate.
 
 1. Manager selects panelists from the directory (bulk or individual)
-2. Opens slot request modal: sets date range, duration, interview type, and select College/Institution (pre-filled from defaults)
-3. App generates proposed time slots (respecting L1/L2 time windows)
+2. Opens slot request modal: sets duration and interview type. The **date window and college are taken automatically from the Active Drive** (shown read-only in the modal) — the recruiter is not asked for start/end dates. If no active drive is set, the modal falls back to a manual college dropdown + date-range inputs and warns the user to set an active drive.
+3. App generates proposed time slots across the active drive's date window (respecting L1/L2 time windows)
 4. Manager selects which slots to include
 5. Clicks send → `POST /api/interviews/request-panelist`
 6. API creates an interview record with `candidateName = 'Pending Assignment'` and appends the college name to the role (e.g. `L1 Interview - IIT Bombay`)

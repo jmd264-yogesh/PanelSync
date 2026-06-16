@@ -85,6 +85,7 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
   preferredDate: timestamp('preferred_date'),
   outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
   college: varchar('college', { length: 255 }),
+  collegeDrive: varchar('college_drive', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -99,7 +100,9 @@ export const colleges = pgTable('colleges', {
 export const drives = pgTable('drives', {
   id: varchar('id', { length: 255 }).primaryKey(),
   collegeName: varchar('college_name', { length: 255 }).notNull(),
-  driveDate: varchar('drive_date', { length: 255 }).notNull(),
+  startDate: varchar('start_date', { length: 255 }).notNull(),
+  endDate: varchar('end_date', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).default('OPEN').notNull(), // OPEN | CLOSED
   isActive: boolean('is_active').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });

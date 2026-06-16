@@ -59,6 +59,7 @@ export interface UploadedCandidate {
   preferredDate: string;  // Required field
   outcomeStatus?: string;
   college: string;        // Required field
+  collegeDrive: string;   // Required field
   createdAt: string;
 }
 
@@ -71,7 +72,9 @@ export interface College {
 export interface Drive {
   id: string;
   collegeName: string;
-  driveDate: string;
+  startDate: string;
+  endDate: string;
+  status: string; // OPEN | CLOSED
   isActive: boolean;
   createdAt: string;
 }
@@ -515,12 +518,13 @@ export const db = {
       preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : '',
       outcomeStatus: row.outcomeStatus || undefined,
       college: row.college || '',
+      collegeDrive: row.collegeDrive || '',
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
   },
 
   // Add uploaded candidates
-  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string }[]): Promise<boolean> => {
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string; collegeDrive: string }[]): Promise<boolean> => {
     for (const c of candidates) {
       const id = crypto.randomUUID();
       await dbClient.insert(schema.uploadedCandidates).values({
@@ -530,6 +534,7 @@ export const db = {
         status: 'WAITING',
         preferredDate: new Date(c.preferredDate),
         college: c.college,
+        collegeDrive: c.collegeDrive,
       });
     }
     return true;
@@ -554,6 +559,7 @@ export const db = {
       email?: string;
       preferredDate?: string;
       college?: string;
+      collegeDrive?: string;
     }
   ): Promise<boolean> => {
     const updatePayload: any = {};
@@ -561,6 +567,7 @@ export const db = {
     if (params.email !== undefined) updatePayload.email = params.email;
     if (params.preferredDate !== undefined) updatePayload.preferredDate = new Date(params.preferredDate);
     if (params.college !== undefined) updatePayload.college = params.college;
+    if (params.collegeDrive !== undefined) updatePayload.collegeDrive = params.collegeDrive;
 
     await dbClient
       .update(schema.uploadedCandidates)
@@ -897,7 +904,9 @@ export const db = {
     return res.map((row) => ({
       id: row.id,
       collegeName: row.collegeName,
-      driveDate: row.driveDate,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      status: row.status,
       isActive: row.isActive,
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
@@ -913,13 +922,15 @@ export const db = {
     return {
       id: row.id,
       collegeName: row.collegeName,
-      driveDate: row.driveDate,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      status: row.status,
       isActive: row.isActive,
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     };
   },
 
-  createDrive: async (collegeName: string, driveDate: string): Promise<Drive> => {
+  createDrive: async (collegeName: string, startDate: string, endDate: string): Promise<Drive> => {
     const id = crypto.randomUUID();
     const active = await db.getActiveDrive();
     const isActive = active === null;
@@ -927,7 +938,9 @@ export const db = {
     const newRow = {
       id,
       collegeName: collegeName.trim(),
-      driveDate: driveDate.trim(),
+      startDate: startDate.trim(),
+      endDate: endDate.trim(),
+      status: 'OPEN',
       isActive,
       createdAt: new Date(),
     };
@@ -944,10 +957,26 @@ export const db = {
     await dbClient
       .update(schema.drives)
       .set({ isActive: false });
+    // Only an OPEN drive can become the active drive
     await dbClient
       .update(schema.drives)
       .set({ isActive: true })
-      .where(eq(schema.drives.id, id));
+      .where(and(eq(schema.drives.id, id), eq(schema.drives.status, 'OPEN')));
+  },
+
+  setDriveStatus: async (id: string, status: 'OPEN' | 'CLOSED'): Promise<void> => {
+    // Closing a drive also clears its active flag so it stops driving defaults.
+    if (status === 'CLOSED') {
+      await dbClient
+        .update(schema.drives)
+        .set({ status: 'CLOSED', isActive: false })
+        .where(eq(schema.drives.id, id));
+    } else {
+      await dbClient
+        .update(schema.drives)
+        .set({ status: 'OPEN' })
+        .where(eq(schema.drives.id, id));
+    }
   },
 
   deleteDrive: async (id: string): Promise<void> => {
