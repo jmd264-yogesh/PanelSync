@@ -876,50 +876,74 @@ export default function InterviewsTab({
                     key={interview.id}
                     onClick={() => { setSelectedInterview(interview); setShowInterviewModal(true); }}
                     style={{
-                      padding: '1rem',
-                      background: isSelected ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.02)',
-                      borderTop: isSelected ? '1px solid #60a5fa' : '1px solid var(--border-glass)',
-                      borderRight: isSelected ? '1px solid #60a5fa' : '1px solid var(--border-glass)',
-                      borderBottom: isSelected ? '1px solid #60a5fa' : '1px solid var(--border-glass)',
+                      padding: '1.25rem',
+                      background: isSelected ? 'rgba(96,165,250,0.08)' : 'rgba(255,255,255,0.015)',
+                      borderTop: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
+                      borderRight: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
+                      borderBottom: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
                       borderLeft: `4px solid ${typeColor}`,
                       borderRadius: 'var(--radius-lg)',
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.25s ease',
+                      boxShadow: isSelected ? '0 4px 20px -5px rgba(96,165,250,0.15)' : 'none'
                     }}
                   >
                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
                       {/* Avatar */}
-                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${typeColor}15`, border: `1px solid ${typeColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, color: typeColor }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${typeColor}12`, border: `1px solid ${typeColor}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, color: typeColor }}>
                         {initials}
                       </div>
 
                       {/* Content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
-                          {isL1 && <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: '4px', color: '#60a5fa' }}>L1</span>}
-                          {isL2 && <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: '4px', color: '#a78bfa' }}>L2</span>}
-                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>{interview.candidateName}</h4>
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {/* Candidate Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          {isL1 && <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.35rem', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: '4px', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>L1</span>}
+                          {isL2 && <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.35rem', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: '4px', color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>L2</span>}
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Candidate:</span>
+                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>{interview.candidateName}</h4>
                         </div>
-                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, marginBottom: '0.5rem' }}>{interview.role}</p>
-                        
-                        {/* Panel Status */}
+
+                        {/* Role Details */}
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, opacity: 0.9 }}>{interview.role}</p>
+
+                        {/* Panelist(s) Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Panelist:</span>
+                          <strong style={{ color: interview.panels.length > 0 ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 600 }}>
+                            {interview.panels.length > 0 ? interview.panels.map(p => p.name).join(', ') : 'Awaiting assignment'}
+                          </strong>
+                        </div>
+
+                        {/* Feedback / Response Status */}
                         {interview.panels.length > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-                            {interview.panels.filter((p) => p.status === 'SUBMITTED').length} / {interview.panels.length} panels responded
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: interview.panels.filter(p => p.status === 'SUBMITTED').length === interview.panels.length ? '#10b981' : '#f59e0b' }} />
+                            <span>
+                              {interview.panels.filter((p) => p.status === 'SUBMITTED').length} of {interview.panels.length} feedback submitted
+                            </span>
                           </div>
                         )}
 
-                        {/* Date/Time */}
-                        <div style={{ fontSize: '0.75rem', color: statusColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        {/* Timing Block */}
+                        <div style={{ fontSize: '0.75rem', color: statusColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
                           {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
                             <>
-                              <CheckCircle size={12} />
-                              {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                              <CalendarCheck size={13} style={{ color: statusColor }} />
+                              <span>
+                                {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })} &bull;{' '}
+                                {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} –{' '}
+                                {new Date(interview.scheduledSlotEnd || (new Date(interview.scheduledSlotStart).getTime() + (interview.duration || 60) * 60000)).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{' '}
+                                ({interview.duration}m)
+                              </span>
                             </>
                           ) : (
                             <>
-                              <Clock size={12} />
-                              {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              <Clock size={13} style={{ color: statusColor }} />
+                              <span>
+                                Pref: {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                ({interview.duration}m)
+                              </span>
                             </>
                           )}
                         </div>
@@ -1141,6 +1165,26 @@ export default function InterviewsTab({
                   </button>
                 </div>
               )}
+              
+              <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.25rem' }}>
+                <ConfirmDialog
+                  trigger={
+                    <button style={{ width: '100%', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-sm)', color: '#f87171', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} />
+                  }
+                  triggerChildren={
+                    <>
+                      <Trash2 size={16} /> Delete Interview
+                    </>
+                  }
+                  title="Delete this interview?"
+                  description="This will soft-delete the interview record and release any mapped candidates. If a Teams meeting was scheduled, the calendar event will also be removed."
+                  confirmLabel="Yes, Delete"
+                  onConfirm={() => {
+                    handleDeleteInterview(selectedInterview.id);
+                    setShowInterviewModal(false);
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

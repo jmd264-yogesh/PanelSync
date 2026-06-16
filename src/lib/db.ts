@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as schema from './schema';
 
 export interface PanelAvailability {
@@ -125,7 +125,7 @@ export const INITIAL_RECRUITERS = [
 export const db = {
   // Get all interviews sorted by newest
   getInterviews: async (): Promise<Interview[]> => {
-    const interviewsRes = await dbClient.select().from(schema.interviews);
+    const interviewsRes = await dbClient.select().from(schema.interviews).where(isNull(schema.interviews.deletedAt));
     
     const result: Interview[] = [];
     for (const intv of interviewsRes) {
@@ -185,7 +185,7 @@ export const db = {
 
   // Get a single interview
   getInterview: async (id: string): Promise<Interview | null> => {
-    const [intv] = await dbClient.select().from(schema.interviews).where(eq(schema.interviews.id, id)).limit(1);
+    const [intv] = await dbClient.select().from(schema.interviews).where(and(eq(schema.interviews.id, id), isNull(schema.interviews.deletedAt))).limit(1);
     if (!intv) return null;
     
     const panelsRes = await dbClient
@@ -398,7 +398,17 @@ export const db = {
 
   // Delete an interview record (cascading foreign keys handled at SQL level)
   deleteInterview: async (id: string): Promise<boolean> => {
-    await dbClient.delete(schema.interviews).where(eq(schema.interviews.id, id));
+    const now = new Date();
+    await dbClient
+      .update(schema.interviews)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(schema.interviews.id, id));
+
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({ status: 'WAITING', mappedInterviewId: null })
+      .where(eq(schema.uploadedCandidates.mappedInterviewId, id));
+
     return true;
   },
 
@@ -508,7 +518,7 @@ export const db = {
 
   // Get uploaded candidates
   getUploadedCandidates: async (): Promise<UploadedCandidate[]> => {
-    const res = await dbClient.select().from(schema.uploadedCandidates).orderBy(desc(schema.uploadedCandidates.createdAt));
+    const res = await dbClient.select().from(schema.uploadedCandidates).where(isNull(schema.uploadedCandidates.deletedAt)).orderBy(desc(schema.uploadedCandidates.createdAt));
     return res.map((row) => ({
       id: row.id,
       name: row.name,
@@ -578,7 +588,11 @@ export const db = {
 
   // Delete uploaded candidate
   deleteUploadedCandidate: async (id: string): Promise<boolean> => {
-    await dbClient.delete(schema.uploadedCandidates).where(eq(schema.uploadedCandidates.id, id));
+    const now = new Date();
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({ deletedAt: now })
+      .where(eq(schema.uploadedCandidates.id, id));
     return true;
   },
 
@@ -589,7 +603,7 @@ export const db = {
       const waitingCandidates = await dbClient
         .select()
         .from(schema.uploadedCandidates)
-        .where(eq(schema.uploadedCandidates.status, 'WAITING'))
+        .where(and(eq(schema.uploadedCandidates.status, 'WAITING'), isNull(schema.uploadedCandidates.deletedAt)))
         .orderBy(schema.uploadedCandidates.createdAt);
         
       if (waitingCandidates.length === 0) {
@@ -895,6 +909,75 @@ export const db = {
   },
 
   deleteCollege: async (id: string): Promise<boolean> => {
+    // 1. Resolve college name
+    const [college] = await dbClient
+      .select()
+      .from(schema.colleges)
+      .where(eq(schema.colleges.id, id))
+      .limit(1);
+
+    if (!college) {
+      throw new Error('College not found');
+    }
+
+    const collegeName = college.name;
+
+    // 2. Check if college is associated with an active/open recruitment drive
+    const [activeOrOpenDrive] = await dbClient
+      .select()
+      .from(schema.drives)
+      .where(
+        and(
+          eq(schema.drives.collegeName, collegeName),
+          or(
+            eq(schema.drives.isActive, true),
+            eq(schema.drives.status, 'OPEN')
+          )
+        )
+      )
+      .limit(1);
+
+    if (activeOrOpenDrive) {
+      throw new Error(
+        `Cannot delete college "${collegeName}" because it is currently associated with an active or open recruitment drive.`
+      );
+    }
+
+    // 3. Check if college is associated with any other drive (closed/inactive)
+    const [anyDrive] = await dbClient
+      .select()
+      .from(schema.drives)
+      .where(eq(schema.drives.collegeName, collegeName))
+      .limit(1);
+
+    if (anyDrive) {
+      throw new Error(
+        `Cannot delete college "${collegeName}" because it is associated with existing recruitment drives.`
+      );
+    }
+
+    // 4. Check if college is associated with any candidates (that aren't soft-deleted)
+    const [anyCandidate] = await dbClient
+      .select()
+      .from(schema.uploadedCandidates)
+      .where(
+        and(
+          isNull(schema.uploadedCandidates.deletedAt),
+          or(
+            eq(schema.uploadedCandidates.college, collegeName),
+            eq(schema.uploadedCandidates.collegeDrive, collegeName)
+          )
+        )
+      )
+      .limit(1);
+
+    if (anyCandidate) {
+      throw new Error(
+        `Cannot delete college "${collegeName}" because there are candidates registered under this college.`
+      );
+    }
+
+    // 5. If all checks pass, delete the college
     await dbClient.delete(schema.colleges).where(eq(schema.colleges.id, id));
     return true;
   },

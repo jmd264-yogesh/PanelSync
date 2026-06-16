@@ -28,6 +28,7 @@ export const interviews = pgTable('interviews', {
   scheduledSlotEnd: timestamp('scheduled_slot_end'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
+  deletedAt: timestamp('deleted_at'),
 });
 
 // 3. Interview Nominated Panels Table
@@ -87,6 +88,7 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
   college: varchar('college', { length: 255 }),
   collegeDrive: varchar('college_drive', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
+  deletedAt: timestamp('deleted_at'),
 });
 
 // 8. Colleges Table
