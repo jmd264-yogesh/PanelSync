@@ -1,4 +1,4 @@
-import { pgTable, varchar, text, integer, timestamp, unique } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, integer, timestamp, unique, boolean } from 'drizzle-orm/pg-core';
 
 // 1. Sessions Table
 export const sessions = pgTable('sessions', {
@@ -92,6 +92,15 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
 export const colleges = pgTable('colleges', {
   id: varchar('id', { length: 255 }).primaryKey(),
   name: varchar('name', { length: 255 }).notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 9. Drives Table
+export const drives = pgTable('drives', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  collegeName: varchar('college_name', { length: 255 }).notNull(),
+  driveDate: varchar('drive_date', { length: 255 }).notNull(),
+  isActive: boolean('is_active').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

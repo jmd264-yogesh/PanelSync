@@ -4,8 +4,17 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Settings, Search, Loader2, Trash2, Info, Clock, Building2, Check
 } from 'lucide-react';
-import { Panelist, Interview, College } from '@/lib/db';
+import { Panelist, Interview, College, Drive } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface PanelistsTabProps {
   panelists: Panelist[];
@@ -14,6 +23,7 @@ interface PanelistsTabProps {
   setInterviews: React.Dispatch<React.SetStateAction<Interview[]>>;
   collegesList: College[];
   todayStr: string;
+  activeDrive: Drive | null;
 }
 
 export default function PanelistsTab({
@@ -23,6 +33,7 @@ export default function PanelistsTab({
   setInterviews,
   collegesList,
   todayStr,
+  activeDrive,
 }: PanelistsTabProps) {
   // ── Scheduler Defaults ───────────────────────────────────────────────────
   const [l1TimeStart, setL1TimeStart] = useState('10:00');
@@ -61,6 +72,17 @@ export default function PanelistsTab({
   const [reqSlots, setReqSlots] = useState<{ startTime: string; endTime: string; selected: boolean }[]>([]);
   const [reqCollegeName, setReqCollegeName] = useState('');
   const [isRequestingSlot, setIsRequestingSlot] = useState(false);
+
+  useEffect(() => {
+    if (activeDrive) {
+      setCollegeName(activeDrive.collegeName);
+      setReqCollegeName(activeDrive.collegeName);
+      setDefaultStartDate(activeDrive.driveDate);
+      setDefaultEndDate(activeDrive.driveDate);
+      setReqStartDate(activeDrive.driveDate);
+      setReqEndDate(activeDrive.driveDate);
+    }
+  }, [activeDrive]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredPanelists = panelists.filter(
@@ -173,7 +195,7 @@ export default function PanelistsTab({
     e.preventDefault();
     if (!adminSelectedUser) return;
     if (adminRoles.length === 0) {
-      alert('Please select at least one role capability (L1 or L2).');
+      toast.error('Please select at least one role capability (L1 or L2).');
       return;
     }
     setIsAdminSaving(true);
@@ -206,22 +228,23 @@ export default function PanelistsTab({
       setAdminSelectedUser(null);
       setAdminQuery('');
       setAdminRoles(['L1']);
+      toast.success('Panelist saved successfully.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error saving panelist');
+      toast.error(err.message || 'Error saving panelist');
     } finally {
       setIsAdminSaving(false);
     }
   };
 
   const handleDeletePanelist = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this panelist from the pre-approved pool?')) return;
     try {
       const res = await fetch(`/api/panelists/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setPanelists(panelists.filter((p) => p.id !== id));
+        toast.success('Panelist removed from the pool.');
       } else {
-        alert('Failed to remove panelist.');
+        toast.error('Failed to remove panelist.');
       }
     } catch (err) {
       console.error(err);
@@ -253,23 +276,23 @@ export default function PanelistsTab({
     setReqPanelists(arr);
     setReqInterviewType(stage);
     setReqDuration('30');
-    setReqStartDate(defaultStartDate);
-    setReqEndDate(defaultEndDate);
-    setReqCollegeName(collegeName);
+    setReqStartDate(activeDrive ? activeDrive.driveDate : defaultStartDate);
+    setReqEndDate(activeDrive ? activeDrive.driveDate : defaultEndDate);
+    setReqCollegeName(activeDrive ? activeDrive.collegeName : collegeName);
   };
 
   const handleSendSlotRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (reqPanelists.length === 0) return;
     if (!reqCollegeName || !reqCollegeName.trim()) {
-      alert('College / Institution name is required.');
+      toast.error('College / Institution name is required.');
       return;
     }
-    if (reqStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
-    if (reqEndDate < reqStartDate) { alert('End date cannot be before the start date.'); return; }
+    if (reqStartDate < todayStr) { toast.error('Start date cannot be in the past.'); return; }
+    if (reqEndDate < reqStartDate) { toast.error('End date cannot be before the start date.'); return; }
     const selectedProposedSlots = reqSlots.filter((s) => s.selected);
     if (selectedProposedSlots.length === 0) {
-      alert('Please select or enable at least one proposed slot option.');
+      toast.error('Please select or enable at least one proposed slot option.');
       return;
     }
     setIsRequestingSlot(true);
@@ -296,10 +319,10 @@ export default function PanelistsTab({
       setReqPanelists([]);
       setBulkSelectedL1Ids([]);
       setBulkSelectedL2Ids([]);
-      alert(`Teams notification sent successfully to ${reqPanelists.map((p) => p.displayName).join(', ')}!`);
+      toast.success(`Teams notification sent successfully to ${reqPanelists.map((p) => p.displayName).join(', ')}!`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error occurred while sending slot request.');
+      toast.error(err.message || 'Error occurred while sending slot request.');
     } finally {
       setIsRequestingSlot(false);
     }
@@ -371,17 +394,17 @@ export default function PanelistsTab({
             </h4>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '0.7rem' }}>College Name</label>
-              <select
-                className="form-input"
-                style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px' }}
-                value={collegeName}
-                onChange={(e) => setCollegeName(e.target.value)}
-              >
-                <option value="">Select College...</option>
-                {collegesList.map((c) => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
+              <Select value={collegeName} onValueChange={(val) => setCollegeName(val || '')}>
+                <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                  <SelectValue placeholder="Select College..." />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-muted" style={{ fontSize: '0.65rem', marginTop: '0.5rem', lineHeight: 1.4 }}>
               Default institution shown in slot request messages.
@@ -623,14 +646,20 @@ export default function PanelistsTab({
                             >
                               Request Slots
                             </button>
-                            <button
-                              onClick={() => handleDeletePanelist(p.id)}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <ConfirmDialog
+                              trigger={
+                                <button
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                />
+                              }
+                              triggerChildren={<Trash2 size={13} />}
+                              title="Remove this panelist?"
+                              description="This will remove the panelist from the pre-approved pool."
+                              confirmLabel="Yes, Remove"
+                              onConfirm={() => handleDeletePanelist(p.id)}
+                            />
                           </div>
                         </div>
                       );
@@ -723,14 +752,20 @@ export default function PanelistsTab({
                             >
                               Request Slots
                             </button>
-                            <button
-                              onClick={() => handleDeletePanelist(p.id)}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <ConfirmDialog
+                              trigger={
+                                <button
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                />
+                              }
+                              triggerChildren={<Trash2 size={13} />}
+                              title="Remove this panelist?"
+                              description="This will remove the panelist from the pre-approved pool."
+                              confirmLabel="Yes, Remove"
+                              onConfirm={() => handleDeletePanelist(p.id)}
+                            />
                           </div>
                         </div>
                       );
@@ -819,20 +854,30 @@ export default function PanelistsTab({
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Interview Stage</label>
-                  <select className="form-input" value={reqInterviewType} onChange={(e) => setReqInterviewType(e.target.value as any)}>
-                    <option value="L1">L1 Interview</option>
-                    <option value="L2">L2 Interview</option>
-                    <option value="General">General / Custom</option>
-                  </select>
+                  <Select value={reqInterviewType} onValueChange={(val) => setReqInterviewType(val as any)}>
+                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                      <SelectValue placeholder="Select Stage" />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                      <SelectItem value="L1">L1 Interview</SelectItem>
+                      <SelectItem value="L2">L2 Interview</SelectItem>
+                      <SelectItem value="General">General / Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Duration</label>
-                  <select className="form-input" value={reqDuration} onChange={(e) => setReqDuration(e.target.value)}>
-                    <option value="30">30 mins</option>
-                    <option value="45">45 mins</option>
-                    <option value="60">60 mins</option>
-                    <option value="90">90 mins</option>
-                  </select>
+                  <Select value={reqDuration} onValueChange={(val) => setReqDuration(val || '')}>
+                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                      <SelectValue placeholder="Select Duration" />
+                    </SelectTrigger>
+                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                      <SelectItem value="30">30 mins</SelectItem>
+                      <SelectItem value="45">45 mins</SelectItem>
+                      <SelectItem value="60">60 mins</SelectItem>
+                      <SelectItem value="90">90 mins</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -849,12 +894,17 @@ export default function PanelistsTab({
 
               <div className="form-group">
                 <label className="form-label">College / Institution</label>
-                <select className="form-input" style={{ height: '36px' }} value={reqCollegeName} onChange={(e) => setReqCollegeName(e.target.value)} required>
-                  <option value="">Select College...</option>
-                  {collegesList.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={reqCollegeName} onValueChange={(val) => setReqCollegeName(val || '')}>
+                  <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                    <SelectValue placeholder="Select College..." />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                    {collegesList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Proposed Slots Builder */}

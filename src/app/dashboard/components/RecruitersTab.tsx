@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Shield, Users, Trash2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 export default function RecruitersTab() {
   const [recruiters, setRecruiters] = useState<{ email: string; addedBy: string | null; createdAt: string }[]>([]);
@@ -56,9 +58,6 @@ export default function RecruitersTab() {
   };
 
   const handleRemoveRecruiter = async (email: string) => {
-    if (!confirm(`Are you sure you want to revoke sign-in permission for ${email}?`)) {
-      return;
-    }
     try {
       const res = await fetch(`/api/recruiters/${encodeURIComponent(email)}`, {
         method: 'DELETE',
@@ -68,9 +67,10 @@ export default function RecruitersTab() {
         throw new Error(data.error || 'Failed to revoke recruiter access.');
       }
       await fetchRecruiters();
+      toast.success('Recruiter access revoked.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'An error occurred revoking access.');
+      toast.error(err.message || 'An error occurred revoking access.');
     }
   };
 
@@ -199,15 +199,21 @@ export default function RecruitersTab() {
                           {new Date(recruiter.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td style={{ padding: '1rem', textAlign: 'right' }}>
-                          <button
-                            onClick={() => handleRemoveRecruiter(recruiter.email)}
-                            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.2rem' }}
-                            onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                            onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                            title="Revoke access"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          <ConfirmDialog
+                            trigger={
+                              <button
+                                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.2rem' }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                title="Revoke access"
+                              />
+                            }
+                            triggerChildren={<Trash2 size={15} />}
+                            title="Revoke recruiter access?"
+                            description={`This will revoke sign-in permission for ${recruiter.email}.`}
+                            confirmLabel="Yes, Revoke"
+                            onConfirm={() => handleRemoveRecruiter(recruiter.email)}
+                          />
                         </td>
                       </tr>
                     ))

@@ -4,8 +4,17 @@ import React, { useState, useEffect } from 'react';
 import {
   Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle
 } from 'lucide-react';
-import { UploadedCandidate, Interview, College } from '@/lib/db';
+import { UploadedCandidate, Interview, College, Drive } from '@/lib/db';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface CandidatesTabProps {
   candidates: UploadedCandidate[];
@@ -15,6 +24,7 @@ interface CandidatesTabProps {
   setInterviews: React.Dispatch<React.SetStateAction<Interview[]>>;
   collegesList: College[];
   todayStr: string;
+  activeDrive: Drive | null;
 }
 
 export default function CandidatesTab({
@@ -25,6 +35,7 @@ export default function CandidatesTab({
   setInterviews,
   collegesList,
   todayStr,
+  activeDrive,
 }: CandidatesTabProps) {
   // ── Upload States ──────────────────────────────────────────────────────────
   const [isUploadingCandidates, setIsUploadingCandidates] = useState(false);
@@ -72,6 +83,15 @@ export default function CandidatesTab({
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (activeDrive) {
+      setUploadDefaultDate(activeDrive.driveDate);
+      setUploadDefaultCollege(activeDrive.collegeName);
+      setSingleCandidateDate(activeDrive.driveDate);
+      setSingleCandidateCollege(activeDrive.collegeName);
+    }
+  }, [activeDrive]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const formatDateParts = (year: number, month: number, day: number): string | undefined => {
@@ -255,7 +275,7 @@ export default function CandidatesTab({
       setSingleCandidateEmail('');
       setSingleCandidateDate('');
       setSingleCandidateCollege('');
-      alert(`Candidate ${singleCandidateName} successfully added to the queue!`);
+      toast.success(`Candidate ${singleCandidateName} successfully added to the queue!`);
     } catch (err: any) {
       console.error(err);
       setSingleCandidateError(err.message || 'An error occurred adding candidate.');
@@ -265,10 +285,10 @@ export default function CandidatesTab({
   };
 
   const handleSaveCandidateEdit = async (id: string) => {
-    if (!editCandidateName.trim()) { alert('Name is required.'); return; }
-    if (!editCandidateEmail.trim()) { alert('Email is required.'); return; }
-    if (!editCandidateCollege.trim()) { alert('College Name of Drive is required.'); return; }
-    if (!editCandidateDate.trim()) { alert('Drive Date is required.'); return; }
+    if (!editCandidateName.trim()) { toast.error('Name is required.'); return; }
+    if (!editCandidateEmail.trim()) { toast.error('Email is required.'); return; }
+    if (!editCandidateCollege.trim()) { toast.error('College Name of Drive is required.'); return; }
+    if (!editCandidateDate.trim()) { toast.error('Drive Date is required.'); return; }
     try {
       const res = await fetch(`/api/candidates/${id}`, {
         method: 'PATCH',
@@ -287,10 +307,10 @@ export default function CandidatesTab({
       const result = await res.json();
       setCandidates(result.candidates);
       setEditingCandidateId(null);
-      alert('Candidate details updated successfully.');
+      toast.success('Candidate details updated successfully.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error updating candidate details');
+      toast.error(err.message || 'Error updating candidate details');
     }
   };
 
@@ -313,15 +333,14 @@ export default function CandidatesTab({
       const data = await res.json();
       setInterviews(interviews.map((i) => i.id === interviewId ? data.interview : i));
       await fetchCandidates();
-      alert(`Candidate "${candidate.name}" successfully mapped to the interview!`);
+      toast.success(`Candidate "${candidate.name}" successfully mapped to the interview!`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error occurred while mapping candidate');
+      toast.error(err.message || 'Error occurred while mapping candidate');
     }
   };
 
   const handleMarkAsSelected = async (id: string) => {
-    if (!confirm('Mark this candidate as SELECTED? This is the final outcome and cannot be changed by panelists.')) return;
     setSelectingCandidateId(id);
     try {
       const res = await fetch(`/api/candidates/${id}`, {
@@ -332,23 +351,24 @@ export default function CandidatesTab({
       if (!res.ok) throw new Error('Failed to mark as selected');
       const result = await res.json();
       setCandidates(result.candidates);
+      toast.success('Candidate marked as Selected.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error marking candidate as selected');
+      toast.error(err.message || 'Error marking candidate as selected');
     } finally {
       setSelectingCandidateId(null);
     }
   };
 
   const handleDeleteCandidate = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this candidate from the queue?')) return;
     try {
       const res = await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const result = await res.json();
         setCandidates(result.candidates);
+        toast.success('Candidate removed from the queue.');
       } else {
-        alert('Failed to delete candidate.');
+        toast.error('Failed to delete candidate.');
       }
     } catch (err) {
       console.error('Error deleting candidate:', err);
@@ -397,17 +417,17 @@ export default function CandidatesTab({
 
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive (Fallback Default)</label>
-                <select
-                  className="form-input"
-                  style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px' }}
-                  value={uploadDefaultCollege}
-                  onChange={(e) => setUploadDefaultCollege(e.target.value)}
-                >
-                  <option value="">Select College...</option>
-                  {collegesList.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={uploadDefaultCollege} onValueChange={(val) => setUploadDefaultCollege(val || '')}>
+                  <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                    <SelectValue placeholder="Select College..." />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                    {collegesList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div
@@ -482,12 +502,17 @@ export default function CandidatesTab({
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive</label>
-                <select className="form-input" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px' }} value={singleCandidateCollege} onChange={(e) => setSingleCandidateCollege(e.target.value)} required>
-                  <option value="">Select College...</option>
-                  {collegesList.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={singleCandidateCollege} onValueChange={(val) => setSingleCandidateCollege(val || '')}>
+                  <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                    <SelectValue placeholder="Select College..." />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                    {collegesList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {singleCandidateError && (
@@ -534,16 +559,16 @@ export default function CandidatesTab({
                   style={{ paddingLeft: '28px', fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)' }}
                 />
               </div>
-              <select
-                className="form-input"
-                value={candidateStatusFilter}
-                onChange={(e) => setCandidateStatusFilter(e.target.value as any)}
-                style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)' }}
-              >
-                <option value="all">All Statuses</option>
-                <option value="WAITING">Waiting</option>
-                <option value="MAPPED">Mapped</option>
-              </select>
+              <Select value={candidateStatusFilter} onValueChange={(val) => setCandidateStatusFilter(val as any)}>
+                <SelectTrigger className="text-left" style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="WAITING">Waiting</SelectItem>
+                  <SelectItem value="MAPPED">Mapped</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -597,18 +622,17 @@ export default function CandidatesTab({
                               />
                             </td>
                             <td style={{ padding: '0.5rem 1rem' }}>
-                              <select
-                                className="form-input text-xs"
-                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}
-                                value={editCandidateCollege}
-                                onChange={(e) => setEditCandidateCollege(e.target.value)}
-                                required
-                              >
-                                <option value="">Select College...</option>
-                                {collegesList.map((c) => (
-                                  <option key={c.id} value={c.name}>{c.name}</option>
-                                ))}
-                              </select>
+                              <Select value={editCandidateCollege} onValueChange={(val) => setEditCandidateCollege(val || '')}>
+                                <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}>
+                                  <SelectValue placeholder="Select College..." />
+                                </SelectTrigger>
+                                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                                  {collegesList.map((c) => (
+                                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </td>
                             <td style={{ padding: '0.5rem 1rem' }}>
                               <input
@@ -690,27 +714,26 @@ export default function CandidatesTab({
                               </>
                             ) : mappingCandidateId === candidate.id ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <select
-                                  className="form-input text-xs"
-                                  style={{ padding: '0.2rem 0.4rem', height: '28px', fontSize: '0.75rem', width: '180px', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)' }}
-                                  onChange={async (e) => {
-                                    const intvId = e.target.value;
-                                    if (intvId) {
-                                      await handleMapCandidateToSlot(candidate, intvId);
-                                      setMappingCandidateId(null);
-                                    }
-                                  }}
-                                  defaultValue=""
-                                >
-                                  <option value="">Select Available Slot...</option>
-                                  {interviews
-                                    .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
-                                    .map((i) => (
-                                      <option key={i.id} value={i.id}>
-                                        {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString()} - {i.panels.map(p => p.name).join(', ')})
-                                      </option>
-                                    ))}
-                                </select>
+                                <Select onValueChange={async (val: any) => {
+                                  if (val && val !== '_none_placeholder') {
+                                    await handleMapCandidateToSlot(candidate, val);
+                                    setMappingCandidateId(null);
+                                  }
+                                }}>
+                                  <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', fontSize: '0.75rem', width: '180px', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', borderRadius: 'var(--radius-sm)' }}>
+                                    <SelectValue placeholder="Select Available Slot..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                                    <SelectItem value="_none_placeholder">Select Available Slot...</SelectItem>
+                                    {interviews
+                                      .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
+                                      .map((i) => (
+                                        <SelectItem key={i.id} value={i.id}>
+                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString()} - {i.panels.map(p => p.name).join(', ')})
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
                                 <button onClick={() => setMappingCandidateId(null)} className="btn btn-secondary btn-sm" style={{ padding: '0.2rem 0.4rem', fontSize: '0.68rem', height: '28px', whiteSpace: 'nowrap' }}>
                                   Cancel
                                 </button>
@@ -743,32 +766,49 @@ export default function CandidatesTab({
                                   Edit
                                 </button>
                                 {(candidate as any).outcomeStatus === 'PASSED_L2' && (
-                                  <button
-                                    onClick={() => handleMarkAsSelected(candidate.id)}
-                                    disabled={selectingCandidateId === candidate.id}
-                                    className="btn btn-sm"
-                                    style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
-                                    title="Mark as Selected (final outcome)"
-                                  >
-                                    {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
-                                    Select
-                                  </button>
+                                  <ConfirmDialog
+                                    trigger={
+                                      <button
+                                        disabled={selectingCandidateId === candidate.id}
+                                        className="btn btn-sm"
+                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
+                                        title="Mark as Selected (final outcome)"
+                                      />
+                                    }
+                                    triggerChildren={
+                                      <>
+                                        {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
+                                        Select
+                                      </>
+                                    }
+                                    title="Mark candidate as Selected?"
+                                    description="This is the final outcome and cannot be changed by panelists."
+                                    confirmLabel="Yes, Select"
+                                    destructive={false}
+                                    onConfirm={() => handleMarkAsSelected(candidate.id)}
+                                  />
                                 )}
-                                <button
-                                  onClick={() => handleDeleteCandidate(candidate.id)}
-                                  disabled={candidate.status === 'MAPPED'}
-                                  style={{
-                                    border: 'none', background: 'transparent',
-                                    cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
-                                    color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
-                                    padding: '0.2rem'
-                                  }}
-                                  onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
-                                  onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
-                                  title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
+                                <ConfirmDialog
+                                  trigger={
+                                    <button
+                                      disabled={candidate.status === 'MAPPED'}
+                                      style={{
+                                        border: 'none', background: 'transparent',
+                                        cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
+                                        color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                        padding: '0.2rem'
+                                      }}
+                                      onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
+                                      onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
+                                      title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                    />
+                                  }
+                                  triggerChildren={<Trash2 size={15} />}
+                                  title="Remove this candidate?"
+                                  description="This will remove the candidate from the queue. This action cannot be undone."
+                                  confirmLabel="Yes, Remove"
+                                  onConfirm={() => handleDeleteCandidate(candidate.id)}
+                                />
                               </>
                             )}
                           </div>
