@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { UploadedCandidate, Interview, College } from '@/lib/db';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 interface CandidatesTabProps {
   candidates: UploadedCandidate[];
@@ -255,7 +257,7 @@ export default function CandidatesTab({
       setSingleCandidateEmail('');
       setSingleCandidateDate('');
       setSingleCandidateCollege('');
-      alert(`Candidate ${singleCandidateName} successfully added to the queue!`);
+      toast.success(`Candidate ${singleCandidateName} successfully added to the queue!`);
     } catch (err: any) {
       console.error(err);
       setSingleCandidateError(err.message || 'An error occurred adding candidate.');
@@ -265,10 +267,10 @@ export default function CandidatesTab({
   };
 
   const handleSaveCandidateEdit = async (id: string) => {
-    if (!editCandidateName.trim()) { alert('Name is required.'); return; }
-    if (!editCandidateEmail.trim()) { alert('Email is required.'); return; }
-    if (!editCandidateCollege.trim()) { alert('College Name of Drive is required.'); return; }
-    if (!editCandidateDate.trim()) { alert('Drive Date is required.'); return; }
+    if (!editCandidateName.trim()) { toast.error('Name is required.'); return; }
+    if (!editCandidateEmail.trim()) { toast.error('Email is required.'); return; }
+    if (!editCandidateCollege.trim()) { toast.error('College Name of Drive is required.'); return; }
+    if (!editCandidateDate.trim()) { toast.error('Drive Date is required.'); return; }
     try {
       const res = await fetch(`/api/candidates/${id}`, {
         method: 'PATCH',
@@ -287,10 +289,10 @@ export default function CandidatesTab({
       const result = await res.json();
       setCandidates(result.candidates);
       setEditingCandidateId(null);
-      alert('Candidate details updated successfully.');
+      toast.success('Candidate details updated successfully.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error updating candidate details');
+      toast.error(err.message || 'Error updating candidate details');
     }
   };
 
@@ -313,15 +315,14 @@ export default function CandidatesTab({
       const data = await res.json();
       setInterviews(interviews.map((i) => i.id === interviewId ? data.interview : i));
       await fetchCandidates();
-      alert(`Candidate "${candidate.name}" successfully mapped to the interview!`);
+      toast.success(`Candidate "${candidate.name}" successfully mapped to the interview!`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error occurred while mapping candidate');
+      toast.error(err.message || 'Error occurred while mapping candidate');
     }
   };
 
   const handleMarkAsSelected = async (id: string) => {
-    if (!confirm('Mark this candidate as SELECTED? This is the final outcome and cannot be changed by panelists.')) return;
     setSelectingCandidateId(id);
     try {
       const res = await fetch(`/api/candidates/${id}`, {
@@ -332,23 +333,24 @@ export default function CandidatesTab({
       if (!res.ok) throw new Error('Failed to mark as selected');
       const result = await res.json();
       setCandidates(result.candidates);
+      toast.success('Candidate marked as Selected.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error marking candidate as selected');
+      toast.error(err.message || 'Error marking candidate as selected');
     } finally {
       setSelectingCandidateId(null);
     }
   };
 
   const handleDeleteCandidate = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this candidate from the queue?')) return;
     try {
       const res = await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const result = await res.json();
         setCandidates(result.candidates);
+        toast.success('Candidate removed from the queue.');
       } else {
-        alert('Failed to delete candidate.');
+        toast.error('Failed to delete candidate.');
       }
     } catch (err) {
       console.error('Error deleting candidate:', err);
@@ -743,32 +745,49 @@ export default function CandidatesTab({
                                   Edit
                                 </button>
                                 {(candidate as any).outcomeStatus === 'PASSED_L2' && (
-                                  <button
-                                    onClick={() => handleMarkAsSelected(candidate.id)}
-                                    disabled={selectingCandidateId === candidate.id}
-                                    className="btn btn-sm"
-                                    style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
-                                    title="Mark as Selected (final outcome)"
-                                  >
-                                    {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
-                                    Select
-                                  </button>
+                                  <ConfirmDialog
+                                    trigger={
+                                      <button
+                                        disabled={selectingCandidateId === candidate.id}
+                                        className="btn btn-sm"
+                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
+                                        title="Mark as Selected (final outcome)"
+                                      />
+                                    }
+                                    triggerChildren={
+                                      <>
+                                        {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
+                                        Select
+                                      </>
+                                    }
+                                    title="Mark candidate as Selected?"
+                                    description="This is the final outcome and cannot be changed by panelists."
+                                    confirmLabel="Yes, Select"
+                                    destructive={false}
+                                    onConfirm={() => handleMarkAsSelected(candidate.id)}
+                                  />
                                 )}
-                                <button
-                                  onClick={() => handleDeleteCandidate(candidate.id)}
-                                  disabled={candidate.status === 'MAPPED'}
-                                  style={{
-                                    border: 'none', background: 'transparent',
-                                    cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
-                                    color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
-                                    padding: '0.2rem'
-                                  }}
-                                  onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
-                                  onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
-                                  title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
+                                <ConfirmDialog
+                                  trigger={
+                                    <button
+                                      disabled={candidate.status === 'MAPPED'}
+                                      style={{
+                                        border: 'none', background: 'transparent',
+                                        cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
+                                        color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                        padding: '0.2rem'
+                                      }}
+                                      onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
+                                      onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
+                                      title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                    />
+                                  }
+                                  triggerChildren={<Trash2 size={15} />}
+                                  title="Remove this candidate?"
+                                  description="This will remove the candidate from the queue. This action cannot be undone."
+                                  confirmLabel="Yes, Remove"
+                                  onConfirm={() => handleDeleteCandidate(candidate.id)}
+                                />
                               </>
                             )}
                           </div>

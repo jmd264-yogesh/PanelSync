@@ -12,6 +12,16 @@ import {
   Loader2,
   CalendarCheck,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface PanelistClientProps {
   initialInterviews: PanelistInterview[];
@@ -50,6 +60,7 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
   const [updatingStatus, setUpdatingStatus] = useState<Record<string, boolean>>({});
   const [feedbackError, setFeedbackError] = useState<Record<string, string | null>>({});
   const [isEditing, setIsEditing] = useState<Record<string, boolean>>({});
+  const [pendingL1PassConfirm, setPendingL1PassConfirm] = useState<PanelistInterview | null>(null);
 
   // Structured score states keyed by panelId
   const [l1Ratings, setL1Ratings] = useState<Record<string, { coding: number; communication: number; fundamentals: number; codingNotes: string; commNotes: string; fundNotes: string; comments: string }>>({});
@@ -146,15 +157,22 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
     }
   };
 
-  const handleFeedbackSubmit = async (interview: PanelistInterview, decision: 'PASSED' | 'REJECTED') => {
+  const handleFeedbackSubmit = (interview: PanelistInterview, decision: 'PASSED' | 'REJECTED') => {
+    const roleLower = interview.role.toLowerCase();
+    const isL1Role = roleLower.includes('l1');
+
+    if (isL1Role && decision === 'PASSED') {
+      setPendingL1PassConfirm(interview);
+      return;
+    }
+
+    performFeedbackSubmit(interview, decision);
+  };
+
+  const performFeedbackSubmit = async (interview: PanelistInterview, decision: 'PASSED' | 'REJECTED') => {
     const roleLower = interview.role.toLowerCase();
     const isL1Role = roleLower.includes('l1');
     const isL2Role = roleLower.includes('l2');
-
-    if (isL1Role && decision === 'PASSED') {
-      const confirmPass = confirm("⚠️ Warning: Once you submit a 'Passed' decision for L1, it is final and cannot be edited or changed, even within the 2-hour window. Are you sure you want to pass this candidate?");
-      if (!confirmPass) return;
-    }
 
     setSubmittingFeedback((prev) => ({ ...prev, [interview.panelId]: true }));
     setFeedbackError((prev) => ({ ...prev, [interview.panelId]: null }));
@@ -1031,6 +1049,34 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
           })}
         </div>
       )}
+
+      <AlertDialog
+        open={!!pendingL1PassConfirm}
+        onOpenChange={(open: boolean) => { if (!open) setPendingL1PassConfirm(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm final L1 decision</AlertDialogTitle>
+            <AlertDialogDescription>
+              Once you submit a &quot;Passed&quot; decision for L1, it is final and cannot be edited or changed, even within the 2-hour window. Are you sure you want to pass this candidate?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingL1PassConfirm) {
+                  performFeedbackSubmit(pendingL1PassConfirm, 'PASSED');
+                }
+                setPendingL1PassConfirm(null);
+              }}
+            >
+              Yes, Pass L1
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

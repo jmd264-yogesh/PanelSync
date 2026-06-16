@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { Interview, Panelist, UploadedCandidate, InterviewPanel } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 interface InterviewsTabProps {
   interviews: Interview[];
@@ -249,16 +251,15 @@ export default function InterviewsTab({
     }
   };
 
-  const handleDeleteInterview = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this interview record?')) return;
+  const handleDeleteInterview = async (id: string) => {
     try {
       const res = await fetch(`/api/interviews/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setInterviews(interviews.filter((i) => i.id !== id));
         if (selectedInterview?.id === id) setSelectedInterview(null);
+        toast.success('Interview record deleted.');
       } else {
-        alert('Failed to delete interview');
+        toast.error('Failed to delete interview');
       }
     } catch (err) {
       console.error(err);
@@ -286,7 +287,7 @@ export default function InterviewsTab({
       window.location.reload();
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error scheduling meeting');
+      toast.error(err.message || 'Error scheduling meeting');
     } finally {
       setIsBooking(false);
     }
@@ -294,7 +295,6 @@ export default function InterviewsTab({
 
   const handleCancelBooking = async () => {
     if (!selectedInterview) return;
-    if (!confirm('Are you sure you want to cancel this booking? This will delete the calendar event from Microsoft Teams.')) return;
     setIsCancellingBooking(true);
     try {
       const res = await fetch('/api/interviews/cancel-booking', {
@@ -309,10 +309,10 @@ export default function InterviewsTab({
       const data = await res.json();
       setInterviews(interviews.map((i) => i.id === selectedInterview.id ? data.interview : i));
       setSelectedInterview(data.interview);
-      alert('Successfully cancelled meeting and removed scheduled slot.');
+      toast.success('Successfully cancelled meeting and removed scheduled slot.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error cancelling meeting');
+      toast.error(err.message || 'Error cancelling meeting');
     } finally {
       setIsCancellingBooking(false);
     }
@@ -330,10 +330,10 @@ export default function InterviewsTab({
         const err = await res.json();
         throw new Error(err.error || 'Failed to resend invitation');
       }
-      alert('Successfully resent Teams notification reminder!');
+      toast.success('Successfully resent Teams notification reminder!');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error resending invitation');
+      toast.error(err.message || 'Error resending invitation');
     } finally {
       setResendingPanelId(null);
     }
@@ -343,8 +343,8 @@ export default function InterviewsTab({
     if (e) e.preventDefault();
     const target = targetInterviewOverride || selectedInterview;
     if (!target) return;
-    if (editStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
-    if (editEndDate < editStartDate) { alert('End date cannot be before the start date.'); return; }
+    if (editStartDate < todayStr) { toast.error('Start date cannot be in the past.'); return; }
+    if (editEndDate < editStartDate) { toast.error('End date cannot be before the start date.'); return; }
     setIsUpdatingDates(true);
     try {
       let type: 'L1' | 'L2' | 'General' = 'L1';
@@ -385,10 +385,10 @@ export default function InterviewsTab({
         setSelectedInterview(data.interview);
         setIsEditingDates(false);
       }
-      alert('Successfully updated interview date range and reset proposed availability slots.');
+      toast.success('Successfully updated interview date range and reset proposed availability slots.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error updating dates');
+      toast.error(err.message || 'Error updating dates');
     } finally {
       setIsUpdatingDates(false);
     }
@@ -408,9 +408,9 @@ export default function InterviewsTab({
       if (!res.ok) throw new Error(data.error || 'Failed to send reminder');
       const sentCount = data.sent?.length ?? 0;
       const skippedCount = data.skipped?.length ?? 0;
-      alert(`✓ Feedback reminder sent to ${sentCount} panelist${sentCount !== 1 ? 's' : ''}${skippedCount > 0 ? ` (${skippedCount} skipped — same user)` : ''}.`);
+      toast.success(`Feedback reminder sent to ${sentCount} panelist${sentCount !== 1 ? 's' : ''}${skippedCount > 0 ? ` (${skippedCount} skipped — same user)` : ''}.`);
     } catch (err: any) {
-      alert(`Failed to send reminder: ${err.message}`);
+      toast.error(`Failed to send reminder: ${err.message}`);
     } finally {
       setSendingFeedbackReminderId(null);
     }
@@ -634,9 +634,22 @@ export default function InterviewsTab({
                                 <Users size={9} /> View Panels
                               </button>
                             )}
-                            <button className="btn btn-secondary btn-sm" style={{ padding: '0.2rem', borderRadius: '4px', border: 'none', background: 'transparent' }} onClick={(e) => handleDeleteInterview(interview.id, e)}>
-                              <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
-                            </button>
+                            <ConfirmDialog
+                              trigger={
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '0.4rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              }
+                              triggerChildren={
+                                <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
+                              }
+                              title="Delete this interview record?"
+                              description="This will permanently remove the interview from the dashboard."
+                              confirmLabel="Yes, Delete"
+                              onConfirm={() => handleDeleteInterview(interview.id)}
+                            />
                           </div>
                         </div>
                       </div>

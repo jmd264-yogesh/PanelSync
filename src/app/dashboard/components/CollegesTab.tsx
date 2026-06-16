@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { Building2, Trash2, Loader2 } from 'lucide-react';
 import { College } from '@/lib/db';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 interface CollegesTabProps {
   collegesList: College[];
@@ -56,9 +58,6 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
   };
 
   const handleDeleteCollege = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this college? This will remove it from the select directory list.')) {
-      return;
-    }
     try {
       const res = await fetch(`/api/colleges/${id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -66,9 +65,10 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
         throw new Error(data.error || 'Failed to delete college.');
       }
       await fetchColleges();
+      toast.success('College removed from the directory.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'An error occurred deleting college.');
+      toast.error(err.message || 'An error occurred deleting college.');
     }
   };
 
@@ -161,21 +161,27 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
                         })}
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        <button
-                          onClick={() => handleDeleteCollege(college.id)}
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            color: 'var(--text-muted)',
-                            padding: '0.2rem'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                          title="Delete College"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        <ConfirmDialog
+                          trigger={
+                            <button
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--text-muted)',
+                                padding: '0.2rem'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                              title="Delete College"
+                            />
+                          }
+                          triggerChildren={<Trash2 size={15} />}
+                          title="Delete this college?"
+                          description="This will remove it from the select directory list."
+                          confirmLabel="Yes, Delete"
+                          onConfirm={() => handleDeleteCollege(college.id)}
+                        />
                       </td>
                     </tr>
                   ))}

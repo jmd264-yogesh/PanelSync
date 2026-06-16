@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { Panelist, Interview, College } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 interface PanelistsTabProps {
   panelists: Panelist[];
@@ -173,7 +175,7 @@ export default function PanelistsTab({
     e.preventDefault();
     if (!adminSelectedUser) return;
     if (adminRoles.length === 0) {
-      alert('Please select at least one role capability (L1 or L2).');
+      toast.error('Please select at least one role capability (L1 or L2).');
       return;
     }
     setIsAdminSaving(true);
@@ -206,22 +208,23 @@ export default function PanelistsTab({
       setAdminSelectedUser(null);
       setAdminQuery('');
       setAdminRoles(['L1']);
+      toast.success('Panelist saved successfully.');
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error saving panelist');
+      toast.error(err.message || 'Error saving panelist');
     } finally {
       setIsAdminSaving(false);
     }
   };
 
   const handleDeletePanelist = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this panelist from the pre-approved pool?')) return;
     try {
       const res = await fetch(`/api/panelists/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setPanelists(panelists.filter((p) => p.id !== id));
+        toast.success('Panelist removed from the pool.');
       } else {
-        alert('Failed to remove panelist.');
+        toast.error('Failed to remove panelist.');
       }
     } catch (err) {
       console.error(err);
@@ -262,14 +265,14 @@ export default function PanelistsTab({
     e.preventDefault();
     if (reqPanelists.length === 0) return;
     if (!reqCollegeName || !reqCollegeName.trim()) {
-      alert('College / Institution name is required.');
+      toast.error('College / Institution name is required.');
       return;
     }
-    if (reqStartDate < todayStr) { alert('Start date cannot be in the past.'); return; }
-    if (reqEndDate < reqStartDate) { alert('End date cannot be before the start date.'); return; }
+    if (reqStartDate < todayStr) { toast.error('Start date cannot be in the past.'); return; }
+    if (reqEndDate < reqStartDate) { toast.error('End date cannot be before the start date.'); return; }
     const selectedProposedSlots = reqSlots.filter((s) => s.selected);
     if (selectedProposedSlots.length === 0) {
-      alert('Please select or enable at least one proposed slot option.');
+      toast.error('Please select or enable at least one proposed slot option.');
       return;
     }
     setIsRequestingSlot(true);
@@ -296,10 +299,10 @@ export default function PanelistsTab({
       setReqPanelists([]);
       setBulkSelectedL1Ids([]);
       setBulkSelectedL2Ids([]);
-      alert(`Teams notification sent successfully to ${reqPanelists.map((p) => p.displayName).join(', ')}!`);
+      toast.success(`Teams notification sent successfully to ${reqPanelists.map((p) => p.displayName).join(', ')}!`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error occurred while sending slot request.');
+      toast.error(err.message || 'Error occurred while sending slot request.');
     } finally {
       setIsRequestingSlot(false);
     }
@@ -623,14 +626,20 @@ export default function PanelistsTab({
                             >
                               Request Slots
                             </button>
-                            <button
-                              onClick={() => handleDeletePanelist(p.id)}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <ConfirmDialog
+                              trigger={
+                                <button
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                />
+                              }
+                              triggerChildren={<Trash2 size={13} />}
+                              title="Remove this panelist?"
+                              description="This will remove the panelist from the pre-approved pool."
+                              confirmLabel="Yes, Remove"
+                              onConfirm={() => handleDeletePanelist(p.id)}
+                            />
                           </div>
                         </div>
                       );
@@ -723,14 +732,20 @@ export default function PanelistsTab({
                             >
                               Request Slots
                             </button>
-                            <button
-                              onClick={() => handleDeletePanelist(p.id)}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <ConfirmDialog
+                              trigger={
+                                <button
+                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                                />
+                              }
+                              triggerChildren={<Trash2 size={13} />}
+                              title="Remove this panelist?"
+                              description="This will remove the panelist from the pre-approved pool."
+                              confirmLabel="Yes, Remove"
+                              onConfirm={() => handleDeletePanelist(p.id)}
+                            />
                           </div>
                         </div>
                       );
