@@ -494,9 +494,35 @@ export default function InterviewsTab({
   const drivePassed = drivePanels.filter((p) => p.decision === 'PASSED').length;
   const driveRejected = drivePanels.filter((p) => p.decision === 'REJECTED').length;
 
-  // ── Cohort Analytics (L1 & L2 breakdown, reacting to filters) ──────────────
-  const l1Filtered = filteredInterviewsList.filter((i) => i.role.toLowerCase().includes('l1'));
-  const l2Filtered = filteredInterviewsList.filter((i) => i.role.toLowerCase().includes('l2'));
+  // ── Cohort Analytics (L1 & L2 breakdown, reacting only to college and date filters) ──────────────
+  const getOverallInterviewsForAnalytics = () => {
+    let filtered = interviews;
+
+    if (dateFilter !== 'all') {
+      filtered = filtered.filter((i) => {
+        if (i.status === 'SCHEDULED' && i.scheduledSlotStart) {
+          return i.scheduledSlotStart.split('T')[0] === dateFilter;
+        }
+        const startD = i.startDate.split('T')[0];
+        const endD = i.endDate.split('T')[0];
+        return dateFilter >= startD && dateFilter <= endD;
+      });
+    }
+
+    if (collegeFilter !== 'all') {
+      filtered = filtered.filter((i) => {
+        const candidate = candidates.find(c => c.email === i.candidateEmail);
+        return candidate && candidate.college && candidate.college.toLowerCase() === collegeFilter.toLowerCase();
+      });
+    }
+
+    return filtered;
+  };
+
+  const overallInterviewsForAnalytics = getOverallInterviewsForAnalytics();
+
+  const l1Filtered = overallInterviewsForAnalytics.filter((i) => i.role.toLowerCase().includes('l1'));
+  const l2Filtered = overallInterviewsForAnalytics.filter((i) => i.role.toLowerCase().includes('l2'));
 
   const l1Scheduled = l1Filtered.filter((i) => i.status === 'SCHEDULED').length;
   const l1Collected = l1Filtered.filter((i) => i.status === 'COLLECTED').length;
@@ -515,6 +541,19 @@ export default function InterviewsTab({
   const l2Panels = l2Filtered.flatMap((i) => i.panels);
   const l2PanelsRequested = l2Panels.length;
   const l2PanelsReplied = l2Panels.filter((p) => p.status === 'SUBMITTED').length;
+
+  console.log('STATS_DEBUG:', {
+    typeFilter,
+    statusFilter,
+    dateFilter,
+    collegeFilter,
+    overallLength: overallInterviewsForAnalytics.length,
+    filteredLength: filteredInterviewsList.length,
+    l1Scheduled,
+    l2Scheduled,
+    l1Pending,
+    l2Pending
+  });
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
