@@ -605,9 +605,9 @@ export default function InterviewsTab({
           <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.25rem' }}>Interview Dashboard</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>Overview of all L1 & L2 interviews, panelist responses, and scheduling status</p>
         </div>
-        <button className="btn btn-primary flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
+        {/* <button className="btn btn-primary flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
           <Plus size={16} /> New Interview
-        </button>
+        </button> */}
       </div>
 
       {/* Drive Selector — scopes the whole dashboard to one drive */}
