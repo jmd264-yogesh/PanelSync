@@ -21,8 +21,8 @@ export async function DELETE(
 
     await db.deleteCollege(id);
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to delete college:', error);
-    return NextResponse.json({ error: 'Failed to delete college' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to delete college' }, { status: 400 });
   }
 }

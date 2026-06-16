@@ -13,6 +13,20 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ error: 'ID is required' }, { status: 400 });
   }
 
+  try {
+    const interview = await db.getInterview(id);
+    if (interview && interview.calendarEventId) {
+      const { graph } = await import('@/lib/graph');
+      try {
+        await graph.deleteCalendarEvent(interview.calendarEventId, token);
+      } catch (graphError) {
+        console.error('Failed to delete calendar event in MS Graph during soft delete:', graphError);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to retrieve interview details before soft delete:', err);
+  }
+
   const success = await db.deleteInterview(id);
   if (!success) {
     return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
