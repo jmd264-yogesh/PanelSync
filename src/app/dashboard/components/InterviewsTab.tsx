@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Calendar, User, Users, Clock, CheckCircle, XCircle,
   Search, Loader2, Trash2, Video, Check, Info, CalendarCheck,
-  ListFilter, MessageSquare, Bell, Send
+  ListFilter, MessageSquare, Bell, Send, X, TrendingUp, AlertCircle
 } from 'lucide-react';
 import { Interview, Panelist, UploadedCandidate, InterviewPanel } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
@@ -78,9 +78,11 @@ export default function InterviewsTab({
   // ── UI States ─────────────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'COLLECTED' | 'SCHEDULED'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'L1' | 'L2'>('all');
-  const [cockpitView, setCockpitView] = useState<'list' | 'tracker'>('list');
+  const [collegeFilter, setCollegeFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showInterviewModal, setShowInterviewModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'overview' | 'panels' | 'booking' | 'feedback'>('overview');
@@ -117,10 +119,6 @@ export default function InterviewsTab({
   const statsPending = interviews.filter((i) => i.status === 'PENDING').length;
   const statsCollected = interviews.filter((i) => i.status === 'COLLECTED').length;
   const statsScheduled = interviews.filter((i) => i.status === 'SCHEDULED').length;
-  const filteredInterviews = statusFilter === 'all' ? interviews : interviews.filter((i) => i.status === statusFilter);
-  const commonSlots = selectedInterview ? getOverlappingSlots(selectedInterview) : [];
-
-  // L1 / L2 type derived counts
   const statsL1Total = interviews.filter((i) => i.role.toLowerCase().includes('l1')).length;
   const statsL2Total = interviews.filter((i) => i.role.toLowerCase().includes('l2')).length;
   const statsL1Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l1')).length;
@@ -145,7 +143,6 @@ export default function InterviewsTab({
     ).length;
 
   // ── Effects ───────────────────────────────────────────────────────────────
-  // Sync selected interview when interviews list updates
   useEffect(() => {
     if (selectedInterview) {
       const updated = interviews.find((i) => i.id === selectedInterview.id);
@@ -157,7 +154,6 @@ export default function InterviewsTab({
     }
   }, [interviews]);
 
-  // Debounced panel directory search
   useEffect(() => {
     if (panelSearchQuery.trim().length < 2) { setSearchResults([]); return; }
     const timer = setTimeout(async () => {
@@ -242,6 +238,7 @@ export default function InterviewsTab({
       setShowCreateForm(false);
       setCreateError(null);
       setSelectedInterview(result.interview);
+      setShowInterviewModal(true);
       setDetailTab('overview');
     } catch (error: any) {
       console.error(error);
@@ -394,7 +391,6 @@ export default function InterviewsTab({
     }
   };
 
-  // ── Send Feedback Reminder ────────────────────────────────────────────────
   const handleSendFeedbackReminder = async (interviewId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSendingFeedbackReminderId(interviewId);
@@ -416,851 +412,360 @@ export default function InterviewsTab({
     }
   };
 
+  // ── Filtering Logic ───────────────────────────────────────────────────────
+  const getFilteredInterviews = () => {
+    let filtered = interviews;
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((i) => i.status === statusFilter);
+    }
+
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter((i) => i.role.toLowerCase().includes(typeFilter.toLowerCase()));
+    }
+
+    if (dateFilter !== 'all') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      filtered = filtered.filter((i) => {
+        const iDate = new Date(i.startDate);
+        iDate.setHours(0, 0, 0, 0);
+        if (dateFilter === 'today') return iDate.getTime() === today.getTime();
+        if (dateFilter === 'week') return iDate >= startOfWeek && iDate <= today;
+        if (dateFilter === 'month') return iDate >= startOfMonth && iDate <= today;
+        return true;
+      });
+    }
+
+    return filtered;
+  };
+
+  const filteredInterviewsList = getFilteredInterviews();
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem' }}>
-
-      {/* Left: Interviews list & Panelist Tracker */}
-      <div>
-        {/* Stats Bar */}
-        <div style={{ marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {/* Status filter row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
-            {[
-              { label: 'Total', value: interviews.length, color: 'var(--text-muted)', active: statusFilter === 'all', onClick: () => setStatusFilter('all') },
-              { label: 'Pending', value: statsPending, color: '#f59e0b', active: statusFilter === 'PENDING', onClick: () => setStatusFilter('PENDING') },
-              { label: 'Ready', value: statsCollected, color: '#0ea5e9', active: statusFilter === 'COLLECTED', onClick: () => setStatusFilter('COLLECTED') },
-              { label: 'Scheduled', value: statsScheduled, color: '#10b981', active: statusFilter === 'SCHEDULED', onClick: () => setStatusFilter('SCHEDULED') },
-            ].map((stat) => (
-              <button key={stat.label} onClick={stat.onClick} style={{ background: stat.active ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${stat.active ? stat.color : 'var(--border-glass)'}`, borderRadius: 'var(--radius-md)', padding: '0.6rem 0.5rem', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition-fast)', color: 'inherit' }}>
-                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
-                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '0.15rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</div>
-              </button>
-            ))}
-          </div>
-          {/* L1 / L2 breakdown row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: '0.4rem' }}>
-            {[
-              { label: 'L1 Total', value: statsL1Total, color: '#60a5fa', bg: 'rgba(96,165,250,0.06)', border: 'rgba(96,165,250,0.2)' },
-              { label: 'L1 Pending', value: statsL1Pending, color: '#fbbf24', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)' },
-              { label: 'L1 Scheduled', value: statsL1Scheduled, color: '#34d399', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.2)' },
-              { label: 'L2 Total', value: statsL2Total, color: '#a78bfa', bg: 'rgba(167,139,250,0.06)', border: 'rgba(167,139,250,0.2)' },
-              { label: 'L2 Pending', value: statsL2Pending, color: '#fbbf24', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)' },
-              { label: 'L2 Scheduled', value: statsL2Scheduled, color: '#34d399', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.2)' },
-            ].map((s) => (
-              <div key={s.label} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 'var(--radius-sm)', padding: '0.3rem 0.25rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Header with Title and Action */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem' }}>
+        <div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.25rem' }}>Interview Dashboard</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>Overview of all L1 & L2 interviews, panelist responses, and scheduling status</p>
         </div>
-
-        {/* Segmented Toggle */}
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', padding: '2px', marginBottom: '1.5rem' }}>
-          {[
-            { key: 'list', label: 'Interviews Cockpit' },
-            { key: 'tracker', label: 'Panelist Mapping Tracker' },
-          ].map((v) => (
-            <button key={v.key} onClick={() => setCockpitView(v.key as any)} style={{ flex: 1, background: cockpitView === v.key ? 'var(--primary)' : 'transparent', border: 'none', color: '#fff', padding: '0.4rem 0.75rem', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-xs)', cursor: 'pointer', transition: 'background-color 0.2s' }}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-
-        {cockpitView === 'list' ? (
-          <>
-            <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Active Interviews</h2>
-              <button className="btn btn-primary btn-sm flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
-                <Plus size={16} /> New Interview
-              </button>
-            </div>
-
-            {interviews.length === 0 ? (
-              <div className="glass-card text-center" style={{ padding: '4rem 2rem' }}>
-                <CalendarCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
-                <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Yet</h4>
-                <p className="text-muted text-sm">Create a new interview schedule to nominate panels and book slots.</p>
-              </div>
-            ) : filteredInterviews.length === 0 ? (
-              <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
-                <ListFilter size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem', opacity: 0.4 }} />
-                <h4 style={{ marginBottom: '0.5rem' }}>No matches</h4>
-                <p className="text-muted text-sm">No interviews in this status. Try a different filter.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {filteredInterviews.map((interview) => {
-                  const totalPanels = interview.panels.length;
-                  const submittedPanels = interview.panels.filter((p) => p.status === 'SUBMITTED').length;
-                  const isSelected = selectedInterview?.id === interview.id;
-                  const statusBorderColor = interview.status === 'SCHEDULED' ? '#10b981' : interview.status === 'COLLECTED' ? '#0ea5e9' : '#f59e0b';
-                  const avatarColors = interview.status === 'SCHEDULED'
-                    ? { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#34d399' }
-                    : interview.status === 'COLLECTED'
-                    ? { bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.3)', color: '#38bdf8' }
-                    : { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fbbf24' };
-                  const initials = interview.candidateName === 'Pending Assignment' ? '?' : interview.candidateName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-
-                  return (
-                    <div
-                      key={interview.id}
-                      className={`glass-card ${isSelected ? 'selected-interview' : 'cockpit-card-hover'}`}
-                      style={{ padding: '1rem 1.25rem 1rem 0', cursor: 'pointer', display: 'flex', gap: '0', overflow: 'hidden', transition: 'var(--transition-fast)' }}
-                      onClick={() => { setSelectedInterview(interview); setShowCreateForm(false); setSelectedSlot(null); setDetailTab('overview'); }}
-                    >
-                      {/* Left accent: L1=blue, L2=purple, else status color */}
-                      {(() => {
-                        const isL1 = interview.role.toLowerCase().includes('l1');
-                        const isL2 = interview.role.toLowerCase().includes('l2');
-                        const typeColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : statusBorderColor;
-                        return <div style={{ width: '4px', background: typeColor, flexShrink: 0, marginRight: '1rem', borderRadius: '4px 0 0 4px' }} />;
-                      })()}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.65rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-                            <div style={{ width: '36px', height: '36px', flexShrink: 0, background: avatarColors.bg, border: `1px solid ${avatarColors.border}`, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 800, color: avatarColors.color }}>
-                              {initials}
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1px', flexWrap: 'wrap' }}>
-                                {/* L1 / L2 type pill */}
-                                {interview.role.toLowerCase().includes('l1') && (
-                                  <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', color: '#60a5fa', letterSpacing: '0.04em', flexShrink: 0 }}>L1</span>
-                                )}
-                                {interview.role.toLowerCase().includes('l2') && (
-                                  <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa', letterSpacing: '0.04em', flexShrink: 0 }}>L2</span>
-                                )}
-                                <h4 style={{ fontSize: '0.95rem', marginBottom: '0', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
-                                </h4>
-                              </div>
-                              <p className="text-muted" style={{ fontSize: '0.7rem', marginTop: '0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{interview.role}</p>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
-                            {interview.status === 'PENDING' && <span className="badge badge-pending" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Awaiting Panels</span>}
-                            {interview.status === 'COLLECTED' && <span className="badge badge-info" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Ready to Book</span>}
-                            {interview.status === 'SCHEDULED' && <span className="badge badge-success" style={{ fontSize: '0.6rem', whiteSpace: 'nowrap' }}>Scheduled</span>}
-                          </div>
-                        </div>
-
-                        {interview.panels && interview.panels.length > 0 && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.75rem', padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div>
-                              <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: interview.status === 'COLLECTED' || interview.status === 'SCHEDULED' ? '#10b981' : 'var(--text-muted)', fontWeight: 700, marginBottom: '3px' }}>
-                                {interview.status === 'COLLECTED' ? 'Availability Provided By (Accepted)' : interview.status === 'SCHEDULED' ? 'Confirmed Panels' : 'Sent Request To'}
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                                {interview.panels.map((p) => {
-                                  const hasResponded = p.status === 'SUBMITTED';
-                                  return (
-                                    <span key={p.id} style={{ fontSize: '0.7rem', fontWeight: 500, padding: '0.15rem 0.4rem', borderRadius: '4px', background: hasResponded ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.03)', border: hasResponded ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-glass)', color: hasResponded ? '#10b981' : 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '3.5px' }}>
-                                      {hasResponded && <CheckCircle size={10} />}{p.name}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            {interview.panels.some((p) => p.status === 'PENDING') && (
-                              <div style={{ marginTop: '0.25rem', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '0.25rem' }}>
-                                <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fbbf24', fontWeight: 700, marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                  <span className="animate-pulse" style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} /> Waiting on Response From
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                                  {interview.panels.filter((p) => p.status === 'PENDING').map((p) => (
-                                    <span key={p.id} style={{ fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24' }}>{p.name}</span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                          {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
-                            <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
-                              <CheckCircle size={11} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
-                              {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          ) : (
-                            <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-                              <Clock size={10} style={{ display: 'inline', marginRight: '3px', verticalAlign: 'middle' }} />
-                              {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                          )}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            {interview.status === 'COLLECTED' && (
-                              <button className="btn btn-primary btn-xs" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'var(--secondary)', border: 'none', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}
-                                onClick={(e) => { e.stopPropagation(); setSelectedInterview(interview); setShowCreateForm(false); setSelectedSlot(null); setDetailTab('booking'); }}>
-                                <Calendar size={9} /> Book
-                              </button>
-                            )}
-                            {interview.status === 'SCHEDULED' && interview.teamsMeetingUrl && (
-                              <a href={interview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-xs" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'var(--success)', border: 'none', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }} onClick={(e) => e.stopPropagation()}>
-                                <Video size={9} /> Join
-                              </a>
-                            )}
-                            {/* Feedback reminder button — always shown for SCHEDULED, highlighted after slot ends */}
-                            {interview.status === 'SCHEDULED' && (() => {
-                              const slotEndTime = interview.scheduledSlotEnd ? new Date(interview.scheduledSlotEnd).getTime() : null;
-                              const slotEnded = slotEndTime ? Date.now() > slotEndTime : false;
-                              const isSending = sendingFeedbackReminderId === interview.id;
-                              return (
-                                <button
-                                  className="btn btn-xs"
-                                  disabled={isSending}
-                                  onClick={(e) => handleSendFeedbackReminder(interview.id, e)}
-                                  style={{
-                                    fontSize: '0.65rem', padding: '0.15rem 0.5rem', borderRadius: '4px',
-                                    height: 'auto', display: 'flex', alignItems: 'center', gap: '3px',
-                                    background: slotEnded ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.04)',
-                                    border: slotEnded ? '1px solid rgba(167,139,250,0.4)' : '1px solid var(--border-glass)',
-                                    color: slotEnded ? '#a78bfa' : 'var(--text-muted)',
-                                    fontWeight: slotEnded ? 700 : 400,
-                                    cursor: 'pointer',
-                                  }}
-                                  title={slotEnded ? 'Slot ended — send feedback reminder now' : 'Send feedback reminder to panelists'}
-                                >
-                                  {isSending ? <Loader2 size={9} className="animate-spin" /> : <Bell size={9} />}
-                                  {slotEnded ? 'Remind Feedback' : 'Remind'}
-                                </button>
-                              );
-                            })()}
-                            {interview.status === 'PENDING' && (
-                              <button className="btn btn-secondary btn-xs" style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-glass)', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                onClick={(e) => { e.stopPropagation(); setSelectedInterview(interview); setShowCreateForm(false); setDetailTab('panels'); }}>
-                                <Users size={9} /> View Panels
-                              </button>
-                            )}
-                            <ConfirmDialog
-                              trigger={
-                                <button
-                                  className="btn btn-secondary btn-sm"
-                                  style={{ padding: '0.4rem', borderRadius: '4px', border: 'none', background: 'transparent' }}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              }
-                              triggerChildren={
-                                <Trash2 size={13} className="text-muted" style={{ transition: 'color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'} onMouseLeave={(e) => e.currentTarget.style.color = ''} />
-                              }
-                              title="Delete this interview record?"
-                              description="This will permanently remove the interview from the dashboard."
-                              confirmLabel="Yes, Delete"
-                              onConfirm={() => handleDeleteInterview(interview.id)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        ) : (
-          /* Panelist Mapping Tracker View */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            {/* Responded */}
-            <div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 600, color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <CheckCircle size={16} /> Responded Panelists (Availability Provided)
-              </h3>
-              {respondedNominations.length === 0 ? (
-                <div className="glass-card text-center" style={{ padding: '2.5rem' }}>
-                  <span className="text-muted text-xs">No responses received yet. Awaiting panelist actions.</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {respondedNominations.map((nom) => (
-                    <div key={nom.id} className="glass-card" style={{ padding: '1.25rem' }}>
-                      <div className="flex-between" style={{ marginBottom: '0.5rem' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2px' }}>
-                            {nom.interview.role.toLowerCase().includes('l1') && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa' }}>L1</span>
-                            )}
-                            {nom.interview.role.toLowerCase().includes('l2') && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa' }}>L2</span>
-                            )}
-                            <strong style={{ fontSize: '0.95rem' }}>{nom.name}</strong>
-                          </div>
-                          <span className="text-muted text-xs block" style={{ opacity: 0.8 }}>{nom.email}</span>
-                        </div>
-                        <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Responded</span>
-                      </div>
-                      <div style={{ fontSize: '0.85rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.6rem 0.8rem', borderRadius: '4px', marginTop: '0.5rem', marginBottom: '0.75rem' }}>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '2px' }}>Interview Stage & Timing</div>
-                        <div style={{ fontWeight: 600 }}>{nom.interview.role} ({nom.interview.duration} mins)</div>
-                        {nom.interview.scheduledSlotStart && (
-                          <div style={{ marginTop: '0.25rem', color: 'var(--text-main)', fontSize: '0.75rem' }}>Scheduled slot: <strong>{new Date(nom.interview.scheduledSlotStart).toLocaleString()}</strong></div>
-                        )}
-                      </div>
-                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
-                        {nom.interview.candidateName !== 'Pending Assignment' ? (
-                          <div className="flex-between" style={{ alignItems: 'center' }}>
-                            <div>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Assigned Candidate</span>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary)', marginTop: '2px' }}>{nom.interview.candidateName}</div>
-                              {nom.interview.candidateEmail && nom.interview.candidateEmail !== 'pending@assign.com' && (
-                                <span className="text-muted text-xs block">{nom.interview.candidateEmail}</span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                              <button className="btn btn-secondary btn-sm flex-gap-2" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
-                                onClick={() => { setSelectedInterview(nom.interview); setEditStartDate(nom.interview.startDate.split('T')[0]); setEditEndDate(nom.interview.endDate.split('T')[0]); setDetailTab('overview'); setIsEditingDates(true); }}>
-                                <Calendar size={11} /> Change Dates
-                              </button>
-                              <button className="btn btn-secondary btn-sm animate-pulse-once" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
-                                onClick={() => { setSelectedInterview(nom.interview); setCockpitView('list'); }}>
-                                Edit Mapping / Details
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ padding: '0.25rem 0' }}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No Candidate Mapped</span>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                              * Please go to the <strong>Candidates Queue</strong> tab to map a candidate to this slot.
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Pending */}
-            <div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 600, color: '#f59e0b', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Clock size={16} /> Pending Response (Awaiting Availability)
-              </h3>
-              {pendingInterviews.length === 0 ? (
-                <div className="glass-card text-center" style={{ padding: '2.5rem' }}>
-                  <span className="text-muted text-xs">No pending requests. All panelists have responded.</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {pendingInterviews.map((interview) => (
-                    <div key={interview.id} className="glass-card" style={{ padding: '1.25rem' }}>
-                      <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2px' }}>
-                            {interview.role.toLowerCase().includes('l1') && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa' }}>L1</span>
-                            )}
-                            {interview.role.toLowerCase().includes('l2') && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa' }}>L2</span>
-                            )}
-                            <strong style={{ fontSize: '0.95rem' }}>
-                              {interview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>Pending Assignment</span> : interview.candidateName}
-                            </strong>
-                          </div>
-                          <span className="text-muted text-xs block" style={{ opacity: 0.8, marginTop: '2px' }}>{interview.role} ({interview.duration} mins)</span>
-                        </div>
-                        <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>Awaiting Panels</span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', marginTop: '0.5rem', marginBottom: '0.75rem' }}>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', marginBottom: '2px' }}>Proposed Date Window</div>
-                        <div style={{ fontWeight: 600 }}>{new Date(interview.startDate).toLocaleDateString()} - {new Date(interview.endDate).toLocaleDateString()}</div>
-                      </div>
-                      {interview.panels && interview.panels.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.04)', marginBottom: '0.75rem' }}>
-                          <div>
-                            <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '3px' }}>Sent Request To</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                              {interview.panels.map((p) => (
-                                <span key={p.id} style={{ fontSize: '0.7rem', fontWeight: 500, padding: '0.15rem 0.4rem', borderRadius: '4px', background: p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', border: p.status === 'SUBMITTED' ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-glass)', color: p.status === 'SUBMITTED' ? '#10b981' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                  {p.status === 'SUBMITTED' && <CheckCircle size={10} />}{p.name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          {interview.panels.some((p) => p.status === 'PENDING') && (
-                            <div style={{ marginTop: '0.25rem', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '0.25rem' }}>
-                              <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fbbf24', fontWeight: 700, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                <span className="animate-pulse" style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} /> Waiting on Response From
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                {interview.panels.filter((p) => p.status === 'PENDING').map((p) => (
-                                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.15)', padding: '0.35rem 0.5rem', borderRadius: '4px' }}>
-                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#fbbf24' }}>{p.name}</span>
-                                    <button onClick={() => handleResendInvite(interview.id, p.id)} className="btn btn-secondary btn-xs" style={{ padding: '0.15rem 0.4rem', fontSize: '0.65rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }} disabled={resendingPanelId === p.id}>
-                                      {resendingPanelId === p.id ? <><Loader2 size={8} className="animate-spin" /> Sending...</> : 'Resend'}
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                        <button onClick={() => { setSelectedInterview(interview); setEditStartDate(interview.startDate.split('T')[0]); setEditEndDate(interview.endDate.split('T')[0]); setDetailTab('overview'); setIsEditingDates(true); }} className="btn btn-secondary btn-sm" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                          <Calendar size={11} /> Change Dates
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <button className="btn btn-primary flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
+          <Plus size={16} /> New Interview
+        </button>
       </div>
 
-      {/* Right: Dynamic form / Interview details */}
-      <div>
-        {/* Create Interview Form */}
-        {showCreateForm && (
-          <div className="glass-card" style={{ position: 'sticky', top: '2rem' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem' }}>Schedule New Interview</h3>
-            <form onSubmit={handleCreateInterview}>
-              <div className="form-group">
-                <label className="form-label">Select Candidate (from WAITING Queue)</label>
-                <select className="form-input" style={{ height: '36px' }}
-                  value={candidates.find(c => c.name === candidateName && c.email === candidateEmail)?.id || ''}
-                  onChange={(e) => {
-                    const cand = candidates.find(c => c.id === e.target.value);
-                    if (cand) { setCandidateName(cand.name); setCandidateEmail(cand.email); }
-                    else { setCandidateName(''); setCandidateEmail(''); }
-                  }} required>
-                  <option value="">Select Candidate...</option>
-                  {candidates.filter(c => c.status === 'WAITING').map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.email}) – {c.college}</option>
-                  ))}
-                </select>
-              </div>
+      {/* Filter Bar */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)' }}>
+        <div>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Status</label>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={{ width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', cursor: 'pointer' }}>
+            <option value="all">All Status</option>
+            <option value="PENDING">Awaiting Panels</option>
+            <option value="COLLECTED">Ready to Book</option>
+            <option value="SCHEDULED">Scheduled</option>
+          </select>
+        </div>
 
-              <div className="grid-2">
-                <div className="form-group">
-                  <label className="form-label">Interview Stage</label>
-                  <select className="form-input" value={interviewType} onChange={(e) => { setInterviewType(e.target.value as any); setSelectedPanels([]); }}>
-                    <option value="L1">L1 Interview (Screening)</option>
-                    <option value="L2">L2 Interview (System Design/Management)</option>
-                    <option value="General">General / Custom Interview</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Job Title / Focus area</label>
-                  <input type="text" className="form-input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Coding Loop, Manager Fit" required />
-                </div>
-              </div>
+        <div>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Interview Type</label>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} style={{ width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', cursor: 'pointer' }}>
+            <option value="all">All Types</option>
+            <option value="L1">L1 Interviews</option>
+            <option value="L2">L2 Interviews</option>
+          </select>
+        </div>
 
-              <div className="grid-2">
-                <div className="form-group">
-                  <label className="form-label">Duration</label>
-                  <select className="form-input" value={duration} onChange={(e) => setDuration(e.target.value)}>
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">60 minutes</option>
-                    <option value="90">90 minutes</option>
-                  </select>
-                </div>
-                <div className="form-group" />
-              </div>
+        <div>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Date Range</label>
+          <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', cursor: 'pointer' }}>
+            <option value="all">All Dates</option>
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+          </select>
+        </div>
 
-              <div className="grid-2">
-                <div className="form-group">
-                  <label className="form-label">Proposed Range Start</label>
-                  <input type="date" className="form-input" value={startDate} min={todayStr} onChange={(e) => { setStartDate(e.target.value); setCreateError(null); }} required />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Proposed Range End</label>
-                  <input type="date" className="form-input" value={endDate} min={startDate || todayStr} onChange={(e) => { setEndDate(e.target.value); setCreateError(null); }} required />
+        <div>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>College</label>
+          <select value={collegeFilter} onChange={(e) => setCollegeFilter(e.target.value)} style={{ width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', cursor: 'pointer' }}>
+            <option value="all">All Colleges</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1.5rem' }}>
+        {/* Left Column: Interview List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Stats Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+            {[
+              { label: 'L1 Interviews', value: statsL1Total, scheduled: statsL1Scheduled, color: '#60a5fa', bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.2)' },
+              { label: 'L2 Interviews', value: statsL2Total, scheduled: statsL2Scheduled, color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.2)' },
+              { label: 'Total Active', value: interviews.length, scheduled: statsScheduled, color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.2)' },
+            ].map((stat) => (
+              <div key={stat.label} style={{ padding: '1rem', background: stat.bg, border: `1px solid ${stat.border}`, borderRadius: 'var(--radius-lg)' }}>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0, marginBottom: '0.5rem' }}>{stat.label}</p>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '1.8rem', fontWeight: 800, color: stat.color }}>{stat.value}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>•</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{stat.scheduled} scheduled</span>
                 </div>
               </div>
+            ))}
+          </div>
 
-              {/* Recommended panelists chips */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.01)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-glass)' }}>
-                <span className="text-muted text-xs font-semibold flex-gap-2"><Check size={12} className="text-primary" /> Recommended {interviewType} Panelists</span>
-                {recommendedPanelists.length === 0 ? (
-                  <span className="text-muted text-xs" style={{ padding: '0.25rem 0' }}>No pre-approved panelists found for {interviewType}. Search corporate directory below.</span>
-                ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.25rem' }}>
-                    {recommendedPanelists.map((p) => {
-                      const isChosen = selectedPanels.some((sp) => sp.id === p.id);
-                      const activeCount = activePanelistInterviewCount(p.id);
-                      return (
-                        <button type="button" key={p.id} onClick={() => handleToggleRecommendedPanelist(p)}
-                          style={{ background: isChosen ? 'var(--primary-glow)' : 'rgba(255,255,255,0.03)', border: isChosen ? '1px solid var(--primary)' : '1px solid var(--border-glass)', color: isChosen ? 'var(--text-main)' : 'var(--text-muted)', padding: '0.3rem 0.75rem', borderRadius: '50px', fontSize: '0.75rem', cursor: 'pointer', transition: 'var(--transition-fast)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          {p.displayName} {isChosen ? '✓' : '+'}
-                          {activeCount > 0 && <span style={{ background: 'rgba(245,158,11,0.2)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '9px', padding: '0 5px', fontSize: '0.6rem', fontWeight: 700 }}>{activeCount} active</span>}
-                        </button>
-                      );
-                    })}
+          {/* Interviews List */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {filteredInterviewsList.length === 0 ? (
+              <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
+                <CalendarCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
+                <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Found</h4>
+                <p className="text-muted text-sm">Create a new interview or adjust your filters.</p>
+              </div>
+            ) : (
+              filteredInterviewsList.map((interview) => {
+                const isSelected = selectedInterview?.id === interview.id;
+                const isL1 = interview.role.toLowerCase().includes('l1');
+                const isL2 = interview.role.toLowerCase().includes('l2');
+                const typeColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#10b981';
+                const statusColor = interview.status === 'SCHEDULED' ? '#10b981' : interview.status === 'COLLECTED' ? '#0ea5e9' : '#f59e0b';
+                const initials = interview.candidateName === 'Pending Assignment' ? '?' : interview.candidateName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+
+                return (
+                  <div
+                    key={interview.id}
+                    onClick={() => { setSelectedInterview(interview); setShowInterviewModal(true); }}
+                    style={{
+                      padding: '1rem',
+                      background: isSelected ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.02)',
+                      border: isSelected ? '1px solid #60a5fa' : '1px solid var(--border-glass)',
+                      borderLeft: `4px solid ${typeColor}`,
+                      borderRadius: 'var(--radius-lg)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                      {/* Avatar */}
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${typeColor}15`, border: `1px solid ${typeColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, color: typeColor }}>
+                        {initials}
+                      </div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+                          {isL1 && <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: '4px', color: '#60a5fa' }}>L1</span>}
+                          {isL2 && <span style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.15rem 0.4rem', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: '4px', color: '#a78bfa' }}>L2</span>}
+                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>{interview.candidateName}</h4>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, marginBottom: '0.5rem' }}>{interview.role}</p>
+                        
+                        {/* Panel Status */}
+                        {interview.panels.length > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                            {interview.panels.filter((p) => p.status === 'SUBMITTED').length} / {interview.panels.length} panels responded
+                          </div>
+                        )}
+
+                        {/* Date/Time */}
+                        <div style={{ fontSize: '0.75rem', color: statusColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
+                            <>
+                              <CheckCircle size={12} />
+                              {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            </>
+                          ) : (
+                            <>
+                              <Clock size={12} />
+                              {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status Badge */}
+                      <div style={{ flexShrink: 0 }}>
+                        {interview.status === 'PENDING' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', color: '#f59e0b', whiteSpace: 'nowrap' }}>Awaiting</span>}
+                        {interview.status === 'COLLECTED' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: '4px', color: '#0ea5e9', whiteSpace: 'nowrap' }}>Ready</span>}
+                        {interview.status === 'SCHEDULED' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '4px', color: '#10b981', whiteSpace: 'nowrap' }}>Scheduled</span>}
+                      </div>
+                    </div>
                   </div>
-                )}
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Analytics */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Analytics Header */}
+          <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <TrendingUp size={18} /> Analytics
+            </h3>
+
+            {/* Status Overview */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.5rem 0' }}>Status Overview</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {[
+                  { label: 'Scheduled', value: statsScheduled, color: '#10b981' },
+                  { label: 'Ready to Book', value: statsCollected, color: '#0ea5e9' },
+                  { label: 'Awaiting Panels', value: statsPending, color: '#f59e0b' },
+                ].map((stat) => (
+                  <div key={stat.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: stat.color }} />
+                      {stat.label}
+                    </div>
+                    <span style={{ fontWeight: 700, color: stat.color }}>{stat.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Panelist Response Rate */}
+            <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.5rem 0' }}>Panelist Responses</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: '#10b981', width: allNominations.length > 0 ? `${(respondedNominations.length / allNominations.length) * 100}%` : '0%', transition: 'width 0.3s' }} />
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#10b981', whiteSpace: 'nowrap' }}>{respondedNominations.length} / {allNominations.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Create Form or Info Box */}
+          {showCreateForm ? (
+            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)', overflowY: 'auto', maxHeight: 'calc(100vh - 400px)' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem 0' }}>Create New Interview</h3>
+              <form onSubmit={handleCreateInterview} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <input type="text" placeholder="Candidate Name" value={candidateName} onChange={(e) => setCandidateName(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                <input type="email" placeholder="Email" value={candidateEmail} onChange={(e) => setCandidateEmail(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                <input type="text" placeholder="Job Title / Focus Area" value={role} onChange={(e) => setRole(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                
+                <select value={interviewType} onChange={(e) => setInterviewType(e.target.value as any)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', cursor: 'pointer' }}>
+                  <option value="L1">L1 Interview</option>
+                  <option value="L2">L2 Interview</option>
+                  <option value="General">General Interview</option>
+                </select>
+
+                <input type="number" min="15" max="180" value={duration} onChange={(e) => setDuration(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} placeholder="Duration (mins)" />
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                  <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                </div>
+
+                {createError && <p style={{ color: '#ef4444', fontSize: '0.75rem', margin: 0 }}>{createError}</p>}
+
+                <button type="submit" disabled={isLoading} style={{ padding: '0.5rem 0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                  {isLoading ? 'Creating...' : 'Create Interview'}
+                </button>
+              </form>
+            </div>
+          ) : selectedInterview ? (
+            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)' }}>
+              <button onClick={() => setShowInterviewModal(true)} style={{ width: '100%', padding: '0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                View Interview Details
+              </button>
+            </div>
+          ) : (
+            <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
+              <Calendar size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem', opacity: 0.5 }} />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>Select an interview from the list to view details</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Interview Detail Modal */}
+      {showInterviewModal && selectedInterview && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--background)', borderRadius: 'var(--radius-xl)', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            {/* Modal Header */}
+            <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-glass)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ fontSize: '1.3rem', fontWeight: 700, margin: 0 }}>{selectedInterview.candidateName}</h2>
+              <button onClick={() => setShowInterviewModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.5rem' }}>
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div>
+                  <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: 0, marginBottom: '0.25rem' }}>Role</p>
+                  <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: 0 }}>{selectedInterview.role}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: 0, marginBottom: '0.25rem' }}>Status</p>
+                  <div>
+                    {selectedInterview.status === 'PENDING' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', color: '#f59e0b' }}>Awaiting Panels</span>}
+                    {selectedInterview.status === 'COLLECTED' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: '4px', color: '#0ea5e9' }}>Ready to Book</span>}
+                    {selectedInterview.status === 'SCHEDULED' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '4px', color: '#10b981' }}>Scheduled</span>}
+                  </div>
+                </div>
               </div>
 
-              {/* Directory search fallback */}
-              <div className="form-group" style={{ position: 'relative' }}>
-                <label className="form-label">Search Corporate Directory (Fallback)</label>
-                <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
-                  <Search size={14} className="text-muted" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }} />
-                  <input type="text" className="form-input" style={{ paddingLeft: '2.25rem', fontSize: '0.875rem' }} value={panelSearchQuery} onChange={(e) => setPanelSearchQuery(e.target.value)} placeholder="Search another colleague..." />
-                  {isSearchingPanels && <Loader2 size={14} className="animate-pulse text-muted" style={{ position: 'absolute', right: '12px' }} />}
-                </div>
-                {searchResults.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: 'var(--bg-surface)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', boxShadow: '0 8px 16px rgba(0,0,0,0.5)', marginTop: '4px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {searchResults.map((user) => (
-                      <div key={user.id} style={{ padding: '0.5rem 1rem', cursor: 'pointer', transition: 'var(--transition-fast)' }} className="search-item-hover" onClick={() => handleAddPanel(user)}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user.displayName}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{user.mail || user.userPrincipalName}</div>
+              {/* Panels Section */}
+              <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-lg)' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.75rem 0' }}>Panel Members</h3>
+                {selectedInterview.panels.length === 0 ? (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No panels assigned</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {selectedInterview.panels.map((p) => (
+                      <div key={p.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.2rem 0' }}>{p.name}</p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Status: {p.status === 'SUBMITTED' ? '✓ Responded' : 'Pending'}</p>
+                        </div>
+                        {p.status === 'PENDING' && (
+                          <button onClick={() => handleResendInvite(selectedInterview.id, p.id)} disabled={resendingPanelId === p.id} style={{ padding: '0.35rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                            {resendingPanelId === p.id ? 'Resending...' : 'Resend'}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {selectedPanels.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem', marginTop: '-0.25rem' }}>
-                  {selectedPanels.map((panel) => (
-                    <div key={panel.id} style={{ background: 'var(--primary-glow)', border: '1px solid var(--primary)', padding: '0.25rem 0.75rem', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
-                      <span>{panel.displayName}</span>
-                      <button type="button" onClick={() => handleRemovePanel(panel.id)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {createError && (
-                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.9rem', fontSize: '0.8rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <XCircle size={14} style={{ flexShrink: 0 }} /> {createError}
-                </div>
-              )}
-
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }} disabled={isLoading}>
-                {isLoading ? <><Loader2 size={16} className="animate-spin" /> Dispatching Teams Invites...</> : 'Send Teams Invites'}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Detail panel for selected interview */}
-        {selectedInterview && (
-          <div className="glass-card" style={{ position: 'sticky', top: '2rem' }}>
-            {/* Header */}
-            <div className="flex-between" style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '1rem' }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <span className="text-muted text-xs block" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Interview Details</span>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {selectedInterview.candidateName === 'Pending Assignment' ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending Assignment</span> : selectedInterview.candidateName}
-                </h3>
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>{selectedInterview.role} · {selectedInterview.duration} mins</span>
-              </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedInterview(null)} style={{ flexShrink: 0, marginLeft: '0.75rem' }}>Close</button>
-            </div>
-
-            {/* Sub-tabs */}
-            <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border-glass)', marginBottom: '1.25rem' }}>
-              {([
-                { key: 'overview', label: 'Overview', icon: <User size={13} /> },
-                { key: 'panels', label: 'Panels', icon: <Users size={13} /> },
-                { key: 'booking', label: 'Booking', icon: <Calendar size={13} /> },
-                { key: 'feedback', label: 'Feedback', icon: <MessageSquare size={13} /> },
-              ] as { key: typeof detailTab; label: string; icon: React.ReactNode }[]).map((tab) => (
-                <button key={tab.key} onClick={() => setDetailTab(tab.key)}
-                  style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: detailTab === tab.key ? '2px solid var(--primary)' : '2px solid transparent', color: detailTab === tab.key ? 'var(--text-main)' : 'var(--text-muted)', padding: '0.5rem 0.25rem', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', transition: 'color 0.2s' }}>
-                  {tab.icon} {tab.label}
+              {/* Actions */}
+              {selectedInterview.status === 'COLLECTED' && (
+                <button onClick={() => setDetailTab('booking')} style={{ width: '100%', padding: '0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                  Book Meeting
                 </button>
-              ))}
-            </div>
-
-            {/* Overview Tab */}
-            {detailTab === 'overview' && (
-              <div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem' }}>
-                  <span className="text-muted text-xs block" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Candidate</span>
-                  {selectedInterview.candidateName === 'Pending Assignment' ? (
-                    <div>
-                      <strong style={{ fontSize: '1rem', color: '#fb923c' }}>Pending Assignment</strong>
-                      <span className="text-muted text-xs block" style={{ marginTop: '4px' }}>No candidate is currently mapped to this interview slot. Please go to the <strong>Candidates Queue</strong> tab to map a candidate.</span>
-                    </div>
-                  ) : (
-                    <div>
-                      <strong style={{ fontSize: '1rem', color: 'var(--primary)' }}>{selectedInterview.candidateName}</strong>
-                      {selectedInterview.candidateEmail && selectedInterview.candidateEmail !== 'pending@assign.com' && (
-                        <span className="text-muted text-xs block" style={{ marginTop: '2px' }}>{selectedInterview.candidateEmail}</span>
-                      )}
-                      <span className="text-muted block text-xxs" style={{ marginTop: '8px', fontStyle: 'italic' }}>* Candidate details and mapping can only be edited or modified from the Candidates Queue tab.</span>
-                    </div>
+              )}
+              
+              {selectedInterview.status === 'SCHEDULED' && (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {selectedInterview.teamsMeetingUrl && (
+                    <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" style={{ flex: 1, padding: '0.75rem', background: 'var(--success)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem', textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                      <Video size={16} /> Join Meeting
+                    </a>
                   )}
+                  <button onClick={() => setDetailTab('feedback')} style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                    Feedback
+                  </button>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                  {[
-                    { label: 'Stage', value: selectedInterview.role },
-                    { label: 'Duration', value: `${selectedInterview.duration} minutes` },
-                    { label: 'Status', value: selectedInterview.status === 'PENDING' ? 'Awaiting Panels' : selectedInterview.status === 'COLLECTED' ? 'Ready to Book' : selectedInterview.status === 'SCHEDULED' ? 'Scheduled' : selectedInterview.status },
-                    { label: 'Date Window', value: `${new Date(selectedInterview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(selectedInterview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` },
-                  ].map((item) => (
-                    <div key={item.label} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-                      <div className="text-muted" style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>{item.label}</div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Date editor */}
-                {isEditingDates ? (
-                  <div style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)', padding: '1.25rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem' }}>
-                    <h4 style={{ color: 'var(--text-main)', fontSize: '0.9rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Calendar size={15} className="text-primary" /> Change Interview Date Window
-                    </h4>
-                    <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>This will reset the availability collection flow and generate proposed slots in the new range.</p>
-                    <form onSubmit={handleUpdateDates} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.72rem' }}>Start Date</label>
-                          <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={editStartDate} min={todayStr} onChange={(e) => setEditStartDate(e.target.value)} required />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.72rem' }}>End Date</label>
-                          <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }} value={editEndDate} min={editStartDate || todayStr} onChange={(e) => setEditEndDate(e.target.value)} required />
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                        <button type="submit" className="btn btn-primary btn-sm" disabled={isUpdatingDates} style={{ flex: 1 }}>
-                          {isUpdatingDates ? <><Loader2 size={14} className="animate-spin" /> Saving...</> : 'Save New Range'}
-                        </button>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsEditingDates(false)}>Cancel</button>
-                      </div>
-                    </form>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-secondary btn-sm flex-gap-2" onClick={() => { setEditStartDate(selectedInterview.startDate.split('T')[0]); setEditEndDate(selectedInterview.endDate.split('T')[0]); setIsEditingDates(true); }}>
-                      <Calendar size={14} /> Change Date Window
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Panels Tab */}
-            {detailTab === 'panels' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {selectedInterview.panels.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No panels nominated.</div>
-                ) : selectedInterview.panels.map((p) => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: `1px solid ${p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.2)' : 'var(--border-glass)'}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${p.status === 'SUBMITTED' ? 'rgba(16,185,129,0.3)' : 'var(--border-glass)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, color: p.status === 'SUBMITTED' ? '#10b981' : 'var(--text-muted)', flexShrink: 0 }}>
-                        {p.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{p.name}</div>
-                        <div className="text-muted text-xs">{p.email}</div>
-                        {p.availabilities && p.availabilities.length > 0 && <div style={{ fontSize: '0.65rem', color: '#0ea5e9', marginTop: '2px' }}>{p.availabilities.length} slot{p.availabilities.length !== 1 ? 's' : ''} submitted</div>}
-                      </div>
-                    </div>
-                    {p.status === 'SUBMITTED' ? (
-                      <span className="badge badge-success" style={{ fontSize: '0.6rem' }}><CheckCircle size={9} style={{ display: 'inline', marginRight: '2px' }} />Responded</span>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                        <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}><Clock size={9} style={{ display: 'inline', marginRight: '2px' }} />Pending</span>
-                        <button onClick={() => handleResendInvite(selectedInterview.id, p.id)} className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.4rem', fontSize: '0.6rem', height: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }} disabled={resendingPanelId === p.id}>
-                          {resendingPanelId === p.id ? <><Loader2 size={8} className="animate-spin" /> Sending...</> : 'Resend Invite'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Booking Tab */}
-            {detailTab === 'booking' && (
-              <div>
-                {selectedInterview.status === 'SCHEDULED' ? (
-                  <div style={{ background: 'var(--success-glow)', border: '1px solid var(--success)', padding: '1.5rem', borderRadius: 'var(--radius-md)' }}>
-                    <h4 style={{ color: 'var(--success)', fontSize: '1rem', marginBottom: '1rem' }} className="flex-gap-2"><CheckCircle size={18} /> Meeting Scheduled!</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                      {[
-                        { label: 'Panelist(s)', value: selectedInterview.panels.filter((p) => p.status === 'SUBMITTED').map((p) => p.name).join(', ') || 'None' },
-                        { label: 'Date', value: new Date(selectedInterview.scheduledSlotStart || '').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) },
-                        { label: 'Time Slot (UTC)', value: `${new Date(selectedInterview.scheduledSlotStart || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${new Date(selectedInterview.scheduledSlotEnd || '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` },
-                      ].map((item) => (
-                        <div key={item.label} style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.15)' }}>
-                          <div className="text-muted text-xs" style={{ marginBottom: '2px' }}>{item.label}</div>
-                          <strong style={{ fontSize: '0.9rem' }}>{item.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    {selectedInterview.teamsMeetingUrl && (
-                      <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary flex-gap-2" style={{ width: '100%', background: 'var(--success)', border: 'none', marginBottom: '0.5rem' }}>
-                        <Video size={16} /> Join Teams Meeting
-                      </a>
-                    )}
-                    <button onClick={handleCancelBooking} className="btn btn-secondary flex-gap-2" style={{ width: '100%', color: '#ef4444', borderColor: 'rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.05)' }} disabled={isCancellingBooking}>
-                      {isCancellingBooking ? <><Loader2 size={16} className="animate-spin" /> Cancelling Booking...</> : 'Remove Booked Slot / Cancel Meeting'}
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', fontWeight: 600 }} className="flex-gap-2"><Calendar size={15} /> Overlapping Free Slots</h4>
-                    {selectedInterview.panels.filter((p) => p.status === 'SUBMITTED').length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
-                        <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No availability yet.</div>
-                        <p className="text-muted text-xs">Slots will appear once at least one panel member submits their availability.</p>
-                      </div>
-                    ) : commonSlots.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
-                        <Info size={24} className="text-muted" style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>No overlapping slots.</div>
-                        <p className="text-muted text-xs">No common {selectedInterview.duration}-min window found across all submissions.</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', marginBottom: '1.25rem', paddingRight: '4px' }}>
-                          {commonSlots.map((slot, index) => {
-                            const startObj = new Date(slot.start);
-                            const endObj = new Date(slot.end);
-                            const isSlotSelected = selectedSlot?.start === slot.start;
-                            return (
-                              <div key={index} onClick={() => setSelectedSlot(slot)}
-                                style={{ padding: '0.75rem 1rem', cursor: 'pointer', background: isSlotSelected ? 'var(--primary-glow)' : 'rgba(255,255,255,0.01)', border: isSlotSelected ? '1px solid var(--primary)' : '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', transition: 'var(--transition-fast)' }}
-                                className={!isSlotSelected ? 'search-item-hover' : ''}>
-                                <div className="flex-between">
-                                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{startObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}</span>
-                                  <span style={{ fontSize: '0.8rem', color: isSlotSelected ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
-                                    {startObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {endObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {selectedSlot && (
-                          <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
-                            <div className="form-group">
-                              <label className="form-label">Invitation Message / Agenda</label>
-                              <textarea className="form-input" rows={3} style={{ resize: 'none' }} value={bookingDescription} onChange={(e) => setBookingDescription(e.target.value)} placeholder="Provide details about the interview topics..." />
-                            </div>
-                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleBookSlot} disabled={isBooking}>
-                              {isBooking ? <><Loader2 size={16} className="animate-spin" /> Scheduling Teams Event...</> : 'Confirm Teams Booking'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Feedback Tab */}
-            {detailTab === 'feedback' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--primary)' }}>
-                  <MessageSquare size={15} /> Panel Feedback & Ratings
-                </h4>
-                {selectedInterview.panels.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    No panels nominated for this interview.
-                  </div>
-                ) : (
-                  selectedInterview.panels.map((p) => {
-                    let parsed: any = null;
-                    let isJson = false;
-                    try { if (p.feedback && p.feedback.startsWith('{')) { parsed = JSON.parse(p.feedback); isJson = true; } } catch (e) {}
-                    const hasSubmitted = p.status === 'SUBMITTED' && (p.feedback || p.decision);
-                    return (
-                      <div key={p.id} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.5rem' }}>
-                          <div>
-                            <strong style={{ fontSize: '0.85rem', display: 'block' }}>{p.name}</strong>
-                            <span className="text-muted text-xs block">{p.email}</span>
-                          </div>
-                          <div>
-                            {hasSubmitted ? (
-                              <span className={`badge ${p.decision === 'PASSED' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.6rem' }}>
-                                {p.decision === 'PASSED' ? 'Passed' : 'Rejected'}
-                              </span>
-                            ) : (
-                              <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}>Pending</span>
-                            )}
-                          </div>
-                        </div>
-                        {!hasSubmitted ? (
-                          <p className="text-muted text-xs font-italic" style={{ margin: 0 }}>Waiting for panelist feedback submission.</p>
-                        ) : isJson && parsed ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Round: {parsed.type || 'L1/L2'}</div>
-                            {parsed.type === 'L1' && parsed.scores && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                {[['Coding & Problem Solving', parsed.scores.coding, parsed.notes?.codingNotes], ['Technical Communication', parsed.scores.communication, parsed.notes?.communicationNotes], ['CS Fundamentals', parsed.scores.fundamentals, parsed.notes?.fundamentalsNotes]].map(([label, score, note]) => (
-                                  <div key={label as string}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                                      <span style={{ fontWeight: 600 }}>{label}:</span>
-                                      {renderStarsStatic(score as number)}
-                                    </div>
-                                    {note && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{note}</p>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {parsed.type === 'L2' && parsed.scores && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                {[['System Design & Scalability', parsed.scores.systemDesign, parsed.notes?.systemDesignNotes], ['Technical Depth & Experience', parsed.scores.technicalDepth, parsed.notes?.technicalDepthNotes], ['Leadership & Ownership', parsed.scores.leadership, parsed.notes?.leadershipNotes], ['Cultural Fit & MS Values', parsed.scores.culturalFit, parsed.notes?.culturalFitNotes]].map(([label, score, note]) => (
-                                  <div key={label as string}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                                      <span style={{ fontWeight: 600 }}>{label}:</span>
-                                      {renderStarsStatic(score as number)}
-                                    </div>
-                                    {note && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{note}</p>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {parsed.type === 'General' && parsed.scores && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                {[['Technical Depth', parsed.scores.technical, parsed.notes?.technicalNotes], ['Communication', parsed.scores.communication, parsed.notes?.communicationNotes], ['Collaboration & Teamwork', parsed.scores.collaboration, parsed.notes?.collaborationNotes]].map(([label, score, note]) => (
-                                  <div key={label as string}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                                      <span style={{ fontWeight: 600 }}>{label}:</span>
-                                      {renderStarsStatic(score as number)}
-                                    </div>
-                                    {note && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.25rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{note}</p>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {parsed.comments && (
-                              <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.4rem', marginTop: '0.2rem' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Overall Comments</span>
-                                <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.4 }}>{parsed.comments}</p>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div>{p.feedback && <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.78rem', lineHeight: 1.4 }}>{p.feedback}</p>}</div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        )}
-
-        {/* Idle state */}
-        {!showCreateForm && !selectedInterview && (
-          <div className="glass-card text-center" style={{ padding: '6rem 2rem', position: 'sticky', top: '2rem' }}>
-            <Calendar size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1.5rem', opacity: 0.3 }} />
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Select an Interview</h3>
-            <p className="text-muted text-sm" style={{ maxWidth: '300px', margin: '0 auto' }}>
-              Choose an interview card from the left panel to review responses, check overlaps, and book the meeting.
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
