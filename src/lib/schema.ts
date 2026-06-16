@@ -99,7 +99,9 @@ export const colleges = pgTable('colleges', {
 export const drives = pgTable('drives', {
   id: varchar('id', { length: 255 }).primaryKey(),
   collegeName: varchar('college_name', { length: 255 }).notNull(),
-  driveDate: varchar('drive_date', { length: 255 }).notNull(),
+  startDate: varchar('start_date', { length: 255 }).notNull(),
+  endDate: varchar('end_date', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).default('OPEN').notNull(), // OPEN | CLOSED
   isActive: boolean('is_active').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });

@@ -112,7 +112,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
       <main className="workspace-main">
         <section className="workspace-content">
           {activeTab === 'interviews' && (
-            <InterviewsTab interviews={interviews} setInterviews={setInterviews} panelists={panelists} candidates={candidates} setCandidates={setCandidates} todayStr={todayStr} collegesList={collegesList} activeDrive={activeDrive} />
+            <InterviewsTab interviews={interviews} setInterviews={setInterviews} panelists={panelists} candidates={candidates} setCandidates={setCandidates} todayStr={todayStr} collegesList={collegesList} drives={drives} activeDrive={activeDrive} />
           )}
           {activeTab === 'panelists' && (
             <PanelistsTab panelists={panelists} setPanelists={setPanelists} interviews={interviews} setInterviews={setInterviews} collegesList={collegesList} todayStr={todayStr} activeDrive={activeDrive} />

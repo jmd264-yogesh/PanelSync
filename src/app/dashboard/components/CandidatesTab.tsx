@@ -86,9 +86,10 @@ export default function CandidatesTab({
 
   useEffect(() => {
     if (activeDrive) {
-      setUploadDefaultDate(activeDrive.driveDate);
+      // Candidates carry a single preferred date; default to the drive's start date.
+      setUploadDefaultDate(activeDrive.startDate);
       setUploadDefaultCollege(activeDrive.collegeName);
-      setSingleCandidateDate(activeDrive.driveDate);
+      setSingleCandidateDate(activeDrive.startDate);
       setSingleCandidateCollege(activeDrive.collegeName);
     }
   }, [activeDrive]);

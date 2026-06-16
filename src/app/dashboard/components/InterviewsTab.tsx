@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Calendar, User, Users, Clock, CheckCircle, XCircle,
   Search, Loader2, Trash2, Video, Check, Info, CalendarCheck,
-  ListFilter, MessageSquare, Bell, Send, X, TrendingUp, AlertCircle
+  ListFilter, MessageSquare, Bell, Send, X, TrendingUp, AlertCircle, Compass
 } from 'lucide-react';
 import { Interview, Panelist, UploadedCandidate, InterviewPanel, College, Drive } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
@@ -26,6 +26,7 @@ interface InterviewsTabProps {
   setCandidates: React.Dispatch<React.SetStateAction<UploadedCandidate[]>>;
   todayStr: string;
   collegesList: College[];
+  drives: Drive[];
   activeDrive: Drive | null;
 }
 
@@ -96,6 +97,7 @@ export default function InterviewsTab({
   setCandidates,
   todayStr,
   collegesList,
+  drives,
   activeDrive,
 }: InterviewsTabProps) {
   // ── UI States ─────────────────────────────────────────────────────────────
@@ -103,6 +105,10 @@ export default function InterviewsTab({
   const [typeFilter, setTypeFilter] = useState<'all' | 'L1' | 'L2'>('L1');
   const [collegeFilter, setCollegeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  // Drive the dashboard scopes to. Defaults to the active drive, but the recruiter
+  // can switch to any other drive here without changing the global active drive.
+  const [selectedDriveId, setSelectedDriveId] = useState<string>(activeDrive?.id ?? 'all');
+  const didInitDrive = useRef(false);
   const [showRepliedModal, setShowRepliedModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
@@ -170,17 +176,28 @@ export default function InterviewsTab({
     }
   }, [interviews]);
 
+  // On first load, default the dashboard's selected drive to the active drive.
   useEffect(() => {
-    if (activeDrive) {
-      setCollegeFilter(activeDrive.collegeName);
-      setDateFilter(activeDrive.driveDate);
-      setStartDate(activeDrive.driveDate);
-      setEndDate(activeDrive.driveDate);
-    } else {
-      setCollegeFilter('all');
-      setDateFilter('all');
+    if (!didInitDrive.current && activeDrive) {
+      setSelectedDriveId(activeDrive.id);
+      didInitDrive.current = true;
     }
   }, [activeDrive]);
+
+  // When the selected drive changes, scope the college filter and create-form
+  // default dates to that drive (a range spanning start → end).
+  useEffect(() => {
+    const drive = drives.find((d) => d.id === selectedDriveId) ?? null;
+    if (drive) {
+      setCollegeFilter(drive.collegeName);
+      setStartDate(drive.startDate);
+      setEndDate(drive.endDate);
+    } else {
+      setCollegeFilter('all');
+    }
+    // Drive spans a range; don't pin the single-date filter to one day.
+    setDateFilter('all');
+  }, [selectedDriveId, drives]);
 
   useEffect(() => {
     if (panelSearchQuery.trim().length < 2) { setSearchResults([]); return; }
@@ -441,8 +458,28 @@ export default function InterviewsTab({
   };
 
   // ── Filtering Logic ───────────────────────────────────────────────────────
+  const selectedDrive = selectedDriveId === 'all' ? null : (drives.find((d) => d.id === selectedDriveId) ?? null);
+
+  /** True when an interview falls inside the selected drive's date window. */
+  const interviewInDriveWindow = (i: Interview, drive: Drive) => {
+    const ds = drive.startDate;
+    const de = drive.endDate;
+    if (i.status === 'SCHEDULED' && i.scheduledSlotStart) {
+      const d = i.scheduledSlotStart.split('T')[0];
+      return d >= ds && d <= de;
+    }
+    // Otherwise treat the interview's proposed window as overlapping the drive window.
+    const iS = i.startDate.split('T')[0];
+    const iE = i.endDate.split('T')[0];
+    return iS <= de && iE >= ds;
+  };
+
   const getFilteredInterviews = () => {
     let filtered = interviews;
+
+    if (selectedDrive) {
+      filtered = filtered.filter((i) => interviewInDriveWindow(i, selectedDrive));
+    }
 
     if (statusFilter !== 'all') {
       filtered = filtered.filter((i) => i.status === statusFilter);
@@ -494,9 +531,13 @@ export default function InterviewsTab({
   const drivePassed = drivePanels.filter((p) => p.decision === 'PASSED').length;
   const driveRejected = drivePanels.filter((p) => p.decision === 'REJECTED').length;
 
-  // ── Cohort Analytics (L1 & L2 breakdown, reacting only to college and date filters) ──────────────
+  // ── Cohort Analytics (L1 & L2 breakdown, reacting to the selected drive + college/date filters) ──────────────
   const getOverallInterviewsForAnalytics = () => {
     let filtered = interviews;
+
+    if (selectedDrive) {
+      filtered = filtered.filter((i) => interviewInDriveWindow(i, selectedDrive));
+    }
 
     if (dateFilter !== 'all') {
       filtered = filtered.filter((i) => {
@@ -567,6 +608,42 @@ export default function InterviewsTab({
         <button className="btn btn-primary flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
           <Plus size={16} /> New Interview
         </button>
+      </div>
+
+      {/* Drive Selector — scopes the whole dashboard to one drive */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', padding: '0.85rem 1rem', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', fontWeight: 700, fontSize: '0.85rem' }}>
+          <Compass size={16} /> Viewing Drive
+        </div>
+        <div style={{ minWidth: '240px' }}>
+          <Select value={selectedDriveId} onValueChange={(val) => setSelectedDriveId(val || 'all')}>
+            <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
+              <SelectValue placeholder="All Drives" />
+            </SelectTrigger>
+            <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+              <SelectItem value="all">All Drives</SelectItem>
+              {drives.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.collegeName}{d.status === 'CLOSED' ? ' (Closed)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {selectedDrive ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <Clock size={13} />
+            <span>
+              {selectedDrive.startDate === selectedDrive.endDate
+                ? new Date(selectedDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                : `${new Date(selectedDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(selectedDrive.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+            </span>
+            {selectedDrive.status === 'CLOSED' && <span className="badge badge-danger" style={{ fontSize: '0.6rem' }}>Closed</span>}
+            {activeDrive?.id === selectedDrive.id && <span className="badge badge-success" style={{ fontSize: '0.6rem' }}>Active</span>}
+          </div>
+        ) : (
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Showing interviews across all drives.</span>
+        )}
       </div>
 
       {/* Filter Bar */}

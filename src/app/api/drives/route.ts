@@ -28,16 +28,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { collegeName, driveDate } = body;
+    const { collegeName, startDate, endDate } = body;
 
     if (!collegeName || typeof collegeName !== 'string' || !collegeName.trim()) {
       return NextResponse.json({ error: 'College name is required' }, { status: 400 });
     }
-    if (!driveDate || typeof driveDate !== 'string' || !driveDate.trim()) {
-      return NextResponse.json({ error: 'Drive date is required' }, { status: 400 });
+    if (!startDate || typeof startDate !== 'string' || !startDate.trim()) {
+      return NextResponse.json({ error: 'Start date is required' }, { status: 400 });
+    }
+    if (!endDate || typeof endDate !== 'string' || !endDate.trim()) {
+      return NextResponse.json({ error: 'End date is required' }, { status: 400 });
+    }
+    if (endDate.trim() < startDate.trim()) {
+      return NextResponse.json({ error: 'End date cannot be before the start date' }, { status: 400 });
     }
 
-    const newDrive = await db.createDrive(collegeName, driveDate);
+    const newDrive = await db.createDrive(collegeName, startDate, endDate);
     return NextResponse.json({ success: true, drive: newDrive });
   } catch (error) {
     console.error('Failed to create drive:', error);
