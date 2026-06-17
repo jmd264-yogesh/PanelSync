@@ -525,7 +525,9 @@ export const db = {
       email: row.email,
       status: row.status as 'WAITING' | 'MAPPED',
       mappedInterviewId: row.mappedInterviewId || undefined,
-      preferredDate: row.preferredDate ? row.preferredDate.toISOString().split('T')[0] : '',
+      preferredDate: row.preferredDate 
+        ? `${row.preferredDate.getFullYear()}-${String(row.preferredDate.getMonth() + 1).padStart(2, '0')}-${String(row.preferredDate.getDate()).padStart(2, '0')}` 
+        : '',
       outcomeStatus: row.outcomeStatus || undefined,
       college: row.college || '',
       collegeDrive: row.collegeDrive || '',

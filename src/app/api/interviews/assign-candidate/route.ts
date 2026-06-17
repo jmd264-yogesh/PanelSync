@@ -3,7 +3,7 @@ import { getValidAccessToken, getSession } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -42,6 +42,19 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(schema.interviews.id, interviewId));
+
+    // Also update candidate status in bulk upload queue to MAPPED
+    if (candidateEmail && candidateEmail !== 'pending@assign.com') {
+      await dbClient
+        .update(schema.uploadedCandidates)
+        .set({
+          status: 'MAPPED',
+          mappedInterviewId: interviewId,
+        })
+        .where(
+          sql`LOWER(${schema.uploadedCandidates.email}) = LOWER(${candidateEmail.trim()})`
+        );
+    }
 
     // 3. If the interview is already scheduled, update the Microsoft Calendar event via Graph API PATCH
     if (interview.calendarEventId) {

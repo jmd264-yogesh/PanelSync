@@ -168,6 +168,14 @@ export default function CandidatesTab({
     setIsUploadingCandidates(true);
     setUploadError(null);
     setUploadSuccessMessage(null);
+
+    if (!uploadDefaultCollege || uploadDefaultCollege === '_none_placeholder' || uploadDefaultCollege.trim() === '') {
+      setUploadError('Please select a default College Name of Drive from the dropdown above before uploading.');
+      setIsUploadingCandidates(false);
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
@@ -196,12 +204,7 @@ export default function CandidatesTab({
             const rawDate = dateKey ? row[dateKey] : undefined;
             const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
 
-            const driveCollegeKey = keys.find((k) => {
-              const val = normalizeHeader(k);
-              return val === 'college name of drive' || val === 'drive college' || val === 'host college' || val === 'drive location';
-            });
-            const rawDriveCollege = driveCollegeKey && row[driveCollegeKey] !== undefined ? String(row[driveCollegeKey]).trim() : undefined;
-            const collegeDrive = rawDriveCollege || (uploadDefaultCollege ? uploadDefaultCollege : undefined);
+            const collegeDrive = uploadDefaultCollege;
 
             const candidateCollegeKey = keys.find((k) => {
               const val = normalizeHeader(k);
@@ -212,9 +215,6 @@ export default function CandidatesTab({
 
             if (!preferredDate) {
               throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive Date. Please specify a date in the sheet or set a default Drive Date above.`);
-            }
-            if (!collegeDrive) {
-              throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive College Name. Please specify a drive college name in the sheet or select a default College Name of Drive above.`);
             }
             if (!college) {
               throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Candidate College Name. Please specify a candidate college name in the sheet or select a default College Name of Drive above.`);
