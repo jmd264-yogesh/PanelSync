@@ -55,9 +55,18 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
     }
   };
 
+  const triggerAutoReminders = async () => {
+    try {
+      await fetch('/api/interviews/check-ended-reminders');
+    } catch (err) {
+      console.error('Failed to trigger auto feedback reminders:', err);
+    }
+  };
+
   useEffect(() => {
     void fetchCandidates();
     void fetchDrives();
+    void triggerAutoReminders();
   }, []);
 
   const handleTabChange = (tab: DashboardTab) => {

@@ -205,41 +205,53 @@ async function refreshMicrosoftTokens(refreshToken: string) {
   }
 }
 
-export async function getAnyValidAccessToken(): Promise<{ token: string; email: string } | null> {
+export async function getAnyValidAccessToken(): Promise<{ token: string; email: string; userId: string } | null> {
   try {
-    const [latestSession] = await dbClient
+    // 1. Try to find the session for Vishnupriya (hardcoded admin recruiter)
+    let sessionRow = await dbClient
       .select()
       .from(sessions)
+      .where(eq(sessions.userEmail, 'vishnuprriya@jmangroup.com'))
       .orderBy(desc(sessions.createdAt))
-      .limit(1);
+      .limit(1)
+      .then((rows) => rows[0]);
 
-    if (!latestSession) return null;
+    // 2. Fall back to the latest active session if Vishnupriya's session is not found
+    if (!sessionRow) {
+      [sessionRow] = await dbClient
+        .select()
+        .from(sessions)
+        .orderBy(desc(sessions.createdAt))
+        .limit(1);
+    }
+
+    if (!sessionRow) return null;
 
     const now = Date.now();
-    const expiresAt = latestSession.expiresAt.getTime();
+    const expiresAt = sessionRow.expiresAt.getTime();
 
     if (expiresAt - now < 30 * 1000) {
-      if (latestSession.refreshToken) {
-        console.log('Access token expiring soon for guest booking. Refreshing token...');
-        const tokens = await refreshMicrosoftTokens(latestSession.refreshToken);
+      if (sessionRow.refreshToken) {
+        console.log(`Access token expiring soon for guest booking. Refreshing token for ${sessionRow.userEmail}...`);
+        const tokens = await refreshMicrosoftTokens(sessionRow.refreshToken);
         if (tokens) {
           const newExpiresAt = Date.now() + tokens.expires_in * 1000;
           await dbClient
             .update(sessions)
             .set({
               accessToken: tokens.access_token,
-              refreshToken: tokens.refresh_token || latestSession.refreshToken,
+              refreshToken: tokens.refresh_token || sessionRow.refreshToken,
               expiresAt: new Date(newExpiresAt),
             })
-            .where(eq(sessions.id, latestSession.id));
+            .where(eq(sessions.id, sessionRow.id));
 
-          return { token: tokens.access_token, email: latestSession.userEmail };
+          return { token: tokens.access_token, email: sessionRow.userEmail, userId: sessionRow.userId };
         }
       }
       return null;
     }
 
-    return { token: latestSession.accessToken, email: latestSession.userEmail };
+    return { token: sessionRow.accessToken, email: sessionRow.userEmail, userId: sessionRow.userId };
   } catch (error) {
     console.error('Error fetching generic valid token:', error);
     return null;
