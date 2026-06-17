@@ -45,6 +45,7 @@ export const interviewPanels = pgTable('interview_panels', {
   submittedAt: timestamp('submitted_at'),
   feedback: text('feedback'),
   decision: varchar('decision', { length: 50 }), // PASSED | REJECTED
+  feedbackReminderSent: boolean('feedback_reminder_sent').default(false).notNull(),
 }, (t) => [
   unique('unique_interview_email').on(t.interviewId, t.email)
 ]);

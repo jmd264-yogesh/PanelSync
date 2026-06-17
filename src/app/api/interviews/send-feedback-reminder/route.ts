@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidAccessToken, getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession, getAnyValidAccessToken } from '@/lib/session';
+import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
+import * as schema from '@/lib/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * POST /api/interviews/send-feedback-reminder
- * Sends a Teams message to every panelist of a SCHEDULED interview
+ * Sends a Teams message to the booked panelist of a SCHEDULED interview
  * with a link to /feedback/[token] so they can submit their decision.
  */
 export async function POST(request: NextRequest) {
-  const token = await getValidAccessToken();
   const session = await getSession();
+  const isAutomated = request.headers.get('x-automated-trigger') === 'true';
 
-  if (!token || !session) {
+  if (!session && !isAutomated) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const { interviewId } = body as { interviewId: string };
 
     if (!interviewId) {
@@ -36,6 +38,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get Vishnupriya's token/session
+    const tokenInfo = await getAnyValidAccessToken();
+    if (!tokenInfo) {
+      return NextResponse.json({ error: 'No active recruiter session found' }, { status: 401 });
+    }
+
+    const { token, email: senderEmail, userId: senderUserId } = tokenInfo;
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const skipped: string[] = [];
     const sent: string[] = [];
@@ -51,18 +61,22 @@ export async function POST(request: NextRequest) {
         })
       : 'the scheduled slot';
 
-    for (const panel of interview.panels) {
-      const feedbackLink = `${appUrl}/feedback/${panel.token}`;
+    // Only send to the panelist who got booked/submitted slots
+    const targetPanels = interview.panels.filter((p) => p.status === 'SUBMITTED');
+    const finalPanels = targetPanels.length > 0 ? targetPanels : interview.panels;
 
-      // Skip self-messages (recruiter == panelist)
-      if (session.user.id === panel.userId) {
+    for (const panel of finalPanels) {
+      // Skip self-messages
+      if (senderEmail.toLowerCase() === panel.email.toLowerCase()) {
         skipped.push(panel.email);
         console.warn(`[FeedbackReminder] Skipping self-message for ${panel.email}`);
         continue;
       }
 
+      const feedbackLink = `${appUrl}/feedback/${panel.token}`;
+
       try {
-        const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
+        const chat = await graph.createOneOnOneChat(senderUserId, panel.userId, token);
 
         const isL1 = interview.role.toLowerCase().includes('l1');
         const isL2 = interview.role.toLowerCase().includes('l2');
@@ -107,6 +121,13 @@ export async function POST(request: NextRequest) {
         `;
 
         await graph.sendTeamsMessage(chat.id, htmlMessage, token);
+        
+        // Update database
+        await dbClient
+          .update(schema.interviewPanels)
+          .set({ feedbackReminderSent: true })
+          .where(eq(schema.interviewPanels.id, panel.id));
+
         sent.push(panel.email);
       } catch (panelErr) {
         console.error(`Failed to send feedback reminder to ${panel.email}:`, panelErr);
