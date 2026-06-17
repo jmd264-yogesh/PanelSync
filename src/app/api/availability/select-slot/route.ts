@@ -3,7 +3,7 @@ import { getAnyValidAccessToken } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
-import { eq, and, gte, lt } from 'drizzle-orm';
+import { eq, and, gte, lt, sql } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,19 +39,29 @@ export async function POST(request: NextRequest) {
 
     if (interview.candidateName === 'Pending Assignment') {
       const slotDate = new Date(startTime);
-      const startOfDay = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-      const startOfNextDay = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate() + 1);
+      const startOfDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate()));
+      const startOfNextDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate() + 1));
+
+      let collegeNameFromRole = '';
+      const parts = interview.role.split(' - ');
+      if (parts.length > 1) {
+        collegeNameFromRole = parts[1].trim();
+      }
+
+      const conditions = [
+        eq(schema.uploadedCandidates.status, 'WAITING'),
+        gte(schema.uploadedCandidates.preferredDate, startOfDay),
+        lt(schema.uploadedCandidates.preferredDate, startOfNextDay)
+      ];
+
+      if (collegeNameFromRole) {
+        conditions.push(sql`LOWER(${schema.uploadedCandidates.collegeDrive}) = LOWER(${collegeNameFromRole})`);
+      }
 
       const [waitingCandidate] = await dbClient
         .select()
         .from(schema.uploadedCandidates)
-        .where(
-          and(
-            eq(schema.uploadedCandidates.status, 'WAITING'),
-            gte(schema.uploadedCandidates.preferredDate, startOfDay),
-            lt(schema.uploadedCandidates.preferredDate, startOfNextDay)
-          )
-        )
+        .where(and(...conditions))
         .orderBy(schema.uploadedCandidates.createdAt)
         .limit(1);
 

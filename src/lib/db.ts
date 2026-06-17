@@ -741,16 +741,66 @@ export const db = {
         mappedCount++;
       };
 
+      const getCollegeNameFromRole = (role: string) => {
+        const parts = role.split(' - ');
+        return parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+      };
+
+      const getInterviewDate = (i: typeof allInterviews[0]) => {
+        if (i.scheduledSlotStart) {
+          return i.scheduledSlotStart.split('T')[0];
+        }
+        return '';
+      };
+
       // Map L1
-      const l1Limit = Math.min(waitingForL1.length, readyL1Interviews.length);
-      for (let i = 0; i < l1Limit; i++) {
-        await mapOne(waitingForL1[i], readyL1Interviews[i]);
+      for (const interview of readyL1Interviews) {
+        const collegeName = getCollegeNameFromRole(interview.role);
+        const dateStr = getInterviewDate(interview);
+        
+        const candidateIdx = waitingForL1.findIndex((c) => {
+          const matchesCollege = collegeName ? c.collegeDrive?.toLowerCase() === collegeName : true;
+          const matchesDate = (() => {
+            if (!dateStr) return true;
+            if (!c.preferredDate) return false;
+            const y = c.preferredDate.getFullYear();
+            const m = String(c.preferredDate.getMonth() + 1).padStart(2, '0');
+            const d = String(c.preferredDate.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}` === dateStr;
+          })();
+          return matchesCollege && matchesDate;
+        });
+        
+        if (candidateIdx !== -1) {
+          const candidate = waitingForL1[candidateIdx];
+          waitingForL1.splice(candidateIdx, 1);
+          await mapOne(candidate, interview);
+        }
       }
 
       // Map L2
-      const l2Limit = Math.min(waitingForL2.length, readyL2Interviews.length);
-      for (let i = 0; i < l2Limit; i++) {
-        await mapOne(waitingForL2[i], readyL2Interviews[i]);
+      for (const interview of readyL2Interviews) {
+        const collegeName = getCollegeNameFromRole(interview.role);
+        const dateStr = getInterviewDate(interview);
+        
+        const candidateIdx = waitingForL2.findIndex((c) => {
+          const matchesCollege = collegeName ? c.collegeDrive?.toLowerCase() === collegeName : true;
+          const matchesDate = (() => {
+            if (!dateStr) return true;
+            if (!c.preferredDate) return false;
+            const y = c.preferredDate.getFullYear();
+            const m = String(c.preferredDate.getMonth() + 1).padStart(2, '0');
+            const d = String(c.preferredDate.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}` === dateStr;
+          })();
+          return matchesCollege && matchesDate;
+        });
+        
+        if (candidateIdx !== -1) {
+          const candidate = waitingForL2[candidateIdx];
+          waitingForL2.splice(candidateIdx, 1);
+          await mapOne(candidate, interview);
+        }
       }
 
     } catch (err) {
