@@ -192,11 +192,11 @@ export default function InterviewsTab({
       setCollegeFilter(drive.collegeName);
       setStartDate(drive.startDate);
       setEndDate(drive.endDate);
+      setDateFilter(drive.startDate);
     } else {
       setCollegeFilter('all');
+      setDateFilter('all');
     }
-    // Drive spans a range; don't pin the single-date filter to one day.
-    setDateFilter('all');
   }, [selectedDriveId, drives]);
 
   useEffect(() => {
@@ -462,6 +462,19 @@ export default function InterviewsTab({
 
   /** True when an interview falls inside the selected drive's date window. */
   const interviewInDriveWindow = (i: Interview, drive: Drive) => {
+    // Verify college matches
+    const candidate = candidates.find(c => c.email.toLowerCase() === i.candidateEmail.toLowerCase());
+    if (candidate) {
+      if (!candidate.collegeDrive || candidate.collegeDrive.toLowerCase() !== drive.collegeName.toLowerCase()) {
+        return false;
+      }
+    } else {
+      // For Pending Assignment: check if the college name is in the role
+      if (!i.role.toLowerCase().includes(drive.collegeName.toLowerCase())) {
+        return false;
+      }
+    }
+
     const ds = drive.startDate;
     const de = drive.endDate;
     if (i.status === 'SCHEDULED' && i.scheduledSlotStart) {
@@ -502,8 +515,11 @@ export default function InterviewsTab({
 
     if (collegeFilter !== 'all') {
       filtered = filtered.filter((i) => {
-        const candidate = candidates.find(c => c.email === i.candidateEmail);
-        return candidate && candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
+        const candidate = candidates.find(c => c.email.toLowerCase() === i.candidateEmail.toLowerCase());
+        if (candidate) {
+          return candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
+        }
+        return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
       });
     }
 
@@ -514,20 +530,77 @@ export default function InterviewsTab({
 
   // ── Drive Metrics ─────────────────────────────────────────────────────────
   const candidateCardTitle = typeFilter === 'all' ? 'Candidates' : `${typeFilter} Candidates`;
-  const driveCandidatesCount = filteredInterviewsList.length;
+
+  // Filter candidates matching the current dashboard scopes (drive, college, date, type)
+  const driveCandidates = candidates.filter((c) => {
+    const matchesDrive = selectedDrive
+      ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
+      : true;
+    const matchesCollegeFilter = collegeFilter !== 'all'
+      ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
+      : true;
+    const matchesDateFilter = dateFilter !== 'all'
+      ? c.preferredDate === dateFilter
+      : true;
+    const matchesType = typeFilter === 'all' || 
+      (typeFilter === 'L1' && (!c.outcomeStatus || c.outcomeStatus === 'PENDING')) ||
+      (typeFilter === 'L2' && c.outcomeStatus === 'PASSED_L1');
+    return matchesDrive && matchesCollegeFilter && matchesDateFilter && matchesType;
+  });
+
+  const driveCandidatesCount = driveCandidates.length;
+  const driveMapped = driveCandidates.filter((c) => c.status === 'MAPPED').length;
+  const drivePending = driveCandidates.filter((c) => c.status === 'WAITING').length;
+
   const candidateCardColor = typeFilter === 'L2' ? '#a78bfa' : '#60a5fa';
   const candidateCardBg = typeFilter === 'L2' ? 'rgba(167,139,250,0.08)' : 'rgba(96,165,250,0.08)';
   const candidateCardBorder = typeFilter === 'L2' ? '1px solid rgba(167,139,250,0.2)' : '1px solid rgba(96,165,250,0.2)';
 
-  const drivePanels = filteredInterviewsList.flatMap((i) =>
+  // Filter interviews matching current dashboard scopes (drive, type, date, college), independent of statusFilter
+  const getInterviewsForMetrics = () => {
+    let filtered = interviews;
+
+    if (selectedDrive) {
+      filtered = filtered.filter((i) => interviewInDriveWindow(i, selectedDrive));
+    }
+
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter((i) => i.role.toLowerCase().includes(typeFilter.toLowerCase()));
+    }
+
+    if (dateFilter !== 'all') {
+      filtered = filtered.filter((i) => {
+        if (i.status === 'SCHEDULED' && i.scheduledSlotStart) {
+          return i.scheduledSlotStart.split('T')[0] === dateFilter;
+        }
+        const startD = i.startDate.split('T')[0];
+        const endD = i.endDate.split('T')[0];
+        return dateFilter >= startD && dateFilter <= endD;
+      });
+    }
+
+    if (collegeFilter !== 'all') {
+      filtered = filtered.filter((i) => {
+        const candidate = candidates.find(c => c.email.toLowerCase() === i.candidateEmail.toLowerCase());
+        if (candidate) {
+          return candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
+        }
+        return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
+      });
+    }
+
+    return filtered;
+  };
+
+  const interviewsForMetricsList = getInterviewsForMetrics();
+
+  const drivePanels = interviewsForMetricsList.flatMap((i) =>
     i.panels.map((p) => ({ ...p, candidateName: i.candidateName, role: i.role }))
   );
   const drivePanelistsRequested = drivePanels.length;
   const drivePanelistsReplied = drivePanels.filter((p) => p.status === 'SUBMITTED').length;
   const drivePanelistsRejected = drivePanels.filter((p) => p.status === 'REJECTED').length;
   const drivePanelistsPending = drivePanels.filter((p) => p.status === 'PENDING').length;
-  const driveMapped = filteredInterviewsList.filter((i) => i.status === 'SCHEDULED').length;
-  const drivePending = filteredInterviewsList.filter((i) => i.status === 'PENDING' || i.status === 'COLLECTED').length;
   const drivePassed = drivePanels.filter((p) => p.decision === 'PASSED').length;
   const driveRejected = drivePanels.filter((p) => p.decision === 'REJECTED').length;
 
@@ -552,8 +625,11 @@ export default function InterviewsTab({
 
     if (collegeFilter !== 'all') {
       filtered = filtered.filter((i) => {
-        const candidate = candidates.find(c => c.email === i.candidateEmail);
-        return candidate && candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
+        const candidate = candidates.find(c => c.email.toLowerCase() === i.candidateEmail.toLowerCase());
+        if (candidate) {
+          return candidate.collegeDrive && candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase();
+        }
+        return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
       });
     }
 
@@ -568,12 +644,34 @@ export default function InterviewsTab({
   const l1Scheduled = l1Filtered.filter((i) => i.status === 'SCHEDULED').length;
   const l1Collected = l1Filtered.filter((i) => i.status === 'COLLECTED').length;
   const l1Pending = l1Filtered.filter((i) => i.status === 'PENDING').length;
-  const l1CandidatesPending = l1Filtered.filter((i) => i.status === 'PENDING' || i.status === 'COLLECTED').length;
+  const l1CandidatesPending = candidates.filter((c) => {
+    const matchesDrive = selectedDrive
+      ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
+      : true;
+    const matchesCollegeFilter = collegeFilter !== 'all'
+      ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
+      : true;
+    const matchesDateFilter = dateFilter !== 'all'
+      ? c.preferredDate === dateFilter
+      : true;
+    return c.status === 'WAITING' && (!c.outcomeStatus || c.outcomeStatus === 'PENDING') && matchesDrive && matchesCollegeFilter && matchesDateFilter;
+  }).length;
 
   const l2Scheduled = l2Filtered.filter((i) => i.status === 'SCHEDULED').length;
   const l2Collected = l2Filtered.filter((i) => i.status === 'COLLECTED').length;
   const l2Pending = l2Filtered.filter((i) => i.status === 'PENDING').length;
-  const l2CandidatesPending = l2Filtered.filter((i) => i.status === 'PENDING' || i.status === 'COLLECTED').length;
+  const l2CandidatesPending = candidates.filter((c) => {
+    const matchesDrive = selectedDrive
+      ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
+      : true;
+    const matchesCollegeFilter = collegeFilter !== 'all'
+      ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
+      : true;
+    const matchesDateFilter = dateFilter !== 'all'
+      ? c.preferredDate === dateFilter
+      : true;
+    return c.status === 'WAITING' && c.outcomeStatus === 'PASSED_L1' && matchesDrive && matchesCollegeFilter && matchesDateFilter;
+  }).length;
 
   const l1Panels = l1Filtered.flatMap((i) => i.panels);
   const l1PanelsRequested = l1Panels.length;
