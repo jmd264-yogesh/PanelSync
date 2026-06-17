@@ -837,7 +837,12 @@ export const db = {
     const panelRows = await dbClient
       .select()
       .from(schema.interviewPanels)
-      .where(eq(schema.interviewPanels.email, normalizedEmail));
+      .where(
+        and(
+          eq(schema.interviewPanels.email, normalizedEmail),
+          eq(schema.interviewPanels.status, 'SUBMITTED')
+        )
+      );
 
     const panelistRow = await db.getPanelistByEmail(normalizedEmail);
     const panelistRoles = panelistRow?.roles ?? [];

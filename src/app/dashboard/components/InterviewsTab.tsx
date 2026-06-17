@@ -1572,113 +1572,126 @@ export default function InterviewsTab({
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       {finalPanels.map((p) => (
-                        <div key={p.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div>
-                            <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.2rem 0' }}>{p.name}</p>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Status: {p.status === 'SUBMITTED' ? '✓ Responded' : 'Pending'}</p>
-                          </div>
-                          
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            {/* Send Reminder button if booked and feedback decision is pending */}
-                            {selectedInterview.status === 'SCHEDULED' && p.status === 'SUBMITTED' && !p.decision && (
-                              <button
-                                onClick={(e) => handleSendFeedbackReminder(selectedInterview.id, e)}
-                                disabled={sendingFeedbackReminderId === selectedInterview.id}
-                                style={{
-                                  padding: '0.35rem 0.75rem',
-                                  background: 'rgba(99, 102, 241, 0.15)',
-                                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                                  borderRadius: 'var(--radius-sm)',
-                                  color: '#a5b4fc',
-                                  cursor: 'pointer',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  transition: 'all 0.2s'
-                                }}
-                              >
-                                {sendingFeedbackReminderId === selectedInterview.id ? 'Sending...' : 'Send Reminder'}
-                              </button>
-                            )}
+                        <div key={p.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <div>
+                              <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.2rem 0' }}>{p.name}</p>
+                              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Status: {p.status === 'SUBMITTED' ? '✓ Responded' : 'Pending'}</p>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              {/* Send Reminder button if booked and feedback decision is pending */}
+                              {selectedInterview.status === 'SCHEDULED' && p.status === 'SUBMITTED' && !p.decision && (
+                                <button
+                                  onClick={(e) => handleSendFeedbackReminder(selectedInterview.id, e)}
+                                  disabled={sendingFeedbackReminderId === selectedInterview.id}
+                                  style={{
+                                    padding: '0.35rem 0.75rem',
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    color: '#a5b4fc',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    transition: 'all 0.2s'
+                                  }}
+                                >
+                                  {sendingFeedbackReminderId === selectedInterview.id ? 'Sending...' : 'Send Reminder'}
+                                </button>
+                              )}
 
-                            {p.status === 'PENDING' && (
-                              <button onClick={() => handleResendInvite(selectedInterview.id, p.id)} disabled={resendingPanelId === p.id} style={{ padding: '0.35rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
-                                {resendingPanelId === p.id ? 'Resending...' : 'Resend'}
-                              </button>
-                            )}
+                              {p.status === 'PENDING' && (
+                                <button onClick={() => handleResendInvite(selectedInterview.id, p.id)} disabled={resendingPanelId === p.id} style={{ padding: '0.35rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                                  {resendingPanelId === p.id ? 'Resending...' : 'Resend'}
+                                </button>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Render Decision & Feedback Details directly for this panel if submitted */}
+                          {p.decision && (
+                            <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', width: '100%' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Decision:</span>
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  padding: '0.15rem 0.45rem',
+                                  background: p.decision === 'PASSED' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                  border: p.decision === 'PASSED' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+                                  borderRadius: '4px',
+                                  color: p.decision === 'PASSED' ? '#10b981' : '#ef4444',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  {p.decision}
+                                </span>
+                              </div>
+
+                              {/* Feedback Comments */}
+                              {p.feedback && (() => {
+                                try {
+                                  const parsed = JSON.parse(p.feedback);
+                                  
+                                  // Determine L1 vs L2 structure
+                                  const scores = parsed.scores || {};
+                                  const notes = parsed.notes || {};
+                                  
+                                  return (
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-normal)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                      {/* Scores Grid */}
+                                      {Object.keys(scores).length > 0 && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '0.5rem', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                                          {Object.entries(scores).map(([key, val]) => (
+                                            <div key={key} style={{ display: 'flex', flexDirection: 'column' }}>
+                                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{key}</span>
+                                              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8' }}>{String(val)} / 5</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      
+                                      {/* Notes / Comments */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', background: 'rgba(0,0,0,0.1)', padding: '0.5rem', borderRadius: '4px' }}>
+                                        {Object.entries(notes).map(([key, val]) => {
+                                          if (!val) return null;
+                                          // Format label nicely (e.g. codingNotes -> Coding Notes)
+                                          const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                                          return (
+                                            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>{label}:</span>
+                                              <span style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{String(val)}</span>
+                                            </div>
+                                          );
+                                        })}
+                                        
+                                        {/* Fallback to simple comments if no notes entries match */}
+                                        {Object.keys(notes).length === 0 && parsed.comments && (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>Comments:</span>
+                                            <span style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{String(parsed.comments)}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                } catch (e) {
+                                  // Fallback for non-JSON or plain text feedback
+                                  return (
+                                    <p style={{ fontSize: '0.8rem', color: 'var(--text-normal)', margin: 0, whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                                      {p.feedback}
+                                    </p>
+                                  );
+                                }
+                              })()}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   );
                 })()}
               </div>
-
-              {/* Feedback History Section */}
-              {(() => {
-                // Find all interviews for the same candidate email
-                const candidateInterviews = interviews.filter(
-                  (i) => i.candidateEmail.toLowerCase() === selectedInterview.candidateEmail.toLowerCase()
-                );
-
-                // Collect all panel entries that have submitted feedback
-                const feedbacks = candidateInterviews.flatMap((i) =>
-                  i.panels
-                    .filter((p) => p.decision === 'PASSED' || p.decision === 'REJECTED')
-                    .map((p) => ({
-                      ...p,
-                      role: i.role,
-                      interviewId: i.id,
-                    }))
-                );
-
-                if (feedbacks.length === 0) return null;
-
-                return (
-                  <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-lg)' }}>
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.75rem 0' }}>Feedback History (L1 & L2)</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {feedbacks.map((fb) => {
-                        const isPass = fb.decision === 'PASSED';
-                        const badgeBg = isPass ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-                        const badgeColor = isPass ? '#10b981' : '#ef4444';
-                        const badgeBorder = isPass ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)';
-
-                        return (
-                          <div key={fb.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                              <div>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{fb.role}</span>
-                                <p style={{ fontSize: '0.85rem', fontWeight: 600, margin: '0.1rem 0 0 0' }}>Panelist: {fb.name}</p>
-                              </div>
-                              <span style={{
-                                fontSize: '0.65rem',
-                                fontWeight: 700,
-                                padding: '0.15rem 0.45rem',
-                                background: badgeBg,
-                                border: badgeBorder,
-                                borderRadius: '4px',
-                                color: badgeColor,
-                                textTransform: 'uppercase'
-                              }}>
-                                {fb.decision}
-                              </span>
-                            </div>
-                            {fb.feedback ? (
-                              <p style={{ fontSize: '0.85rem', color: 'var(--text-normal)', margin: 0, whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
-                                {fb.feedback}
-                              </p>
-                            ) : (
-                              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>
-                                No comments provided.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
 
               {/* Actions */}
               {selectedInterview.status === 'COLLECTED' && (
