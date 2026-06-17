@@ -62,7 +62,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
 
   const handleTabChange = (tab: DashboardTab) => {
     setActiveTab(tab);
-    if (tab === 'candidates') void fetchCandidates();
+    if (tab === 'candidates' || tab === 'interviews') void fetchCandidates();
     void fetchDrives();
   };
 

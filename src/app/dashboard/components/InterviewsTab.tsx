@@ -532,7 +532,7 @@ export default function InterviewsTab({
   const candidateCardTitle = typeFilter === 'all' ? 'Candidates' : `${typeFilter} Candidates`;
 
   // Filter candidates matching the current dashboard scopes (drive, college, date, type)
-  const driveCandidates = candidates.filter((c) => {
+  const driveCandidatesRaw = candidates.filter((c) => {
     const matchesDrive = selectedDrive
       ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
       : true;
@@ -548,9 +548,35 @@ export default function InterviewsTab({
     return matchesDrive && matchesCollegeFilter && matchesDateFilter && matchesType;
   });
 
-  const driveCandidatesCount = driveCandidates.length;
-  const driveMapped = driveCandidates.filter((c) => c.status === 'MAPPED').length;
-  const drivePending = driveCandidates.filter((c) => c.status === 'WAITING').length;
+  // Dynamic set of candidate emails mapped to active interviews of the current role/type
+  const mappedEmails = new Set(
+    interviews
+      .filter((i) => {
+        const matchesType = typeFilter === 'all' || i.role.toLowerCase().includes(typeFilter.toLowerCase());
+        const isAssigned = i.candidateName !== 'Pending Assignment' && i.candidateEmail !== 'pending@assign.com';
+        return matchesType && isAssigned;
+      })
+      .map((i) => i.candidateEmail.toLowerCase())
+  );
+
+  // Deduplicate candidates by email to avoid counting duplicates in metrics, prioritizing keeping 'MAPPED' status
+  const uniqueDriveCandidatesMap = new Map<string, UploadedCandidate>();
+  for (const c of driveCandidatesRaw) {
+    const emailKey = c.email.toLowerCase();
+    const existing = uniqueDriveCandidatesMap.get(emailKey);
+    if (!existing || c.status === 'MAPPED') {
+      uniqueDriveCandidatesMap.set(emailKey, c);
+    }
+  }
+  const uniqueDriveCandidates = Array.from(uniqueDriveCandidatesMap.values());
+
+  const driveCandidatesCount = uniqueDriveCandidates.length;
+  const driveMapped = uniqueDriveCandidates.filter(
+    (c) => c.status === 'MAPPED' || mappedEmails.has(c.email.toLowerCase())
+  ).length;
+  const drivePending = uniqueDriveCandidates.filter(
+    (c) => c.status !== 'MAPPED' && !mappedEmails.has(c.email.toLowerCase())
+  ).length;
 
   const candidateCardColor = typeFilter === 'L2' ? '#a78bfa' : '#60a5fa';
   const candidateCardBg = typeFilter === 'L2' ? 'rgba(167,139,250,0.08)' : 'rgba(96,165,250,0.08)';
@@ -597,10 +623,51 @@ export default function InterviewsTab({
   const drivePanels = interviewsForMetricsList.flatMap((i) =>
     i.panels.map((p) => ({ ...p, candidateName: i.candidateName, role: i.role }))
   );
-  const drivePanelistsRequested = drivePanels.length;
-  const drivePanelistsReplied = drivePanels.filter((p) => p.status === 'SUBMITTED').length;
-  const drivePanelistsRejected = drivePanels.filter((p) => p.status === 'REJECTED').length;
-  const drivePanelistsPending = drivePanels.filter((p) => p.status === 'PENDING').length;
+
+  // Deduplicate drive panels by panelist email for requested/replied/rejected/pending slot request metrics,
+  // accumulating candidate names and roles for clear display.
+  const getUniqueDrivePanels = (panelsList: typeof drivePanels) => {
+    const panelsMap = new Map<string, typeof drivePanels[0] & { candidateNames: string[]; roles: string[] }>();
+    for (const p of panelsList) {
+      const emailKey = p.email.toLowerCase();
+      const existing = panelsMap.get(emailKey);
+      if (!existing) {
+        panelsMap.set(emailKey, {
+          ...p,
+          candidateNames: [p.candidateName],
+          roles: [p.role]
+        });
+      } else {
+        if (!existing.candidateNames.includes(p.candidateName)) {
+          existing.candidateNames.push(p.candidateName);
+        }
+        if (!existing.roles.includes(p.role)) {
+          existing.roles.push(p.role);
+        }
+        // Resolve status: prioritize SUBMITTED, then REJECTED, then PENDING
+        if (p.status === 'SUBMITTED') {
+          existing.status = 'SUBMITTED';
+          existing.submittedAt = p.submittedAt;
+          existing.feedback = p.feedback;
+          existing.decision = p.decision;
+        } else if (p.status === 'REJECTED' && existing.status === 'PENDING') {
+          existing.status = 'REJECTED';
+          existing.submittedAt = p.submittedAt;
+          existing.feedback = p.feedback;
+          existing.decision = p.decision;
+        }
+      }
+    }
+    return Array.from(panelsMap.values());
+  };
+
+  const uniqueDrivePanels = getUniqueDrivePanels(drivePanels);
+
+  const drivePanelistsRequested = uniqueDrivePanels.length;
+  const drivePanelistsReplied = uniqueDrivePanels.filter((p) => p.status === 'SUBMITTED').length;
+  const drivePanelistsRejected = uniqueDrivePanels.filter((p) => p.status === 'REJECTED').length;
+  const drivePanelistsPending = uniqueDrivePanels.filter((p) => p.status === 'PENDING').length;
+
   const drivePassed = drivePanels.filter((p) => p.decision === 'PASSED').length;
   const driveRejected = drivePanels.filter((p) => p.decision === 'REJECTED').length;
 
@@ -641,36 +708,62 @@ export default function InterviewsTab({
   const l1Filtered = overallInterviewsForAnalytics.filter((i) => i.role.toLowerCase().includes('l1'));
   const l2Filtered = overallInterviewsForAnalytics.filter((i) => i.role.toLowerCase().includes('l2'));
 
+  // Find mapped emails for L1 and L2 separately
+  const mappedL1Emails = new Set(
+    interviews
+      .filter((i) => i.role.toLowerCase().includes('l1') && i.candidateName !== 'Pending Assignment' && i.candidateEmail !== 'pending@assign.com')
+      .map((i) => i.candidateEmail.toLowerCase())
+  );
+
+  const mappedL2Emails = new Set(
+    interviews
+      .filter((i) => i.role.toLowerCase().includes('l2') && i.candidateName !== 'Pending Assignment' && i.candidateEmail !== 'pending@assign.com')
+      .map((i) => i.candidateEmail.toLowerCase())
+  );
+
+  const getCandidatesForBreakdown = () => {
+    const rawList = candidates.filter((c) => {
+      const matchesDrive = selectedDrive
+        ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
+        : true;
+      const matchesCollegeFilter = collegeFilter !== 'all'
+        ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
+        : true;
+      const matchesDateFilter = dateFilter !== 'all'
+        ? c.preferredDate === dateFilter
+        : true;
+      return matchesDrive && matchesCollegeFilter && matchesDateFilter;
+    });
+
+    const map = new Map<string, UploadedCandidate>();
+    for (const c of rawList) {
+      const emailKey = c.email.toLowerCase();
+      const existing = map.get(emailKey);
+      if (!existing || c.status === 'MAPPED') {
+        map.set(emailKey, c);
+      }
+    }
+    return Array.from(map.values());
+  };
+
+  const breakdownCandidates = getCandidatesForBreakdown();
+
   const l1Scheduled = l1Filtered.filter((i) => i.status === 'SCHEDULED').length;
   const l1Collected = l1Filtered.filter((i) => i.status === 'COLLECTED').length;
   const l1Pending = l1Filtered.filter((i) => i.status === 'PENDING').length;
-  const l1CandidatesPending = candidates.filter((c) => {
-    const matchesDrive = selectedDrive
-      ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
-      : true;
-    const matchesCollegeFilter = collegeFilter !== 'all'
-      ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
-      : true;
-    const matchesDateFilter = dateFilter !== 'all'
-      ? c.preferredDate === dateFilter
-      : true;
-    return c.status === 'WAITING' && (!c.outcomeStatus || c.outcomeStatus === 'PENDING') && matchesDrive && matchesCollegeFilter && matchesDateFilter;
+  const l1CandidatesPending = breakdownCandidates.filter((c) => {
+    const isWaiting = c.status === 'WAITING' && !mappedL1Emails.has(c.email.toLowerCase());
+    const isL1 = !c.outcomeStatus || c.outcomeStatus === 'PENDING';
+    return isWaiting && isL1;
   }).length;
 
   const l2Scheduled = l2Filtered.filter((i) => i.status === 'SCHEDULED').length;
   const l2Collected = l2Filtered.filter((i) => i.status === 'COLLECTED').length;
   const l2Pending = l2Filtered.filter((i) => i.status === 'PENDING').length;
-  const l2CandidatesPending = candidates.filter((c) => {
-    const matchesDrive = selectedDrive
-      ? c.collegeDrive?.toLowerCase() === selectedDrive.collegeName.toLowerCase()
-      : true;
-    const matchesCollegeFilter = collegeFilter !== 'all'
-      ? c.collegeDrive?.toLowerCase() === collegeFilter.toLowerCase()
-      : true;
-    const matchesDateFilter = dateFilter !== 'all'
-      ? c.preferredDate === dateFilter
-      : true;
-    return c.status === 'WAITING' && c.outcomeStatus === 'PASSED_L1' && matchesDrive && matchesCollegeFilter && matchesDateFilter;
+  const l2CandidatesPending = breakdownCandidates.filter((c) => {
+    const isWaiting = c.status === 'WAITING' && !mappedL2Emails.has(c.email.toLowerCase());
+    const isL2 = c.outcomeStatus === 'PASSED_L1';
+    return isWaiting && isL2;
   }).length;
 
   const l1Panels = l1Filtered.flatMap((i) => i.panels);
@@ -954,24 +1047,51 @@ export default function InterviewsTab({
 
           {/* Interviews List */}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {filteredInterviewsList.length === 0 ? (
-              <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
-                <CalendarCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
-                <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Found</h4>
-                <p className="text-muted text-sm">Create a new interview or adjust your filters.</p>
-              </div>
-            ) : (
-              filteredInterviewsList.map((interview) => {
+            {(() => {
+              const panelRequestsList = filteredInterviewsList.flatMap<{
+                key: string;
+                interview: Interview;
+                panel: InterviewPanel | null;
+              }>((interview) => {
+                if (interview.panels.length === 0) {
+                  return [{
+                    key: `${interview.id}-unassigned`,
+                    interview,
+                    panel: null
+                  }];
+                }
+                return interview.panels.map((p) => ({
+                  key: `${interview.id}-${p.id}`,
+                  interview,
+                  panel: p
+                }));
+              });
+
+              if (panelRequestsList.length === 0) {
+                return (
+                  <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
+                    <CalendarCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Found</h4>
+                    <p className="text-muted text-sm">Create a new interview or adjust your filters.</p>
+                  </div>
+                );
+              }
+
+              return panelRequestsList.map(({ key, interview, panel }) => {
                 const isSelected = selectedInterview?.id === interview.id;
                 const isL1 = interview.role.toLowerCase().includes('l1');
                 const isL2 = interview.role.toLowerCase().includes('l2');
                 const typeColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#10b981';
-                const statusColor = interview.status === 'SCHEDULED' ? '#10b981' : interview.status === 'COLLECTED' ? '#0ea5e9' : '#f59e0b';
-                const initials = interview.candidateName === 'Pending Assignment' ? '?' : interview.candidateName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+                
+                // Color status indicator based on this specific panel request
+                const isSlotSubmitted = panel ? panel.status === 'SUBMITTED' : false;
+                const statusColor = interview.status === 'SCHEDULED' && isSlotSubmitted ? '#10b981' : isSlotSubmitted ? '#0ea5e9' : '#f59e0b';
+                
+                const initials = interview.candidateName === 'Pending Assignment' ? '?' : interview.candidateName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
                 return (
                   <div
-                    key={interview.id}
+                    key={key}
                     onClick={() => { setSelectedInterview(interview); setShowInterviewModal(true); }}
                     style={{
                       padding: '1.25rem',
@@ -1005,21 +1125,29 @@ export default function InterviewsTab({
                         {/* Role Details */}
                         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, opacity: 0.9 }}>{interview.role}</p>
 
-                        {/* Panelist(s) Row */}
+                        {/* Panelist Row */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Panelist:</span>
-                          <strong style={{ color: interview.panels.length > 0 ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 600 }}>
-                            {interview.panels.length > 0 ? interview.panels.map(p => p.name).join(', ') : 'Awaiting assignment'}
+                          <strong style={{ color: panel ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 600 }}>
+                            {panel ? `${panel.name} (${panel.email})` : 'Awaiting assignment'}
                           </strong>
                         </div>
 
                         {/* Feedback / Response Status */}
-                        {interview.panels.length > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: interview.panels.filter(p => p.status === 'SUBMITTED').length === interview.panels.length ? '#10b981' : '#f59e0b' }} />
-                            <span>
-                              {interview.panels.filter((p) => p.status === 'SUBMITTED').length} of {interview.panels.length} feedback submitted
-                            </span>
+                        {panel && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: panel.status === 'SUBMITTED' ? '#10b981' : '#f59e0b' }} />
+                              <span>
+                                Slots Provided: {panel.status === 'SUBMITTED' ? 'Yes' : 'No'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: (panel.decision === 'PASSED' || panel.decision === 'REJECTED') ? '#10b981' : '#f59e0b' }} />
+                              <span>
+                                Feedback Submitted: {panel.decision ? panel.decision : 'Pending'}
+                              </span>
+                            </div>
                           </div>
                         )}
 
@@ -1056,8 +1184,8 @@ export default function InterviewsTab({
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
 
@@ -1307,21 +1435,21 @@ export default function InterviewsTab({
               {/* 1st Priority: Yet to Respond Section */}
               <div>
                 <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Clock size={14} /> Yet to Respond ({drivePanels.filter(p => p.status === 'PENDING').length})
+                  <Clock size={14} /> Yet to Respond ({uniqueDrivePanels.filter(p => p.status === 'PENDING').length})
                 </h4>
-                {drivePanels.filter(p => p.status === 'PENDING').length === 0 ? (
+                {uniqueDrivePanels.filter(p => p.status === 'PENDING').length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>All panel members have responded.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
-                    {drivePanels.filter(p => p.status === 'PENDING').map((panel, idx) => (
+                    {uniqueDrivePanels.filter(p => p.status === 'PENDING').map((panel, idx) => (
                       <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Candidate: {panel.candidateName}</span>
-                          <span>{panel.role}</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          <div>Candidate: {panel.candidateNames.join(', ')}</div>
+                          <div>Role: {panel.roles.join(', ')}</div>
                         </div>
                       </div>
                     ))}
@@ -1332,21 +1460,21 @@ export default function InterviewsTab({
               {/* 2nd Priority: Rejected Section */}
               <div>
                 <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <XCircle size={14} /> Rejected ({drivePanels.filter(p => p.status === 'REJECTED').length})
+                  <XCircle size={14} /> Rejected ({uniqueDrivePanels.filter(p => p.status === 'REJECTED').length})
                 </h4>
-                {drivePanels.filter(p => p.status === 'REJECTED').length === 0 ? (
+                {uniqueDrivePanels.filter(p => p.status === 'REJECTED').length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>No rejected nominations.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
-                    {drivePanels.filter(p => p.status === 'REJECTED').map((panel, idx) => (
+                    {uniqueDrivePanels.filter(p => p.status === 'REJECTED').map((panel, idx) => (
                       <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Candidate: {panel.candidateName}</span>
-                          <span>{panel.role}</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          <div>Candidate: {panel.candidateNames.join(', ')}</div>
+                          <div>Role: {panel.roles.join(', ')}</div>
                         </div>
                         {panel.feedback && (
                           <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.2rem', padding: '0.3rem 0.5rem', background: 'rgba(239,68,68,0.08)', borderRadius: '4px', borderLeft: '2px solid #ef4444' }}>
@@ -1362,21 +1490,21 @@ export default function InterviewsTab({
               {/* 3rd Priority: Accepted Section */}
               <div>
                 <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <CheckCircle size={14} /> Accepted ({drivePanels.filter(p => p.status === 'SUBMITTED').length})
+                  <CheckCircle size={14} /> Accepted ({uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').length})
                 </h4>
-                {drivePanels.filter(p => p.status === 'SUBMITTED').length === 0 ? (
+                {uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>No responses yet.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
-                    {drivePanels.filter(p => p.status === 'SUBMITTED').map((panel, idx) => (
+                    {uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').map((panel, idx) => (
                       <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Candidate: {panel.candidateName}</span>
-                          <span>{panel.role}</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          <div>Candidate: {panel.candidateNames.join(', ')}</div>
+                          <div>Role: {panel.roles.join(', ')}</div>
                         </div>
                       </div>
                     ))}

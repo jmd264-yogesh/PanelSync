@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidAccessToken, getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
+import * as schema from '@/lib/schema';
+import { sql } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -34,6 +36,23 @@ export async function POST(request: NextRequest) {
         email: p.mail || p.userPrincipalName,
       })),
     });
+
+    // Also update candidate status in bulk upload queue to MAPPED
+    if (candidateEmail && candidateEmail !== 'pending@assign.com') {
+      try {
+        await dbClient
+          .update(schema.uploadedCandidates)
+          .set({
+            status: 'MAPPED',
+            mappedInterviewId: interview.id,
+          })
+          .where(
+            sql`LOWER(${schema.uploadedCandidates.email}) = LOWER(${candidateEmail.trim()})`
+          );
+      } catch (dbErr) {
+        console.error('Failed to update uploaded candidate status to MAPPED:', dbErr);
+      }
+    }
 
     // 3. Send Teams chat notifications to each panel member
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';

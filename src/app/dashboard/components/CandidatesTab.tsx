@@ -601,7 +601,7 @@ export default function CandidatesTab({
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+              <table style={{ minWidth: '1000px', width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Name</th>
@@ -618,9 +618,17 @@ export default function CandidatesTab({
                 </thead>
                 <tbody>
                   {filteredCandidates.map((candidate) => {
-                    const mappedIntv = candidate.mappedInterviewId
+                    let mappedIntv = candidate.mappedInterviewId
                       ? interviews.find((i) => i.id === candidate.mappedInterviewId)
                       : null;
+                    if (!mappedIntv && candidate.email) {
+                      mappedIntv = interviews.find((i) => 
+                        i.candidateEmail.toLowerCase() === candidate.email.toLowerCase() &&
+                        i.candidateName !== 'Pending Assignment' &&
+                        i.candidateEmail !== 'pending@assign.com'
+                      ) || null;
+                    }
+                    const isMapped = candidate.status === 'MAPPED' || !!mappedIntv;
                     return (
                       <tr key={candidate.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }} className="search-item-hover">
                         {editingCandidateId === candidate.id ? (
@@ -713,7 +721,7 @@ export default function CandidatesTab({
                           {new Date(candidate.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td style={{ padding: '1rem' }}>
-                          {candidate.status === 'WAITING' ? (
+                          {!isMapped ? (
                             <span className="badge badge-pending">Waiting</span>
                           ) : (
                             <span className="badge badge-success">Mapped</span>
@@ -783,7 +791,7 @@ export default function CandidatesTab({
                               </div>
                             ) : (
                               <>
-                                {candidate.status === 'WAITING' && (
+                                {!isMapped && (
                                   <button
                                     onClick={() => { setMappingCandidateId(candidate.id); setEditingCandidateId(null); }}
                                     className="btn btn-sm"
@@ -835,16 +843,16 @@ export default function CandidatesTab({
                                 <ConfirmDialog
                                   trigger={
                                     <button
-                                      disabled={candidate.status === 'MAPPED'}
+                                      disabled={isMapped}
                                       style={{
                                         border: 'none', background: 'transparent',
-                                        cursor: candidate.status === 'MAPPED' ? 'not-allowed' : 'pointer',
-                                        color: candidate.status === 'MAPPED' ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                        cursor: isMapped ? 'not-allowed' : 'pointer',
+                                        color: isMapped ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
                                         padding: '0.2rem'
                                       }}
-                                      onMouseEnter={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = '#ef4444'; }}
-                                      onMouseLeave={(e) => { if (candidate.status !== 'MAPPED') e.currentTarget.style.color = ''; }}
-                                      title={candidate.status === 'MAPPED' ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                      onMouseEnter={(e) => { if (!isMapped) e.currentTarget.style.color = '#ef4444'; }}
+                                      onMouseLeave={(e) => { if (!isMapped) e.currentTarget.style.color = ''; }}
+                                      title={isMapped ? 'Cannot delete mapped candidate' : 'Remove candidate'}
                                     />
                                   }
                                   triggerChildren={<Trash2 size={15} />}
