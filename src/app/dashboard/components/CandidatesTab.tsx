@@ -552,8 +552,8 @@ export default function CandidatesTab({
           'Candidate Email': candidate.email,
           'Candidate College': candidate.college || '—',
           'College of Drive': candidate.collegeDrive || '—',
-          'Drive Date': candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : '—',
-          'Uploaded At': new Date(candidate.createdAt).toLocaleDateString(),
+          'Drive Date': candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US') : '—',
+          'Uploaded At': new Date(candidate.createdAt).toLocaleDateString('en-US'),
           'Queue Status': candidate.status === 'MAPPED' || !!mappedIntv ? 'Mapped' : 'Waiting',
           'L1 Result': l1Result,
           'L2 Result': l2Result,
@@ -1033,13 +1033,13 @@ export default function CandidatesTab({
                             </td>
                             <td style={{ padding: '1rem' }}>
                               <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : '—'}
+                                {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US') : '—'}
                               </span>
                             </td>
                           </>
                         )}
                         <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          {new Date(candidate.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {new Date(candidate.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td style={{ padding: '1rem' }}>
                           {!isMapped ? (
@@ -1076,7 +1076,7 @@ export default function CandidatesTab({
                               <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
                               <span className="text-muted" style={{ fontSize: '0.75rem' }}>
                                 {mappedIntv.scheduledSlotStart
-                                  ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                  ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                                   : 'Pending Slot'}
                               </span>
                             </div>
@@ -1112,7 +1112,7 @@ export default function CandidatesTab({
                                       .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
                                       .map((i) => (
                                         <SelectItem key={i.id} value={i.id}>
-                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString()} - {i.panels.map(p => p.name).join(', ')})
+                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString('en-US')} - {i.panels.map(p => p.name).join(', ')})
                                         </SelectItem>
                                       ))}
                                   </SelectContent>
@@ -1490,3 +1490,4 @@ export default function CandidatesTab({
     </div>
   );
 }
+

@@ -189,7 +189,7 @@ export default function FeedbackClient({ interview, panel }: FeedbackClientProps
             <div>
               <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Interview Date</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                {slotStart.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                {slotStart.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
               </div>
             </div>
           </div>
@@ -200,8 +200,8 @@ export default function FeedbackClient({ interview, panel }: FeedbackClientProps
             <div>
               <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time Slot</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                {slotStart.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} –{' '}
-                {slotEnd.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                {slotStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} –{' '}
+                {slotEnd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           </div>

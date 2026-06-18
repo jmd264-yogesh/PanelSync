@@ -629,7 +629,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             onChange={(e) => setFilterToday(e.target.checked)}
             style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
           />
-          <span>Today's Date Only ({new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})</span>
+          <span>Today's Date Only ({new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})</span>
         </label>
 
         {/* Reset Filters Link */}
@@ -780,7 +780,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {filteredSortedRequests.map((req) => {
-              const dateRange = `${new Date(req.interview.startDate).toLocaleDateString()} - ${new Date(req.interview.endDate).toLocaleDateString()}`;
+              const dateRange = `${new Date(req.interview.startDate).toLocaleDateString('en-US')} - ${new Date(req.interview.endDate).toLocaleDateString('en-US')}`;
               const isL1Role = req.interview.role.toLowerCase().includes('l1');
               const isL2Role = req.interview.role.toLowerCase().includes('l2');
               const borderCol = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
@@ -873,129 +873,168 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             const isSubmitting = submittingFeedback[interview.panelId];
             const isUpdating = updatingStatus[interview.panelId];
 
+            const isL1Role = interview.role.toLowerCase().includes('l1');
+            const isL2Role = interview.role.toLowerCase().includes('l2');
+            const accentColor = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
+
             return (
               <div
                 key={interview.panelId}
                 className="glass-card"
-                style={{ padding: '1.5rem', borderLeft: `4px solid ${statusColor}` }}
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  borderLeft: `3px solid ${accentColor}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}
               >
                 {/* Top row: candidate info + status */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.25rem' }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: '50%',
-                    background: `${statusColor}22`, border: `1.5px solid ${statusColor}44`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.85rem', fontWeight: 700, color: statusColor, flexShrink: 0,
-                  }}>
-                    {initials || <User size={18} />}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      background: `color-mix(in srgb, ${accentColor} 10%, transparent)`,
+                      border: `1px solid color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.8rem', fontWeight: 700, color: accentColor, flexShrink: 0,
+                    }}>
+                      {initials || <User size={16} />}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem', fontFamily: 'var(--font-heading)' }}>{interview.candidateName}</span>
+                        <span style={{ 
+                          fontSize: '0.68rem', 
+                          background: getRoleBadgeStyle(interview.role).background, 
+                          border: getRoleBadgeStyle(interview.role).border, 
+                          borderRadius: '4px', 
+                          padding: '0.08rem 0.35rem', 
+                          color: getRoleBadgeStyle(interview.role).color,
+                          fontWeight: 600
+                        }}>
+                          {interview.role}
+                        </span>
+                      </div>
+                      <div className="text-muted text-xs" style={{ marginTop: '0.1rem' }}>{interview.candidateEmail}</div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem' }}>{interview.candidateName}</span>
-                      <span className={`badge ${badgeClass}`} style={{ fontSize: '0.6rem' }}>
-                        {STATUS_LABEL[outcomeStatus] || outcomeStatus}
-                      </span>
-                    </div>
-                    <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{interview.candidateEmail}</div>
-                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ 
-                        fontSize: '0.75rem', 
-                        background: getRoleBadgeStyle(interview.role).background, 
-                        border: getRoleBadgeStyle(interview.role).border, 
-                        borderRadius: '4px', 
-                        padding: '0.15rem 0.5rem', 
-                        color: getRoleBadgeStyle(interview.role).color,
-                        fontWeight: 600
-                      }}>
-                        {interview.role}
-                      </span>
-                      <span className="text-muted" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Clock size={11} /> {interview.duration} min
-                      </span>
-                    </div>
+
+                  {/* Minimal status indicator */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: statusColor }}></span>
+                    <span>{STATUS_LABEL[outcomeStatus] || outcomeStatus}</span>
                   </div>
                 </div>
 
                 {/* Scheduled time + Teams link */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
-                  <div>
-                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Scheduled</div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatDateTime(interview.scheduledSlotStart)}</div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '1rem',
+                  padding: '0.5rem 0',
+                  borderBottom: '1px solid var(--border-glass)',
+                  borderTop: '1px solid var(--border-glass)',
+                  marginTop: '0.25rem',
+                  marginBottom: '0.25rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <Calendar size={13} style={{ color: 'var(--text-muted)' }} />
+                    <span style={{ fontWeight: 550, color: 'var(--text-main)' }}>{formatDateTime(interview.scheduledSlotStart)}</span>
+                    <span>•</span>
+                    <Clock size={12} style={{ color: 'var(--text-muted)' }} />
+                    <span>{interview.duration} min</span>
                   </div>
                   {interview.teamsMeetingUrl && (
                     <a
                       href={interview.teamsMeetingUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-primary btn-sm"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        color: 'var(--primary)',
+                        textDecoration: 'none',
+                        transition: 'color 0.2s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--primary)'}
                     >
-                      <Video size={13} /> Join Teams Meeting
+                      <Video size={13} />
+                      <span>Join Teams Call</span>
                     </a>
                   )}
                 </div>
 
                 {/* Feedback section */}
                 <div>
-                  <button
-                    onClick={() => toggleFeedbackExpansion(
-                      interview.panelId,
-                      interview.role.toLowerCase().includes('l2'),
-                      interview.candidateEmail
-                    )}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border-glass)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '0.6rem 1rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      transition: 'background 0.2s',
-                      outline: 'none',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <MessageSquare size={13} className="text-primary" />
-                      <span>Feedback {feedbackAlreadySubmitted ? '(Submitted)' : '(Pending Submission)'}</span>
-                    </div>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {expandedFeedbacks[interview.panelId] ? '▲ Collapse' : '▼ Expand'}
-                    </span>
-                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'flex-start', margin: '0.25rem 0' }}>
+                    <button
+                      onClick={() => toggleFeedbackExpansion(
+                        interview.panelId,
+                        interview.role.toLowerCase().includes('l2'),
+                        interview.candidateEmail
+                      )}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '0.25rem 0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        color: 'var(--primary)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    >
+                      <MessageSquare size={13} />
+                      <span>{feedbackAlreadySubmitted ? 'View Submitted Feedback' : 'Submit Candidate Feedback'}</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                        {expandedFeedbacks[interview.panelId] ? '▲' : '▼'}
+                      </span>
+                    </button>
+                  </div>
 
                   {expandedFeedbacks[interview.panelId] && (
-                    <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
+                    <div style={{
+                      paddingLeft: '1rem',
+                      borderLeft: '2px solid var(--border-glass)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                      marginTop: '0.75rem',
+                      paddingTop: '0.25rem',
+                      paddingBottom: '0.25rem'
+                    }}>
                       
                       {/* L1 Feedback for L2 Panelists */}
                       {interview.role.toLowerCase().includes('l2') && (
                         <div style={{
-                          marginBottom: '1.5rem',
-                          padding: '1rem',
-                          background: 'rgba(59, 130, 246, 0.02)',
-                          border: '1px solid var(--border-glass)',
-                          borderRadius: 'var(--radius-sm)',
+                          marginBottom: '1rem',
+                          paddingBottom: '1rem',
+                          borderBottom: '1px dashed var(--border-glass)',
                         }}>
-                          <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-main)' }}>
-                            <MessageSquare size={14} className="text-primary" />
-                            L1 Round Feedback (Reference)
+                          <h4 style={{ fontSize: '0.8rem', fontWeight: 700, margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-main)' }}>
+                            <MessageSquare size={13} className="text-primary" />
+                            L1 Round Feedback Reference
                           </h4>
 
                           {loadingL1Feedbacks[interview.panelId] ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              <Loader2 size={14} className="animate-spin text-primary" />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <Loader2 size={13} className="animate-spin text-primary" />
                               <span>Loading L1 feedback...</span>
                             </div>
                           ) : !l1FeedbacksForCandidate[interview.panelId] || l1FeedbacksForCandidate[interview.panelId].length === 0 ? (
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                               No submitted L1 feedback found for this candidate.
                             </div>
                           ) : (
@@ -1009,21 +1048,20 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                                 return (
                                   <div key={l1.panelId || idx} style={{
-                                    borderLeft: '2px solid var(--border-glass)',
-                                    paddingLeft: '0.75rem',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '0.4rem'
+                                    gap: '0.35rem'
                                   }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                         Evaluator: <strong style={{ color: 'var(--text-main)' }}>{l1.panelistName}</strong>
                                       </div>
                                       <span className="badge" style={{
                                         fontSize: '0.58rem',
                                         background: badgeBg,
                                         border: `1px solid ${badgeBorder}`,
-                                        color: badgeColor
+                                        color: badgeColor,
+                                        padding: '0.08rem 0.35rem'
                                       }}>
                                         {l1.decision}
                                       </span>
@@ -1033,11 +1071,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                                       <div style={{
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        gap: '0.25rem',
-                                        margin: '0.25rem 0',
-                                        background: 'rgba(255,255,255,0.01)',
-                                        padding: '0.4rem',
-                                        borderRadius: '4px'
+                                        gap: '0.2rem',
+                                        margin: '0.15rem 0',
                                       }}>
                                         {Object.entries(parsedL1.scores).map(([metric, score]) => {
                                           const displayNames: Record<string, string> = {
@@ -1057,11 +1092,11 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                                       </div>
                                     )}
 
-                                    <div style={{ fontSize: '0.78rem' }}>
+                                    <div style={{ fontSize: '0.75rem' }}>
                                       <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '1px' }}>
                                         Comments
                                       </span>
-                                      <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.78rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                                      <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.75rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
                                         {parsedL1 ? parsedL1.comments : (l1.feedback || 'No comments.')}
                                       </p>
                                     </div>
@@ -1146,91 +1181,91 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                       if (isJson && parsed) {
                         return (
-                          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                             {renderFeedbackHeader()}
 
                             {/* Scores & individual notes */}
                             {parsed.type === 'L1' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Coding &amp; Problem Solving:</span>
                                     {renderStarsStatic(parsed.scores?.coding || 0)}
                                   </div>
-                                  {parsed.notes?.codingNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.codingNotes}</p>}
+                                  {parsed.notes?.codingNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.codingNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Communication:</span>
                                     {renderStarsStatic(parsed.scores?.communication || 0)}
                                   </div>
-                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.communicationNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>CS Fundamentals:</span>
                                     {renderStarsStatic(parsed.scores?.fundamentals || 0)}
                                   </div>
-                                  {parsed.notes?.fundamentalsNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.fundamentalsNotes}</p>}
+                                  {parsed.notes?.fundamentalsNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.fundamentalsNotes}</p>}
                                 </div>
                               </div>
                             )}
 
                             {parsed.type === 'L2' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>System Design &amp; Scalability:</span>
                                     {renderStarsStatic(parsed.scores?.systemDesign || 0)}
                                   </div>
-                                  {parsed.notes?.systemDesignNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.systemDesignNotes}</p>}
+                                  {parsed.notes?.systemDesignNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.systemDesignNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Depth &amp; Experience:</span>
                                     {renderStarsStatic(parsed.scores?.technicalDepth || 0)}
                                   </div>
-                                  {parsed.notes?.technicalDepthNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalDepthNotes}</p>}
+                                  {parsed.notes?.technicalDepthNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.technicalDepthNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Leadership &amp; Ownership:</span>
                                     {renderStarsStatic(parsed.scores?.leadership || 0)}
                                   </div>
-                                  {parsed.notes?.leadershipNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.leadershipNotes}</p>}
+                                  {parsed.notes?.leadershipNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.leadershipNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Cultural Fit &amp; MS Values:</span>
                                     {renderStarsStatic(parsed.scores?.culturalFit || 0)}
                                   </div>
-                                  {parsed.notes?.culturalFitNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.culturalFitNotes}</p>}
+                                  {parsed.notes?.culturalFitNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.culturalFitNotes}</p>}
                                 </div>
                               </div>
                             )}
 
                             {parsed.type === 'General' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Depth:</span>
                                     {renderStarsStatic(parsed.scores?.technical || 0)}
                                   </div>
-                                  {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalNotes}</p>}
+                                  {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.technicalNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Communication:</span>
                                     {renderStarsStatic(parsed.scores?.communication || 0)}
                                   </div>
-                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.communicationNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Collaboration &amp; Teamwork:</span>
                                     {renderStarsStatic(parsed.scores?.collaboration || 0)}
                                   </div>
-                                  {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.collaborationNotes}</p>}
+                                  {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.collaborationNotes}</p>}
                                 </div>
                               </div>
                             )}
@@ -1238,8 +1273,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                             {/* Overall summary notes */}
                             {parsed.comments && (
                               <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Overall Summary Notes</div>
-                                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>{parsed.comments}</p>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Overall Summary Notes</div>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>{parsed.comments}</p>
                               </div>
                             )}
                           </div>
@@ -1248,10 +1283,10 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                       // Fallback to legacy string feedback
                       return (
-                        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
                           {renderFeedbackHeader()}
                           {interview.panelFeedback && (
-                            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>
                               {interview.panelFeedback}
                             </p>
                           )}
@@ -1755,3 +1790,4 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     </div>
   );
 }
+

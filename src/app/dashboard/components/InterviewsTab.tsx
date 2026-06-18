@@ -861,8 +861,8 @@ export default function InterviewsTab({
             <Clock size={13} />
             <span>
               {selectedDrive.startDate === selectedDrive.endDate
-                ? new Date(selectedDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-                : `${new Date(selectedDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(selectedDrive.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                ? new Date(selectedDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : `${new Date(selectedDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(selectedDrive.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
             </span>
             {selectedDrive.status === 'CLOSED' && <span className="badge badge-danger" style={{ fontSize: '0.6rem' }}>Closed</span>}
             {activeDrive?.id === selectedDrive.id && <span className="badge badge-success" style={{ fontSize: '0.6rem' }}>Active</span>}
@@ -1229,8 +1229,8 @@ export default function InterviewsTab({
                                                   const end = new Date(av.endTime);
                                                   return (
                                                     <div key={av.id}>
-                                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
-                                                      {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                                      {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                                      {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                                     </div>
                                                   );
                                                 })}
@@ -1361,8 +1361,8 @@ export default function InterviewsTab({
                                           const end = new Date(av.endTime);
                                           return (
                                             <div key={av.id}>
-                                              {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
-                                              {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                              {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                              {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                             </div>
                                           );
                                         })}
@@ -1448,9 +1448,9 @@ export default function InterviewsTab({
                             <>
                               <CalendarCheck size={13} style={{ color: statusColor }} />
                               <span>
-                                {new Date(interview.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })} &bull;{' '}
-                                {new Date(interview.scheduledSlotStart).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} –{' '}
-                                {new Date(interview.scheduledSlotEnd || (new Date(interview.scheduledSlotStart).getTime() + (interview.duration || 60) * 60000)).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{' '}
+                                {new Date(interview.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })} &bull;{' '}
+                                {new Date(interview.scheduledSlotStart).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} –{' '}
+                                {new Date(interview.scheduledSlotEnd || (new Date(interview.scheduledSlotStart).getTime() + (interview.duration || 60) * 60000)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}{' '}
                                 ({interview.duration}m)
                               </span>
                             </>
@@ -1458,7 +1458,7 @@ export default function InterviewsTab({
                             <>
                               <Clock size={13} style={{ color: statusColor }} />
                               <span>
-                                Pref: {new Date(interview.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                Pref: {new Date(interview.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{' '}
                                 ({interview.duration}m)
                               </span>
                             </>
@@ -1924,9 +1924,9 @@ export default function InterviewsTab({
                                 const end = new Date(slot.endTime);
                                 return (
                                   <div key={sIdx} style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                    {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                    {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
                                     <span style={{ fontWeight: 600, color: 'inherit' }}>
-                                      {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                      {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   </div>
                                 );
@@ -2045,3 +2045,4 @@ export default function InterviewsTab({
     </div>
   );
 }
+

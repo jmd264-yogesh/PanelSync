@@ -239,7 +239,7 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
                 {drives.map((drive) => {
                   const isActive = activeDrive?.id === drive.id;
                   const isClosed = drive.status === 'CLOSED';
-                  const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                  const fmt = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                   return (
                     <tr key={drive.id} style={{ borderBottom: '1px solid var(--border-glass)', transition: 'var(--transition-fast)', opacity: isClosed ? 0.7 : 1 }} className="search-item-hover">
                       <td style={{ padding: '1rem', fontWeight: 500, color: 'var(--text-main)' }}>{drive.collegeName}</td>
@@ -348,3 +348,4 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
     </div>
   );
 }
+

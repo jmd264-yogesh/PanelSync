@@ -196,7 +196,7 @@ export default function RecruitersTab() {
                         <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{recruiter.email}</td>
                         <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>{recruiter.addedBy || 'N/A'}</td>
                         <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          {new Date(recruiter.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {new Date(recruiter.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td style={{ padding: '1rem', textAlign: 'right' }}>
                           <ConfirmDialog
@@ -241,3 +241,4 @@ export default function RecruitersTab() {
     </div>
   );
 }
+

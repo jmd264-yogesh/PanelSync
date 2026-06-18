@@ -160,7 +160,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
     endOfDay.setHours(23, 59, 59, 999);
 
     if (startObj.getTime() < startOfDay.getTime() || endObj.getTime() > endOfDay.getTime()) {
-      setErrorMsg(`Slots must be within the recruiter's requested date range (${new Date(interview.startDate).toLocaleDateString()} to ${new Date(interview.endDate).toLocaleDateString()}).`);
+      setErrorMsg(`Slots must be within the recruiter's requested date range (${new Date(interview.startDate).toLocaleDateString('en-US')} to ${new Date(interview.endDate).toLocaleDateString('en-US')}).`);
       return;
     }
 
@@ -253,16 +253,16 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
               <div>
                 <span className="text-xs text-muted block">Date</span>
                 <span className="font-semibold text-sm">
-                  {start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                  {start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                 </span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
               <Clock size={18} className="text-primary" />
               <div>
-                <span className="text-xs text-muted block">Time (UTC)</span>
+                <span className="text-xs text-muted block">Time (IST)</span>
                 <span className="font-semibold text-sm">
-                  {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             </div>
@@ -312,16 +312,16 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     <div>
                       <span className="text-xs text-muted block">Date</span>
                       <span className="font-semibold text-xs">
-                        {start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        {start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                       </span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem' }}>
                     <Clock size={16} className="text-primary" />
                     <div>
-                      <span className="text-xs text-muted block">Time (UTC)</span>
+                      <span className="text-xs text-muted block">Time (IST)</span>
                       <span className="font-semibold text-xs">
-                        {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   </div>
@@ -420,10 +420,10 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     </div>
                     <div>
                       <span className="font-semibold block text-sm">
-                        {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
                       <span className="text-xs text-muted">
-                        {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)
+                        {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
                       </span>
                     </div>
                   </div>
@@ -551,8 +551,8 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
               const end = new Date(s.endTime);
               return (
                 <div key={idx} style={{ fontSize: '0.875rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                  <span className="font-semibold">{start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)</span>
+                  <span>{start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                  <span className="font-semibold">{start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)</span>
                 </div>
               );
             })}
@@ -594,7 +594,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
         <div>
           <span className="text-muted text-xs block">Date Limits Requested</span>
           <span className="font-semibold text-sm">
-            {new Date(interview.startDate).toLocaleDateString()} to {new Date(interview.endDate).toLocaleDateString()}
+            {new Date(interview.startDate).toLocaleDateString('en-US')} to {new Date(interview.endDate).toLocaleDateString('en-US')}
           </span>
         </div>
         <div>
@@ -685,10 +685,10 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                 >
                   <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem' }}>
                     <span className="font-semibold">
-                      {startObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {startObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </span>
                     <span className="text-muted">
-                      {startObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {endObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} (UTC)
+                      {startObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {endObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
                     </span>
                   </div>
                   
