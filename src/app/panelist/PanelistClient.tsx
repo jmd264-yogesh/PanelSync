@@ -584,6 +584,17 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     });
   };
 
+  const formatDriveDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+
   return (
     <div>
       {/* Page header */}
@@ -606,7 +617,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       </div>
 
       {/* Filter Bar */}
-      <div className="glass-card" style={{ padding: '1rem 1.5rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--border-glass)' }}>
+      <div className="glass-card" style={{ padding: '1rem 1.5rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filters:</div>
         
         {/* Active Drive Scope */}
@@ -618,7 +629,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             onChange={(e) => setFilterActiveDrive(e.target.checked)}
             style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
           />
-          <span>Active Drive Only {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+          <span>Active Drive Only: {activeDrive ? `${activeDrive.collegeName} (${formatDriveDate(activeDrive.startDate)} - ${formatDriveDate(activeDrive.endDate)})` : ''}</span>
         </label>
 
         {/* Current Date Filter */}
@@ -786,12 +797,18 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
               const borderCol = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
               const badgeStyle = getRoleBadgeStyle(req.interview.role);
 
+              const collegeName = getCollegeNameFromRole(req.interview.role);
+              const isReqFromActiveDrive = isFromActiveDrive(req.interview.role);
+
               return (
                 <div
                   key={req.panel.id}
                   className="glass-card"
                   style={{
                     padding: '1.25rem 1.5rem',
+                    borderTop: '1px solid var(--border-glass)',
+                    borderRight: '1px solid var(--border-glass)',
+                    borderBottom: '1px solid var(--border-glass)',
                     borderLeft: `4px solid ${borderCol}`,
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -801,7 +818,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                   }}
                 >
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
                       <span style={{ 
                         fontSize: '0.65rem', 
                         background: badgeStyle.background, 
@@ -818,11 +835,42 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                         Availability Requested
                       </span>
                     </div>
-                    <div className="text-muted text-xs" style={{ marginBottom: '0.25rem' }}>
-                      Proposed Date Range: <strong>{dateRange}</strong>
-                    </div>
-                    <div className="text-muted text-xs">
-                      Duration: <strong>{req.interview.duration} minutes</strong>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {collegeName && (
+                        <div className="text-muted text-xs">
+                          College: <strong>{collegeName}</strong>
+                        </div>
+                      )}
+                      
+                      {isReqFromActiveDrive && activeDrive && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: '#0ea5e9',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          margin: '2px 0 4px 0'
+                        }}>
+                          <span style={{
+                            display: 'inline-block',
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: '#0ea5e9'
+                          }}></span>
+                          Active Drive: {activeDrive.collegeName} ({formatDriveDate(activeDrive.startDate)} - {formatDriveDate(activeDrive.endDate)})
+                        </div>
+                      )}
+
+                      <div className="text-muted text-xs">
+                        Proposed Date Range: <strong>{dateRange}</strong>
+                      </div>
+                      
+                      <div className="text-muted text-xs">
+                        Duration: <strong>{req.interview.duration} minutes</strong>
+                      </div>
                     </div>
                   </div>
                   <button
@@ -883,6 +931,9 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                 className="glass-card"
                 style={{
                   padding: '1.25rem 1.5rem',
+                  borderTop: '1px solid var(--border-glass)',
+                  borderRight: '1px solid var(--border-glass)',
+                  borderBottom: '1px solid var(--border-glass)',
                   borderLeft: `3px solid ${accentColor}`,
                   display: 'flex',
                   flexDirection: 'column',

@@ -143,6 +143,11 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
       return;
     }
 
+    if (startObj.getTime() < Date.now()) {
+      setErrorMsg('Cannot add available slots in the past.');
+      return;
+    }
+
     if (endObj.getTime() <= startObj.getTime()) {
       setErrorMsg('End time must be after start time.');
       return;
@@ -380,25 +385,40 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
               const start = new Date(slot.startTime);
               const end = new Date(slot.endTime);
               const isSelected = selectedSlots.includes(slot.id);
+              const isPast = start.getTime() < Date.now();
+
+              // Make sure past slots are never selected
+              const handleSelect = () => {
+                if (!isPast) {
+                  toggleSlotSelection(slot.id);
+                }
+              };
 
               return (
                 <div
                   key={slot.id}
-                  onClick={() => toggleSlotSelection(slot.id)}
-                  onMouseEnter={() => setHoveredSlotId(slot.id)}
+                  onClick={handleSelect}
+                  onMouseEnter={() => !isPast && setHoveredSlotId(slot.id)}
                   onMouseLeave={() => setHoveredSlotId(null)}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '1.25rem',
-                    background: isSelected ? 'rgba(99, 102, 241, 0.08)' : (hoveredSlotId === slot.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)'),
-                    border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
+                    background: isPast
+                      ? 'rgba(255, 255, 255, 0.01)'
+                      : (isSelected
+                          ? 'rgba(99, 102, 241, 0.08)'
+                          : (hoveredSlotId === slot.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)')),
+                    border: isPast
+                      ? '1px dashed rgba(255, 255, 255, 0.1)'
+                      : (isSelected ? '1px solid var(--primary)' : '1px solid var(--border-glass)'),
                     borderRadius: 'var(--radius-md)',
-                    cursor: 'pointer',
-                    transform: isSelected ? 'translateY(-2px)' : 'none',
-                    boxShadow: isSelected ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
+                    cursor: isPast ? 'not-allowed' : 'pointer',
+                    transform: (!isPast && isSelected) ? 'translateY(-2px)' : 'none',
+                    boxShadow: (!isPast && isSelected) ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
                     transition: 'all 0.2s ease',
+                    opacity: isPast ? 0.45 : 1,
                   }}
                 >
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -406,21 +426,36 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                       width: '20px',
                       height: '20px',
                       borderRadius: '4px',
-                      border: isSelected ? '2px solid var(--primary)' : '2px solid var(--border-glass)',
-                      background: isSelected ? 'var(--primary)' : 'transparent',
+                      border: isPast 
+                        ? '2px solid rgba(255, 255, 255, 0.15)' 
+                        : (isSelected ? '2px solid var(--primary)' : '2px solid var(--border-glass)'),
+                      background: isSelected && !isPast ? 'var(--primary)' : 'transparent',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       transition: 'all 0.15s ease',
                       flexShrink: 0
                     }}>
-                      {isSelected && (
+                      {isSelected && !isPast && (
                         <span style={{ color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }}>✓</span>
                       )}
                     </div>
                     <div>
-                      <span className="font-semibold block text-sm">
+                      <span className="font-semibold block text-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        {isPast && (
+                          <span style={{ 
+                            fontSize: '0.65rem', 
+                            color: '#ef4444', 
+                            background: 'rgba(239, 68, 68, 0.12)', 
+                            border: '1px solid rgba(239, 68, 68, 0.3)', 
+                            padding: '0.1rem 0.35rem', 
+                            borderRadius: '4px', 
+                            fontWeight: 700 
+                          }}>
+                            Expired
+                          </span>
+                        )}
                       </span>
                       <span className="text-xs text-muted">
                         {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
@@ -428,7 +463,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     </div>
                   </div>
                   <span className="text-muted text-xs">
-                    {isSelected ? 'Selected' : 'Click to select'}
+                    {isPast ? 'Expired' : (isSelected ? 'Selected' : 'Click to select')}
                   </span>
                 </div>
               );

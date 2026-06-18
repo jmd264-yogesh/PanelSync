@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required booking details' }, { status: 400 });
     }
 
+    const now = Date.now();
+    const hasPastSlot = slots.some((s: any) => new Date(s.startTime).getTime() < now);
+    if (hasPastSlot) {
+      return NextResponse.json({ error: 'Cannot book slots in the past.' }, { status: 400 });
+    }
+
     // 1. Look up panel and interview by token
     const result = await db.getInterviewByPanelToken(token);
     if (!result) {

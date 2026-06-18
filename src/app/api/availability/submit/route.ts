@@ -10,6 +10,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing token or invalid slots' }, { status: 400 });
     }
 
+    const now = Date.now();
+    const hasPastSlot = slots.some((s: any) => new Date(s.startTime).getTime() < now);
+    if (hasPastSlot) {
+      return NextResponse.json({ error: 'Cannot submit availability slots in the past.' }, { status: 400 });
+    }
+
     const success = await db.submitAvailability(token, slots);
     if (!success) {
       return NextResponse.json({ error: 'Invalid token or panel not found' }, { status: 404 });
