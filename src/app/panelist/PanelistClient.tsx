@@ -99,6 +99,33 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     return college.toLowerCase() === activeDrive.collegeName.toLowerCase();
   };
 
+  const getRoleBadgeStyle = (role: string) => {
+    const isL1Role = role.toLowerCase().includes('l1');
+    const isL2Role = role.toLowerCase().includes('l2');
+    
+    if (isL1Role) {
+      return {
+        background: 'rgba(14, 165, 233, 0.12)',
+        border: '1px solid rgba(14, 165, 233, 0.3)',
+        color: '#38bdf8',
+        label: 'L1 Round'
+      };
+    } else if (isL2Role) {
+      return {
+        background: 'rgba(124, 58, 237, 0.12)',
+        border: '1px solid rgba(124, 58, 237, 0.3)',
+        color: '#c084fc',
+        label: 'L2 Round'
+      };
+    }
+    return {
+      background: 'rgba(99, 102, 241, 0.08)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      color: 'var(--primary)',
+      label: 'General Round'
+    };
+  };
+
   // Memoized sorted and filtered interviews:
   // 1. Active drive first
   // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
@@ -558,13 +585,18 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {filteredSortedRequests.map((req) => {
               const dateRange = `${new Date(req.interview.startDate).toLocaleDateString()} - ${new Date(req.interview.endDate).toLocaleDateString()}`;
+              const isL1Role = req.interview.role.toLowerCase().includes('l1');
+              const isL2Role = req.interview.role.toLowerCase().includes('l2');
+              const borderCol = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
+              const badgeStyle = getRoleBadgeStyle(req.interview.role);
+
               return (
                 <div
                   key={req.panel.id}
                   className="glass-card"
                   style={{
                     padding: '1.25rem 1.5rem',
-                    borderLeft: '4px solid var(--primary)',
+                    borderLeft: `4px solid ${borderCol}`,
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -573,7 +605,18 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                   }}
                 >
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ 
+                        fontSize: '0.65rem', 
+                        background: badgeStyle.background, 
+                        border: badgeStyle.border, 
+                        borderRadius: '4px', 
+                        padding: '0.15rem 0.45rem', 
+                        color: badgeStyle.color,
+                        fontWeight: 700 
+                      }}>
+                        {badgeStyle.label}
+                      </span>
                       <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{req.interview.role}</span>
                       <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}>
                         Availability Requested
@@ -659,7 +702,15 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                     </div>
                     <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{interview.candidateEmail}</div>
                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '4px', padding: '0.15rem 0.5rem', color: 'var(--primary)' }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        background: getRoleBadgeStyle(interview.role).background, 
+                        border: getRoleBadgeStyle(interview.role).border, 
+                        borderRadius: '4px', 
+                        padding: '0.15rem 0.5rem', 
+                        color: getRoleBadgeStyle(interview.role).color,
+                        fontWeight: 600
+                      }}>
                         {interview.role}
                       </span>
                       <span className="text-muted" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>

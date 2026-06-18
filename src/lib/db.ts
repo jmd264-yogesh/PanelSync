@@ -641,12 +641,15 @@ export const db = {
       
       let activeToken = tokenInfo?.token;
       let recruiterEmail = tokenInfo?.email;
-      if (!activeToken || !recruiterEmail) {
-        const anyToken = await getAnyValidAccessToken();
-        if (anyToken) {
+      let recruiterUserId = '';
+      
+      const anyToken = await getAnyValidAccessToken();
+      if (anyToken) {
+        if (!activeToken) {
           activeToken = anyToken.token;
           recruiterEmail = anyToken.email;
         }
+        recruiterUserId = anyToken.userId;
       }
       
       const ccEmails = recruiterEmail ? await db.getRecruiterCCEmails(recruiterEmail) : [];
@@ -738,6 +741,62 @@ export const db = {
             }
           }
         }
+
+        // 4. Send confirmation Teams message to panel members
+        if (activeToken && recruiterUserId && interview.scheduledSlotStart) {
+          try {
+            const timingString = new Date(interview.scheduledSlotStart).toLocaleString('en-US', {
+              weekday: 'short', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+            });
+            
+            const freshInterview = await db.getInterview(interview.id);
+            if (freshInterview) {
+              const finalJoinUrl = freshInterview.teamsMeetingUrl || '';
+              
+              for (const panel of freshInterview.panels) {
+                try {
+                  const chat = await graph.createOneOnOneChat(recruiterUserId, panel.userId, activeToken);
+                  
+                  const htmlMessage = `
+                    <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #10b981; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                      <h3 style="margin-top: 0; color: #10b981; font-size: 16px; font-weight: 600;">Candidate Assigned to Interview (Auto-Mapped)</h3>
+                      <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">Hello <strong>${panel.name}</strong>,</p>
+                      <p style="margin: 8px 0; font-size: 14px; color: #94a3b8;">
+                        A candidate has been automatically mapped to your scheduled interview.
+                      </p>
+                      <div style="background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; margin: 12px 0; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size: 13px; color: #94a3b8; margin-bottom: 2px;">Candidate Name</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${candidate.name}</div>
+                        <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Role / Round</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${interview.role}</div>
+                        <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Scheduled Timing</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${timingString}</div>
+                      </div>
+                      ${finalJoinUrl ? `
+                      <p style="font-size: 14px; color: #94a3b8; margin-bottom: 16px;">
+                        You can join the Teams meeting using the button below:
+                      </p>
+                      <div style="margin-top: 16px; margin-bottom: 12px;">
+                        <a href="${finalJoinUrl}" style="background-color: #10b981; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">
+                          Join Teams Meeting
+                        </a>
+                      </div>
+                      ` : ''}
+                    </div>
+                  `;
+                  
+                  await graph.sendTeamsMessage(chat.id, htmlMessage, activeToken);
+                } catch (chatErr) {
+                  console.error(`Failed to send auto-mapping Teams notification to panelist ${panel.email}:`, chatErr);
+                }
+              }
+            }
+          } catch (notifErr) {
+            console.error('Failed to process auto-mapping notifications:', notifErr);
+          }
+        }
+
         mappedCount++;
       };
 

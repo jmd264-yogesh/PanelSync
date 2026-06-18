@@ -27,6 +27,103 @@ interface CandidatesTabProps {
   activeDrive: Drive | null;
 }
 
+// Helper to compute L1 & L2 round results for a candidate
+function getCandidateRoundResults(candidate: UploadedCandidate, interviewsList: Interview[]) {
+  const candidateInterviews = interviewsList.filter(
+    (i) => i.candidateEmail.toLowerCase() === candidate.email.toLowerCase()
+  );
+
+  const l1Interviews = candidateInterviews.filter((i) =>
+    i.role.toLowerCase().includes('l1')
+  );
+  const l2Interviews = candidateInterviews.filter((i) =>
+    i.role.toLowerCase().includes('l2')
+  );
+
+  const getRoundStatus = (roundInterviews: Interview[], roundName: 'L1' | 'L2') => {
+    if (roundInterviews.length === 0) {
+      const os = candidate.outcomeStatus;
+      if (roundName === 'L1') {
+        if (os === 'PASSED_L1' || os === 'PASSED_L2' || os === 'SELECTED') {
+          return 'Passed';
+        }
+        if (os === 'REJECTED') {
+          return 'Rejected';
+        }
+        return 'Not Started';
+      } else {
+        if (os === 'PASSED_L2' || os === 'SELECTED') {
+          return 'Passed';
+        }
+        if (os === 'REJECTED' && candidate.outcomeStatus === 'PASSED_L1') {
+          return 'Rejected';
+        }
+        return 'Not Started';
+      }
+    }
+
+    const latestInterview = [...roundInterviews].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0];
+
+    if (latestInterview.status === 'CANCELLED') {
+      return 'Cancelled';
+    }
+
+    const panels = latestInterview.panels || [];
+    const submittedPanels = panels.filter((p) => p.status === 'SUBMITTED');
+
+    if (submittedPanels.length > 0) {
+      const hasRejected = submittedPanels.some((p) => p.decision === 'REJECTED');
+      if (hasRejected) {
+        return 'Rejected';
+      }
+      const hasPassed = submittedPanels.some((p) => p.decision === 'PASSED');
+      if (hasPassed) {
+        return 'Passed';
+      }
+    }
+
+    if (latestInterview.status === 'SCHEDULED') {
+      return 'Pending Feedback';
+    }
+
+    return 'Scheduled';
+  };
+
+  let l1Result = getRoundStatus(l1Interviews, 'L1');
+  let l2Result = getRoundStatus(l2Interviews, 'L2');
+
+  const os = candidate.outcomeStatus;
+  if (os === 'PASSED_L1') {
+    l1Result = 'Passed';
+  } else if (os === 'PASSED_L2' || os === 'SELECTED') {
+    l1Result = 'Passed';
+    l2Result = 'Passed';
+  } else if (os === 'REJECTED') {
+    const hasL2Rejected = l2Interviews.some((i) => i.panels.some((p) => p.decision === 'REJECTED'));
+    const hasL1Rejected = l1Interviews.some((i) => i.panels.some((p) => p.decision === 'REJECTED'));
+
+    if (hasL2Rejected) {
+      l1Result = 'Passed';
+      l2Result = 'Rejected';
+    } else if (hasL1Rejected) {
+      l1Result = 'Rejected';
+      l2Result = 'Not Started';
+    } else {
+      if (l2Interviews.length > 0) {
+        l1Result = 'Passed';
+        l2Result = 'Rejected';
+      } else {
+        l1Result = 'Rejected';
+        l2Result = 'Not Started';
+      }
+    }
+  }
+
+  return { l1Result, l2Result };
+}
+
 export default function CandidatesTab({
   candidates,
   setCandidates,
@@ -400,6 +497,72 @@ export default function CandidatesTab({
     }
   };
 
+  const handleExportCandidates = () => {
+    if (filteredCandidates.length === 0) {
+      toast.error('No candidates to export.');
+      return;
+    }
+
+    try {
+      const dataToExport = filteredCandidates.map((candidate) => {
+        let mappedIntv = candidate.mappedInterviewId
+          ? interviews.find((i) => i.id === candidate.mappedInterviewId)
+          : null;
+        if (!mappedIntv && candidate.email) {
+          mappedIntv = interviews.find((i) => 
+            i.candidateEmail.toLowerCase() === candidate.email.toLowerCase() &&
+            i.candidateName !== 'Pending Assignment' &&
+            i.candidateEmail !== 'pending@assign.com'
+          ) || null;
+        }
+
+        const { l1Result, l2Result } = getCandidateRoundResults(candidate, interviews);
+
+        const mappedInterviewStr = mappedIntv 
+          ? `${mappedIntv.role} (${mappedIntv.scheduledSlotStart ? new Date(mappedIntv.scheduledSlotStart).toLocaleString() : 'Pending Slot'})`
+          : '—';
+
+        return {
+          'Candidate Name': candidate.name,
+          'Candidate Email': candidate.email,
+          'Candidate College': candidate.college || '—',
+          'College of Drive': candidate.collegeDrive || '—',
+          'Drive Date': candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : '—',
+          'Uploaded At': new Date(candidate.createdAt).toLocaleDateString(),
+          'Queue Status': candidate.status === 'MAPPED' || !!mappedIntv ? 'Mapped' : 'Waiting',
+          'L1 Result': l1Result,
+          'L2 Result': l2Result,
+          'Mapped Interview': mappedInterviewStr,
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      
+      // Auto-fit column widths
+      const colWidths = Object.keys(dataToExport[0]).map((key) => {
+        const maxLength = Math.max(
+          key.length,
+          ...dataToExport.map((row: any) => String(row[key] || '').length)
+        );
+        return { wch: maxLength + 2 };
+      });
+      worksheet['!cols'] = colWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Candidates');
+      
+      const fileName = activeDrive 
+        ? `Candidates_Drive_${activeDrive.collegeName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`
+        : `Candidate_Queue_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+      toast.success('Candidate list exported successfully!');
+    } catch (err: any) {
+      console.error('Failed to export candidates:', err);
+      toast.error('Failed to export candidate list.');
+    }
+  };
+
   // ── Filtered List ─────────────────────────────────────────────────────────
   const filteredCandidates = candidates.filter((c) => {
     const matchesQuery =
@@ -411,7 +574,8 @@ export default function CandidatesTab({
       (c.college && c.college.toLowerCase() === candidateCollegeFilter.toLowerCase());
     const matchesDate = candidateDateFilter === 'all' || c.preferredDate === candidateDateFilter;
     const matchesActiveDrive = !scopeToActiveDrive || !activeDrive ||
-      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase());
+      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
+      (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase());
     return matchesQuery && matchesStatus && matchesCollege && matchesDate && matchesActiveDrive;
   });
 
@@ -582,7 +746,26 @@ export default function CandidatesTab({
                 List of candidates uploaded and waiting for/mapped to L1 interviews.
               </p>
             </div>
-            <div className="flex-gap-2">
+            <div className="flex-gap-2" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                onClick={handleExportCandidates}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: '0.75rem',
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--border-glass)',
+                  color: 'var(--text-main)',
+                  cursor: 'pointer'
+                }}
+              >
+                <span>Export to Excel</span>
+              </button>
               <div style={{ position: 'relative', width: '180px' }}>
                 <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
@@ -705,7 +888,8 @@ export default function CandidatesTab({
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Date</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Outcome</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L1 Result</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L2 Result</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
                     <th style={{ padding: '0.75rem 1rem', width: '220px' }}></th>
                   </tr>
@@ -823,13 +1007,24 @@ export default function CandidatesTab({
                         </td>
                         <td style={{ padding: '1rem' }}>
                           {(() => {
-                            const os = (candidate as any).outcomeStatus;
-                            if (!os || os === 'PENDING') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending</span>;
-                            if (os === 'PASSED_L1') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Passed L1</span>;
-                            if (os === 'PASSED_L2') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Passed L2</span>;
-                            if (os === 'SELECTED') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Selected</span>;
-                            if (os === 'REJECTED') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
-                            return <span className="badge" style={{ fontSize: '0.62rem' }}>{os}</span>;
+                            const { l1Result } = getCandidateRoundResults(candidate, interviews);
+                            if (l1Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Passed</span>;
+                            if (l1Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                            if (l1Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
+                            if (l1Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Scheduled</span>;
+                            if (l1Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
+                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
+                          })()}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          {(() => {
+                            const { l2Result } = getCandidateRoundResults(candidate, interviews);
+                            if (l2Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem', background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: '#34d399' }}>Passed</span>;
+                            if (l2Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                            if (l2Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
+                            if (l2Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Scheduled</span>;
+                            if (l2Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
+                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
                           })()}
                         </td>
                         <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
@@ -965,7 +1160,7 @@ export default function CandidatesTab({
 
                   {candidates.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <td colSpan={10} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                         No candidates registered in the queue. Download the template on the left and upload candidates.
                       </td>
                     </tr>

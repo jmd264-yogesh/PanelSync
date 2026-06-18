@@ -218,6 +218,52 @@ export async function POST(request: NextRequest) {
           joinUrl: teamsMeetingUrl,
           candidateName: finalCandidateName,
         });
+
+        // Notify panelist via Teams if a candidate is assigned
+        const hasCandidate = finalCandidateName && finalCandidateName !== 'Pending Assignment';
+        if (hasCandidate) {
+          try {
+            const timingString = new Date(slotStart).toLocaleString('en-US', {
+              weekday: 'short', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+            });
+
+            // Create 1:1 chat between recruiter and panelist
+            const chat = await graph.createOneOnOneChat(tokenInfo.userId, panel.userId, tokenInfo.token);
+
+            const htmlMessage = `
+              <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #10b981; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <h3 style="margin-top: 0; color: #10b981; font-size: 16px; font-weight: 600;">Candidate Assigned to Interview</h3>
+                <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">Hello <strong>${panel.name}</strong>,</p>
+                <p style="margin: 8px 0; font-size: 14px; color: #94a3b8;">
+                  A candidate has been assigned to your scheduled interview round.
+                </p>
+                <div style="background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; margin: 12px 0; border: 1px solid rgba(255,255,255,0.05);">
+                  <div style="font-size: 13px; color: #94a3b8; margin-bottom: 2px;">Candidate Name</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${finalCandidateName}</div>
+                  <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Role / Round</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${interview.role}</div>
+                  <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Scheduled Timing</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${timingString}</div>
+                </div>
+                ${teamsMeetingUrl ? `
+                <p style="font-size: 14px; color: #94a3b8; margin-bottom: 16px;">
+                  You can join the Teams meeting using the button below:
+                </p>
+                <div style="margin-top: 16px; margin-bottom: 12px;">
+                  <a href="${teamsMeetingUrl}" style="background-color: #10b981; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">
+                    Join Teams Meeting
+                  </a>
+                </div>
+                ` : ''}
+              </div>
+            `;
+
+            await graph.sendTeamsMessage(chat.id, htmlMessage, tokenInfo.token);
+          } catch (chatError) {
+            console.error(`Failed to send confirmation Teams message to panel ${panel.email}:`, chatError);
+          }
+        }
       }
     }
 

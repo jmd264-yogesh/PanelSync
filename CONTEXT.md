@@ -195,7 +195,10 @@ activeDrive: Drive | null (passed prop, updates default timing configs)
 ```
 
 #### `CandidatesTab.tsx` — self-manages UI state  
-Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews. Integrates `activeDrive` to prefill date and college defaults.
+Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews.
+- **Scoping & Filters**: Integrates `activeDrive` to default filter scoping to the active drive on load (matching candidate's college or drive college). Allows filtering by status, college (drive), and drive date.
+- **Split L1/L2 Results**: Displays candidate outcomes under separate **L1 Result** and **L2 Result** columns, calculated dynamically from actual interview panel decisions and `outcomeStatus` values.
+- **Excel Export**: Features an **Export to Excel** button to download the filtered candidate list as a formatted `.xlsx` spreadsheet with auto-fitted columns.
 
 #### `RecruitersTab.tsx` — fully self-contained (no props)  
 Manages the recruiter access list, add/delete recruiters.
