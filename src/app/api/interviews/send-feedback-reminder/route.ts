@@ -66,12 +66,7 @@ export async function POST(request: NextRequest) {
     const finalPanels = targetPanels.length > 0 ? targetPanels : interview.panels;
 
     for (const panel of finalPanels) {
-      // Skip self-messages
-      if (senderEmail.toLowerCase() === panel.email.toLowerCase()) {
-        skipped.push(panel.email);
-        console.warn(`[FeedbackReminder] Skipping self-message for ${panel.email}`);
-        continue;
-      }
+
 
       const feedbackLink = `${appUrl}/feedback/${panel.token}`;
 

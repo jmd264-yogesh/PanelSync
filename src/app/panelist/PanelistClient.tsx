@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PanelistInterview } from '@/lib/db';
+import { PanelistInterview, Interview, InterviewPanel, Drive } from '@/lib/db';
+import AvailabilityClient from '../availability/[token]/AvailabilityClient';
 import {
   Video,
   CheckCircle,
@@ -11,6 +12,8 @@ import {
   MessageSquare,
   Loader2,
   CalendarCheck,
+  Calendar,
+  AlertCircle
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -25,8 +28,10 @@ import {
 
 interface PanelistClientProps {
   initialInterviews: PanelistInterview[];
+  initialRequests: { interview: Interview; panel: InterviewPanel }[];
   panelistRoles: string[];
   panelistName: string;
+  activeDrive: Drive | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -53,14 +58,66 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: '#ef4444',
 };
 
-export default function PanelistClient({ initialInterviews, panelistRoles, panelistName }: PanelistClientProps) {
+function parseFeedbackSafely(rawFeedback: string | null | undefined) {
+  if (!rawFeedback) return null;
+  if (rawFeedback.trim().startsWith('{')) {
+    try {
+      return JSON.parse(rawFeedback);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+export default function PanelistClient({ initialInterviews, initialRequests, panelistRoles, panelistName, activeDrive }: PanelistClientProps) {
   const [interviews, setInterviews] = useState<PanelistInterview[]>(initialInterviews);
+  const [pendingRequests, setPendingRequests] = useState<{ interview: Interview; panel: InterviewPanel }[]>(initialRequests);
+  const [selectedRequest, setSelectedRequest] = useState<{ interview: Interview; panel: InterviewPanel } | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, string>>({});
   const [submittingFeedback, setSubmittingFeedback] = useState<Record<string, boolean>>({});
   const [updatingStatus, setUpdatingStatus] = useState<Record<string, boolean>>({});
   const [feedbackError, setFeedbackError] = useState<Record<string, string | null>>({});
   const [isEditing, setIsEditing] = useState<Record<string, boolean>>({});
   const [pendingL1PassConfirm, setPendingL1PassConfirm] = useState<PanelistInterview | null>(null);
+
+  // Filter states
+  const [filterActiveDrive, setFilterActiveDrive] = useState(!!activeDrive);
+  const [filterToday, setFilterToday] = useState(false);
+
+  // Accordion state for feedback cards
+  const [expandedFeedbacks, setExpandedFeedbacks] = useState<Record<string, boolean>>({});
+  const [l1FeedbacksForCandidate, setL1FeedbacksForCandidate] = useState<Record<string, { panelId: string; panelistName: string; panelistEmail: string; role: string; decision: string; feedback: string; submittedAt: string | null }[]>>({});
+  const [loadingL1Feedbacks, setLoadingL1Feedbacks] = useState<Record<string, boolean>>({});
+  
+  // Round Tab state for filtering L1 vs L2 candidates
+  const [activeRoundTab, setActiveRoundTab] = useState<'ALL' | 'L1' | 'L2'>('ALL');
+
+  const fetchL1FeedbackForCandidate = async (candidateEmail: string, panelId: string) => {
+    if (l1FeedbacksForCandidate[panelId]) return;
+    setLoadingL1Feedbacks((prev) => ({ ...prev, [panelId]: true }));
+    try {
+      const res = await fetch(`/api/panelist/l1-feedback?email=${encodeURIComponent(candidateEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setL1FeedbacksForCandidate((prev) => ({ ...prev, [panelId]: data.feedbacks }));
+      }
+    } catch (err) {
+      console.error('Failed to load L1 feedbacks:', err);
+    } finally {
+      setLoadingL1Feedbacks((prev) => ({ ...prev, [panelId]: false }));
+    }
+  };
+
+  const toggleFeedbackExpansion = (panelId: string, isL2Role: boolean, candidateEmail: string) => {
+    setExpandedFeedbacks((prev) => {
+      const nextState = !prev[panelId];
+      if (nextState && isL2Role && candidateEmail) {
+        fetchL1FeedbackForCandidate(candidateEmail, panelId);
+      }
+      return { ...prev, [panelId]: nextState };
+    });
+  };
 
   // Structured score states keyed by panelId
   const [l1Ratings, setL1Ratings] = useState<Record<string, { coding: number; communication: number; fundamentals: number; codingNotes: string; commNotes: string; fundNotes: string; comments: string }>>({});
@@ -70,12 +127,187 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
   const isL1 = panelistRoles.includes('L1');
   const isL2 = panelistRoles.includes('L2');
 
+  const getCollegeNameFromRole = (role: string): string => {
+    const parts = role.split(' - ');
+    return parts.length > 1 ? parts[1].trim() : '';
+  };
+
+  const isFromActiveDrive = (role: string): boolean => {
+    if (!activeDrive || !activeDrive.collegeName) return false;
+    const college = getCollegeNameFromRole(role);
+    return college.toLowerCase() === activeDrive.collegeName.toLowerCase();
+  };
+
+  const getRoleBadgeStyle = (role: string) => {
+    const isL1Role = role.toLowerCase().includes('l1');
+    const isL2Role = role.toLowerCase().includes('l2');
+    
+    if (isL1Role) {
+      return {
+        background: 'rgba(14, 165, 233, 0.12)',
+        border: '1px solid rgba(14, 165, 233, 0.3)',
+        color: '#38bdf8',
+        label: 'L1 Round'
+      };
+    } else if (isL2Role) {
+      return {
+        background: 'rgba(124, 58, 237, 0.12)',
+        border: '1px solid rgba(124, 58, 237, 0.3)',
+        color: '#c084fc',
+        label: 'L2 Round'
+      };
+    }
+    return {
+      background: 'rgba(99, 102, 241, 0.08)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      color: 'var(--primary)',
+      label: 'General Round'
+    };
+  };
+
+  // Memoized sorted and filtered interviews:
+  // 1. Active drive first
+  // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
+  // 3. Alphabetically by college name
+  const filteredSortedInterviews = React.useMemo(() => {
+    let result = [...interviews];
+
+    if (filterActiveDrive && activeDrive) {
+      result = result.filter((i) => isFromActiveDrive(i.role));
+    }
+
+    if (filterToday) {
+      const todayStr = new Date().toDateString();
+      result = result.filter((i) => {
+        if (!i.scheduledSlotStart) return false;
+        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+      });
+    }
+
+    if (activeRoundTab === 'L1') {
+      result = result.filter((i) => i.role.toLowerCase().includes('l1'));
+    } else if (activeRoundTab === 'L2') {
+      result = result.filter((i) => i.role.toLowerCase().includes('l2'));
+    }
+
+    return result.sort((a, b) => {
+      const aActive = isFromActiveDrive(a.role);
+      const bActive = isFromActiveDrive(b.role);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const aTime = new Date(a.scheduledSlotStart).getTime();
+      const bTime = new Date(b.scheduledSlotStart).getTime();
+      if (aTime !== bTime) {
+        return aTime - bTime;
+      }
+
+      const aCollege = getCollegeNameFromRole(a.role);
+      const bCollege = getCollegeNameFromRole(b.role);
+      return aCollege.localeCompare(bCollege);
+    });
+  }, [interviews, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
+
+  // Memoized sorted and filtered pending requests (slots):
+  // 1. Active drive first
+  // 2. Chronologically descending (latest startDate first)
+  // 3. Fallback to newest creation time (createdAt) first
+  const filteredSortedRequests = React.useMemo(() => {
+    let result = [...pendingRequests];
+
+    if (filterActiveDrive && activeDrive) {
+      result = result.filter((req) => isFromActiveDrive(req.interview.role));
+    }
+
+    if (filterToday) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      result = result.filter((req) => {
+        const start = new Date(req.interview.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(req.interview.endDate);
+        end.setHours(23, 59, 59, 999);
+        return today >= start && today <= end;
+      });
+    }
+
+    if (activeRoundTab === 'L1') {
+      result = result.filter((req) => req.interview.role.toLowerCase().includes('l1'));
+    } else if (activeRoundTab === 'L2') {
+      result = result.filter((req) => req.interview.role.toLowerCase().includes('l2'));
+    }
+
+    return result.sort((a, b) => {
+      const aActive = isFromActiveDrive(a.interview.role);
+      const bActive = isFromActiveDrive(b.interview.role);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const aStart = new Date(a.interview.startDate).getTime();
+      const bStart = new Date(b.interview.startDate).getTime();
+      if (aStart !== bStart) {
+        return bStart - aStart; // latest first
+      }
+
+      const aCreate = a.interview.createdAt ? new Date(a.interview.createdAt).getTime() : 0;
+      const bCreate = b.interview.createdAt ? new Date(b.interview.createdAt).getTime() : 0;
+      return bCreate - aCreate; // latest first
+    });
+  }, [pendingRequests, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
+
+  // Memoized dynamic counts for L1 / L2 tabs (taking into account active drive and date filters)
+  const roundCounts = React.useMemo(() => {
+    let tempReqs = [...pendingRequests];
+    if (filterActiveDrive && activeDrive) {
+      tempReqs = tempReqs.filter((req) => isFromActiveDrive(req.interview.role));
+    }
+    if (filterToday) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      tempReqs = tempReqs.filter((req) => {
+        const start = new Date(req.interview.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(req.interview.endDate);
+        end.setHours(23, 59, 59, 999);
+        return today >= start && today <= end;
+      });
+    }
+
+    let tempInterviews = [...interviews];
+    if (filterActiveDrive && activeDrive) {
+      tempInterviews = tempInterviews.filter((i) => isFromActiveDrive(i.role));
+    }
+    if (filterToday) {
+      const todayStr = new Date().toDateString();
+      tempInterviews = tempInterviews.filter((i) => {
+        if (!i.scheduledSlotStart) return false;
+        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+      });
+    }
+
+    const l1Reqs = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l1')).length;
+    const l1Ints = tempInterviews.filter(i => i.role.toLowerCase().includes('l1')).length;
+
+    const l2Reqs = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l2')).length;
+    const l2Ints = tempInterviews.filter(i => i.role.toLowerCase().includes('l2')).length;
+
+    return {
+      all: tempReqs.length + tempInterviews.length,
+      l1: l1Reqs + l1Ints,
+      l2: l2Reqs + l2Ints,
+    };
+  }, [interviews, pendingRequests, filterActiveDrive, filterToday, activeDrive]);
+
   const refreshInterviews = async () => {
     try {
-      const res = await fetch('/api/panelist/interviews');
-      if (res.ok) setInterviews(await res.json());
+      const [interviewsRes, requestsRes] = await Promise.all([
+        fetch('/api/panelist/interviews'),
+        fetch('/api/panelist/requests')
+      ]);
+      if (interviewsRes.ok) setInterviews(await interviewsRes.ok ? await interviewsRes.json() : []);
+      if (requestsRes.ok) setPendingRequests(await requestsRes.ok ? await requestsRes.json() : []);
     } catch (err) {
-      console.error('Failed to refresh interviews', err);
+      console.error('Failed to refresh interviews or requests', err);
     }
   };
 
@@ -373,15 +605,265 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
         </p>
       </div>
 
-      {interviews.length === 0 ? (
+      {/* Filter Bar */}
+      <div className="glass-card" style={{ padding: '1rem 1.5rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--border-glass)' }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filters:</div>
+        
+        {/* Active Drive Scope */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)' }}>
+          <input
+            type="checkbox"
+            checked={filterActiveDrive && !!activeDrive}
+            disabled={!activeDrive}
+            onChange={(e) => setFilterActiveDrive(e.target.checked)}
+            style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
+          />
+          <span>Active Drive Only {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+        </label>
+
+        {/* Current Date Filter */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filterToday}
+            onChange={(e) => setFilterToday(e.target.checked)}
+            style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+          />
+          <span>Today's Date Only ({new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})</span>
+        </label>
+
+        {/* Reset Filters Link */}
+        {(filterActiveDrive || filterToday) && (
+          <button
+            onClick={() => { setFilterActiveDrive(false); setFilterToday(false); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--primary)',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginLeft: 'auto',
+              padding: 0,
+              textDecoration: 'underline'
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
+ 
+      {/* Round Tab Switcher */}
+      <div style={{
+        display: 'flex',
+        gap: '0.35rem',
+        marginBottom: '2rem',
+        padding: '0.25rem',
+        background: 'rgba(255, 255, 255, 0.01)',
+        border: '1px solid var(--border-glass)',
+        borderRadius: '8px',
+        width: 'fit-content'
+      }}>
+        <button
+          onClick={() => setActiveRoundTab('ALL')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'ALL' ? 'var(--primary-glow)' : 'transparent',
+            color: activeRoundTab === 'ALL' ? 'var(--primary)' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>All Panels</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'ALL' ? 'var(--primary)' : 'var(--border-glass)',
+            color: activeRoundTab === 'ALL' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.all}
+          </span>
+        </button>
+        
+        <button
+          onClick={() => setActiveRoundTab('L1')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'L1' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+            color: activeRoundTab === 'L1' ? '#0ea5e9' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>L1 Round</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'L1' ? '#0ea5e9' : 'var(--border-glass)',
+            color: activeRoundTab === 'L1' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.l1}
+          </span>
+        </button>
+        
+        <button
+          onClick={() => setActiveRoundTab('L2')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'L2' ? 'rgba(124, 58, 237, 0.1)' : 'transparent',
+            color: activeRoundTab === 'L2' ? '#7c3aed' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>L2 Round</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'L2' ? '#7c3aed' : 'var(--border-glass)',
+            color: activeRoundTab === 'L2' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.l2}
+          </span>
+        </button>
+      </div>
+
+      {/* Pending Action / Slot Requests Section */}
+      <div style={{ marginBottom: '2.5rem' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Calendar size={18} className="text-primary" />
+          Pending Action / Slot Requests
+          {pendingRequests.length > 0 && (
+            <span className="badge badge-pending" style={{ fontSize: '0.65rem', marginLeft: '8px' }}>
+              {filteredSortedRequests.length !== pendingRequests.length 
+                ? `${filteredSortedRequests.length} of ${pendingRequests.length} filtered` 
+                : `${pendingRequests.length} action required`}
+            </span>
+          )}
+        </h2>
+
+        {filteredSortedRequests.length === 0 ? (
+          <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-glass)' }}>
+            <span className="text-muted text-sm">
+              {pendingRequests.length === 0 
+                ? 'No pending slot requests at the moment.' 
+                : 'No pending slot requests match the active filters.'}
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {filteredSortedRequests.map((req) => {
+              const dateRange = `${new Date(req.interview.startDate).toLocaleDateString('en-US')} - ${new Date(req.interview.endDate).toLocaleDateString('en-US')}`;
+              const isL1Role = req.interview.role.toLowerCase().includes('l1');
+              const isL2Role = req.interview.role.toLowerCase().includes('l2');
+              const borderCol = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
+              const badgeStyle = getRoleBadgeStyle(req.interview.role);
+
+              return (
+                <div
+                  key={req.panel.id}
+                  className="glass-card"
+                  style={{
+                    padding: '1.25rem 1.5rem',
+                    borderLeft: `4px solid ${borderCol}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '1rem',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ 
+                        fontSize: '0.65rem', 
+                        background: badgeStyle.background, 
+                        border: badgeStyle.border, 
+                        borderRadius: '4px', 
+                        padding: '0.15rem 0.45rem', 
+                        color: badgeStyle.color,
+                        fontWeight: 700 
+                      }}>
+                        {badgeStyle.label}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{req.interview.role}</span>
+                      <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}>
+                        Availability Requested
+                      </span>
+                    </div>
+                    <div className="text-muted text-xs" style={{ marginBottom: '0.25rem' }}>
+                      Proposed Date Range: <strong>{dateRange}</strong>
+                    </div>
+                    <div className="text-muted text-xs">
+                      Duration: <strong>{req.interview.duration} minutes</strong>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setSelectedRequest(req)}
+                  >
+                    Provide Availability / Select Slot
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+          Scheduled Assignments
+          {filteredSortedInterviews.length !== interviews.length && (
+            <span className="text-muted text-xs" style={{ marginLeft: '8px', fontWeight: 400 }}>
+              ({filteredSortedInterviews.length} of {interviews.length} shown)
+            </span>
+          )}
+        </h2>
+      </div>
+
+      {filteredSortedInterviews.length === 0 ? (
         <div className="glass-card text-center" style={{ padding: '4rem 2rem' }}>
           <CalendarCheck size={44} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.3, display: 'block' }} />
-          <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>No Interviews Yet</p>
-          <p className="text-muted text-sm">Once a recruiter schedules an interview and assigns you as a panelist, it will appear here.</p>
+          <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>
+            {interviews.length === 0 ? 'No Interviews Yet' : 'No Matching Interviews'}
+          </p>
+          <p className="text-muted text-sm">
+            {interviews.length === 0 
+              ? 'Once a recruiter schedules an interview and assigns you as a panelist, it will appear here.'
+              : 'Try adjusting your filters above to see other scheduled assignments.'}
+          </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {interviews.map((interview) => {
+          {filteredSortedInterviews.map((interview) => {
             const outcomeStatus = interview.outcomeStatus || 'PENDING';
             const statusColor = STATUS_COLOR[outcomeStatus] || '#94a3b8';
             const badgeClass = STATUS_BADGE[outcomeStatus] || 'badge-pending';
@@ -391,66 +873,241 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
             const isSubmitting = submittingFeedback[interview.panelId];
             const isUpdating = updatingStatus[interview.panelId];
 
+            const isL1Role = interview.role.toLowerCase().includes('l1');
+            const isL2Role = interview.role.toLowerCase().includes('l2');
+            const accentColor = isL1Role ? '#0ea5e9' : (isL2Role ? '#7c3aed' : 'var(--primary)');
+
             return (
               <div
                 key={interview.panelId}
                 className="glass-card"
-                style={{ padding: '1.5rem', borderLeft: `4px solid ${statusColor}` }}
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  borderLeft: `3px solid ${accentColor}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}
               >
                 {/* Top row: candidate info + status */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.25rem' }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: '50%',
-                    background: `${statusColor}22`, border: `1.5px solid ${statusColor}44`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.85rem', fontWeight: 700, color: statusColor, flexShrink: 0,
-                  }}>
-                    {initials || <User size={18} />}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      background: `color-mix(in srgb, ${accentColor} 10%, transparent)`,
+                      border: `1px solid color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.8rem', fontWeight: 700, color: accentColor, flexShrink: 0,
+                    }}>
+                      {initials || <User size={16} />}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem', fontFamily: 'var(--font-heading)' }}>{interview.candidateName}</span>
+                        <span style={{ 
+                          fontSize: '0.68rem', 
+                          background: getRoleBadgeStyle(interview.role).background, 
+                          border: getRoleBadgeStyle(interview.role).border, 
+                          borderRadius: '4px', 
+                          padding: '0.08rem 0.35rem', 
+                          color: getRoleBadgeStyle(interview.role).color,
+                          fontWeight: 600
+                        }}>
+                          {interview.role}
+                        </span>
+                      </div>
+                      <div className="text-muted text-xs" style={{ marginTop: '0.1rem' }}>{interview.candidateEmail}</div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem' }}>{interview.candidateName}</span>
-                      <span className={`badge ${badgeClass}`} style={{ fontSize: '0.6rem' }}>
-                        {STATUS_LABEL[outcomeStatus] || outcomeStatus}
-                      </span>
-                    </div>
-                    <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{interview.candidateEmail}</div>
-                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '4px', padding: '0.15rem 0.5rem', color: 'var(--primary)' }}>
-                        {interview.role}
-                      </span>
-                      <span className="text-muted" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Clock size={11} /> {interview.duration} min
-                      </span>
-                    </div>
+
+                  {/* Minimal status indicator */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: statusColor }}></span>
+                    <span>{STATUS_LABEL[outcomeStatus] || outcomeStatus}</span>
                   </div>
                 </div>
 
                 {/* Scheduled time + Teams link */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
-                  <div>
-                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Scheduled</div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatDateTime(interview.scheduledSlotStart)}</div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '1rem',
+                  padding: '0.5rem 0',
+                  borderBottom: '1px solid var(--border-glass)',
+                  borderTop: '1px solid var(--border-glass)',
+                  marginTop: '0.25rem',
+                  marginBottom: '0.25rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <Calendar size={13} style={{ color: 'var(--text-muted)' }} />
+                    <span style={{ fontWeight: 550, color: 'var(--text-main)' }}>{formatDateTime(interview.scheduledSlotStart)}</span>
+                    <span>•</span>
+                    <Clock size={12} style={{ color: 'var(--text-muted)' }} />
+                    <span>{interview.duration} min</span>
                   </div>
                   {interview.teamsMeetingUrl && (
                     <a
                       href={interview.teamsMeetingUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-primary btn-sm"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        color: 'var(--primary)',
+                        textDecoration: 'none',
+                        transition: 'color 0.2s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--primary)'}
                     >
-                      <Video size={13} /> Join Teams Meeting
+                      <Video size={13} />
+                      <span>Join Teams Call</span>
                     </a>
                   )}
                 </div>
 
                 {/* Feedback section */}
                 <div>
-                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <MessageSquare size={11} /> Feedback
+                  <div style={{ display: 'flex', justifyContent: 'flex-start', margin: '0.25rem 0' }}>
+                    <button
+                      onClick={() => toggleFeedbackExpansion(
+                        interview.panelId,
+                        interview.role.toLowerCase().includes('l2'),
+                        interview.candidateEmail
+                      )}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '0.25rem 0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        color: 'var(--primary)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        transition: 'color 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    >
+                      <MessageSquare size={13} />
+                      <span>{feedbackAlreadySubmitted ? 'View Submitted Feedback' : 'Submit Candidate Feedback'}</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+                        {expandedFeedbacks[interview.panelId] ? '▲' : '▼'}
+                      </span>
+                    </button>
                   </div>
 
-                  {feedbackAlreadySubmitted && !isEditing[interview.panelId] ? (
+                  {expandedFeedbacks[interview.panelId] && (
+                    <div style={{
+                      paddingLeft: '1rem',
+                      borderLeft: '2px solid var(--border-glass)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem',
+                      marginTop: '0.75rem',
+                      paddingTop: '0.25rem',
+                      paddingBottom: '0.25rem'
+                    }}>
+                      
+                      {/* L1 Feedback for L2 Panelists */}
+                      {interview.role.toLowerCase().includes('l2') && (
+                        <div style={{
+                          marginBottom: '1rem',
+                          paddingBottom: '1rem',
+                          borderBottom: '1px dashed var(--border-glass)',
+                        }}>
+                          <h4 style={{ fontSize: '0.8rem', fontWeight: 700, margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-main)' }}>
+                            <MessageSquare size={13} className="text-primary" />
+                            L1 Round Feedback Reference
+                          </h4>
+
+                          {loadingL1Feedbacks[interview.panelId] ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <Loader2 size={13} className="animate-spin text-primary" />
+                              <span>Loading L1 feedback...</span>
+                            </div>
+                          ) : !l1FeedbacksForCandidate[interview.panelId] || l1FeedbacksForCandidate[interview.panelId].length === 0 ? (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              No submitted L1 feedback found for this candidate.
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                              {l1FeedbacksForCandidate[interview.panelId].map((l1, idx) => {
+                                const parsedL1 = parseFeedbackSafely(l1.feedback);
+                                const isPassedL1 = l1.decision === 'PASSED';
+                                const badgeColor = isPassedL1 ? 'var(--success)' : 'var(--danger)';
+                                const badgeBg = isPassedL1 ? 'var(--success-glow)' : 'var(--danger-glow)';
+                                const badgeBorder = isPassedL1 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+
+                                return (
+                                  <div key={l1.panelId || idx} style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.35rem'
+                                  }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        Evaluator: <strong style={{ color: 'var(--text-main)' }}>{l1.panelistName}</strong>
+                                      </div>
+                                      <span className="badge" style={{
+                                        fontSize: '0.58rem',
+                                        background: badgeBg,
+                                        border: `1px solid ${badgeBorder}`,
+                                        color: badgeColor,
+                                        padding: '0.08rem 0.35rem'
+                                      }}>
+                                        {l1.decision}
+                                      </span>
+                                    </div>
+
+                                    {parsedL1 && parsedL1.scores && (
+                                      <div style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.2rem',
+                                        margin: '0.15rem 0',
+                                      }}>
+                                        {Object.entries(parsedL1.scores).map(([metric, score]) => {
+                                          const displayNames: Record<string, string> = {
+                                            coding: 'Coding',
+                                            communication: 'Communication',
+                                            fundamentals: 'Fundamentals'
+                                          };
+                                          return (
+                                            <div key={metric} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                                {displayNames[metric] || metric}:
+                                              </span>
+                                              {renderStarsStatic(score as number)}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+
+                                    <div style={{ fontSize: '0.75rem' }}>
+                                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '1px' }}>
+                                        Comments
+                                      </span>
+                                      <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.75rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                                        {parsedL1 ? parsedL1.comments : (l1.feedback || 'No comments.')}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {feedbackAlreadySubmitted && !isEditing[interview.panelId] ? (
                     (() => {
                       let parsed: any = null;
                       let isJson = false;
@@ -524,91 +1181,91 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
 
                       if (isJson && parsed) {
                         return (
-                          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                             {renderFeedbackHeader()}
 
                             {/* Scores & individual notes */}
                             {parsed.type === 'L1' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Coding &amp; Problem Solving:</span>
                                     {renderStarsStatic(parsed.scores?.coding || 0)}
                                   </div>
-                                  {parsed.notes?.codingNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.codingNotes}</p>}
+                                  {parsed.notes?.codingNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.codingNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Communication:</span>
                                     {renderStarsStatic(parsed.scores?.communication || 0)}
                                   </div>
-                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.communicationNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>CS Fundamentals:</span>
                                     {renderStarsStatic(parsed.scores?.fundamentals || 0)}
                                   </div>
-                                  {parsed.notes?.fundamentalsNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.fundamentalsNotes}</p>}
+                                  {parsed.notes?.fundamentalsNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.fundamentalsNotes}</p>}
                                 </div>
                               </div>
                             )}
 
                             {parsed.type === 'L2' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>System Design &amp; Scalability:</span>
                                     {renderStarsStatic(parsed.scores?.systemDesign || 0)}
                                   </div>
-                                  {parsed.notes?.systemDesignNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.systemDesignNotes}</p>}
+                                  {parsed.notes?.systemDesignNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.systemDesignNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Depth &amp; Experience:</span>
                                     {renderStarsStatic(parsed.scores?.technicalDepth || 0)}
                                   </div>
-                                  {parsed.notes?.technicalDepthNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalDepthNotes}</p>}
+                                  {parsed.notes?.technicalDepthNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.technicalDepthNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Leadership &amp; Ownership:</span>
                                     {renderStarsStatic(parsed.scores?.leadership || 0)}
                                   </div>
-                                  {parsed.notes?.leadershipNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.leadershipNotes}</p>}
+                                  {parsed.notes?.leadershipNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.leadershipNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Cultural Fit &amp; MS Values:</span>
                                     {renderStarsStatic(parsed.scores?.culturalFit || 0)}
                                   </div>
-                                  {parsed.notes?.culturalFitNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.culturalFitNotes}</p>}
+                                  {parsed.notes?.culturalFitNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.culturalFitNotes}</p>}
                                 </div>
                               </div>
                             )}
 
                             {parsed.type === 'General' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
                                 <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Technical Depth:</span>
                                     {renderStarsStatic(parsed.scores?.technical || 0)}
                                   </div>
-                                  {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.technicalNotes}</p>}
+                                  {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.technicalNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Communication:</span>
                                     {renderStarsStatic(parsed.scores?.communication || 0)}
                                   </div>
-                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.communicationNotes}</p>}
+                                  {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.communicationNotes}</p>}
                                 </div>
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '0.25rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>Collaboration &amp; Teamwork:</span>
                                     {renderStarsStatic(parsed.scores?.collaboration || 0)}
                                   </div>
-                                  {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem 0', fontSize: '0.75rem', lineHeight: 1.4 }}>{parsed.notes.collaborationNotes}</p>}
+                                  {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.collaborationNotes}</p>}
                                 </div>
                               </div>
                             )}
@@ -616,8 +1273,8 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
                             {/* Overall summary notes */}
                             {parsed.comments && (
                               <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Overall Summary Notes</div>
-                                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>{parsed.comments}</p>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Overall Summary Notes</div>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>{parsed.comments}</p>
                               </div>
                             )}
                           </div>
@@ -626,10 +1283,10 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
 
                       // Fallback to legacy string feedback
                       return (
-                        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
                           {renderFeedbackHeader()}
                           {interview.panelFeedback && (
-                            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>
                               {interview.panelFeedback}
                             </p>
                           )}
@@ -1043,6 +1700,8 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
                       );
                     })()
                   )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1077,6 +1736,58 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {selectedRequest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1.5rem',
+        }}>
+          <div className="glass-card" style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            position: 'relative',
+            padding: '2rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+          }}>
+            <button
+              onClick={() => {
+                setSelectedRequest(null);
+                refreshInterviews();
+              }}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '1.5rem',
+                lineHeight: 1,
+              }}
+            >
+              &times;
+            </button>
+            <AvailabilityClient
+              interview={selectedRequest.interview}
+              panel={selectedRequest.panel}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

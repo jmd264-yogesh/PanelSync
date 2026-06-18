@@ -195,7 +195,10 @@ activeDrive: Drive | null (passed prop, updates default timing configs)
 ```
 
 #### `CandidatesTab.tsx` — self-manages UI state  
-Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews. Integrates `activeDrive` to prefill date and college defaults.
+Handles bulk upload (xlsx), single candidate add, inline editing, and mapping candidates to interviews.
+- **Scoping & Filters**: Integrates `activeDrive` to default filter scoping to the active drive on load (matching candidate's college or drive college). Allows filtering by status, college (drive), and drive date.
+- **Split L1/L2 Results**: Displays candidate outcomes under separate **L1 Result** and **L2 Result** columns, calculated dynamically from actual interview panel decisions and `outcomeStatus` values.
+- **Excel Export**: Features an **Export to Excel** button to download the filtered candidate list as a formatted `.xlsx` spreadsheet with auto-fitted columns.
 
 #### `RecruitersTab.tsx` — fully self-contained (no props)  
 Manages the recruiter access list, add/delete recruiters.
@@ -317,3 +320,20 @@ npm run dev        # Start dev server (Next.js on port 3000)
 npx tsc --noEmit   # Type-check without building
 npx drizzle-kit migrate  # Apply DB migrations
 ```
+
+---
+
+## 13. Feedback Segregation & Panelist Portal Tabs (New Feature)
+
+- **L1/L2 Feedback Visibility Rules**:
+  - **L2 Panelists** can view submitted L1 round feedback (ratings and comments) for reference, lazy-loaded on L2 card accordion expansion.
+  - **L1 Panelists** cannot view L2 feedback under any circumstances.
+  - **Access Authorization**: The backend `/api/panelist/l1-feedback` route secures this by verifying that the requesting panelist is explicitly assigned to an **L2** interview for the candidate before returning the L1 feedback data.
+- **Panelist Dashboard Round-based Tabs**:
+  - Added horizontal tabs (**All Panels**, **L1 Round**, **L2 Round**) at the top of the panelist dashboard `/panelist`.
+  - The tabs dynamically filter both **Pending Action / Slot Requests** and **Scheduled Assignments** sections.
+  - Each tab includes real-time counters representing the total item matches under current filters (e.g. active drive scope and date constraints).
+- **Scheduled Assignment Fetching**:
+  - Modified `db.getPanelistInterviews` to select panels with both `PENDING` and `SUBMITTED` statuses for scheduled interviews, resolving a bug where scheduled interviews pending feedback were omitted from the panelist's "My Interviews" view.
+- **Hydration Workaround**:
+  - Intercepted and suppressed the false-positive React 19 / Next.js warning (`Encountered a script tag while rendering React component`) caused by the unmaintained `next-themes` script injection during local development in `ThemeProvider`.

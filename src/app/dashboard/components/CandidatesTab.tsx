@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle
+  Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle, X, MessageSquare
 } from 'lucide-react';
 import { UploadedCandidate, Interview, College, Drive } from '@/lib/db';
 import * as XLSX from 'xlsx';
@@ -25,6 +25,125 @@ interface CandidatesTabProps {
   collegesList: College[];
   todayStr: string;
   activeDrive: Drive | null;
+}
+
+// Helper to compute L1 & L2 round results for a candidate
+function getCandidateRoundResults(candidate: UploadedCandidate, interviewsList: Interview[]) {
+  const candidateInterviews = interviewsList.filter(
+    (i) => i.candidateEmail.toLowerCase() === candidate.email.toLowerCase()
+  );
+
+  const l1Interviews = candidateInterviews.filter((i) =>
+    i.role.toLowerCase().includes('l1')
+  );
+  const l2Interviews = candidateInterviews.filter((i) =>
+    i.role.toLowerCase().includes('l2')
+  );
+
+  const getRoundStatus = (roundInterviews: Interview[], roundName: 'L1' | 'L2') => {
+    if (roundInterviews.length === 0) {
+      const os = candidate.outcomeStatus;
+      if (roundName === 'L1') {
+        if (os === 'PASSED_L1' || os === 'PASSED_L2' || os === 'SELECTED') {
+          return 'Passed';
+        }
+        if (os === 'REJECTED') {
+          return 'Rejected';
+        }
+        return 'Not Started';
+      } else {
+        if (os === 'PASSED_L2' || os === 'SELECTED') {
+          return 'Passed';
+        }
+        if (os === 'REJECTED' && candidate.outcomeStatus === 'PASSED_L1') {
+          return 'Rejected';
+        }
+        return 'Not Started';
+      }
+    }
+
+    const latestInterview = [...roundInterviews].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0];
+
+    if (latestInterview.status === 'CANCELLED') {
+      return 'Cancelled';
+    }
+
+    const panels = latestInterview.panels || [];
+    const submittedPanels = panels.filter((p) => p.status === 'SUBMITTED');
+
+    if (submittedPanels.length > 0) {
+      const hasRejected = submittedPanels.some((p) => p.decision === 'REJECTED');
+      if (hasRejected) {
+        return 'Rejected';
+      }
+      const hasPassed = submittedPanels.some((p) => p.decision === 'PASSED');
+      if (hasPassed) {
+        return 'Passed';
+      }
+    }
+
+    if (latestInterview.status === 'SCHEDULED') {
+      return 'Pending Feedback';
+    }
+
+    return 'Scheduled';
+  };
+
+  let l1Result = getRoundStatus(l1Interviews, 'L1');
+  let l2Result = getRoundStatus(l2Interviews, 'L2');
+
+  const os = candidate.outcomeStatus;
+  if (os === 'PASSED_L1') {
+    l1Result = 'Passed';
+  } else if (os === 'PASSED_L2' || os === 'SELECTED') {
+    l1Result = 'Passed';
+    l2Result = 'Passed';
+  } else if (os === 'REJECTED') {
+    const hasL2Rejected = l2Interviews.some((i) => i.panels.some((p) => p.decision === 'REJECTED'));
+    const hasL1Rejected = l1Interviews.some((i) => i.panels.some((p) => p.decision === 'REJECTED'));
+
+    if (hasL2Rejected) {
+      l1Result = 'Passed';
+      l2Result = 'Rejected';
+    } else if (hasL1Rejected) {
+      l1Result = 'Rejected';
+      l2Result = 'Not Started';
+    } else {
+      if (l2Interviews.length > 0) {
+        l1Result = 'Passed';
+        l2Result = 'Rejected';
+      } else {
+        l1Result = 'Rejected';
+        l2Result = 'Not Started';
+      }
+    }
+  }
+
+  return { l1Result, l2Result };
+}
+
+function parseFeedbackSafely(rawFeedback: string | null | undefined) {
+  if (!rawFeedback) return null;
+  if (rawFeedback.trim().startsWith('{')) {
+    try {
+      return JSON.parse(rawFeedback);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function renderStarsStatic(rating: number) {
+  return (
+    <div style={{ display: 'flex', gap: '2px' }}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span key={star} style={{ color: star <= rating ? '#fbbf24' : 'rgba(255,255,255,0.12)', fontSize: '1rem', lineHeight: 1 }}>★</span>
+      ))}
+    </div>
+  );
 }
 
 export default function CandidatesTab({
@@ -66,7 +185,11 @@ export default function CandidatesTab({
   // ── Queue filters ─────────────────────────────────────────────────────────
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
+  const [candidateCollegeFilter, setCandidateCollegeFilter] = useState<string>('all');
+  const [candidateDateFilter, setCandidateDateFilter] = useState<string>(activeDrive ? activeDrive.startDate : 'all');
+  const [scopeToActiveDrive, setScopeToActiveDrive] = useState<boolean>(!!activeDrive);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [selectedFeedbackCandidate, setSelectedFeedbackCandidate] = useState<UploadedCandidate | null>(null);
 
   // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -94,6 +217,11 @@ export default function CandidatesTab({
       setSingleCandidateDate(activeDrive.startDate);
       setSingleCandidateCollege(activeDrive.collegeName);
       setSingleCandidateCollegeDrive(activeDrive.collegeName);
+      setScopeToActiveDrive(true);
+      setCandidateDateFilter(activeDrive.startDate);
+    } else {
+      setScopeToActiveDrive(false);
+      setCandidateDateFilter('all');
     }
   }, [activeDrive]);
 
@@ -394,13 +522,86 @@ export default function CandidatesTab({
     }
   };
 
+  const handleExportCandidates = () => {
+    if (filteredCandidates.length === 0) {
+      toast.error('No candidates to export.');
+      return;
+    }
+
+    try {
+      const dataToExport = filteredCandidates.map((candidate) => {
+        let mappedIntv = candidate.mappedInterviewId
+          ? interviews.find((i) => i.id === candidate.mappedInterviewId)
+          : null;
+        if (!mappedIntv && candidate.email) {
+          mappedIntv = interviews.find((i) => 
+            i.candidateEmail.toLowerCase() === candidate.email.toLowerCase() &&
+            i.candidateName !== 'Pending Assignment' &&
+            i.candidateEmail !== 'pending@assign.com'
+          ) || null;
+        }
+
+        const { l1Result, l2Result } = getCandidateRoundResults(candidate, interviews);
+
+        const mappedInterviewStr = mappedIntv 
+          ? `${mappedIntv.role} (${mappedIntv.scheduledSlotStart ? new Date(mappedIntv.scheduledSlotStart).toLocaleString() : 'Pending Slot'})`
+          : '—';
+
+        return {
+          'Candidate Name': candidate.name,
+          'Candidate Email': candidate.email,
+          'Candidate College': candidate.college || '—',
+          'College of Drive': candidate.collegeDrive || '—',
+          'Drive Date': candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US') : '—',
+          'Uploaded At': new Date(candidate.createdAt).toLocaleDateString('en-US'),
+          'Queue Status': candidate.status === 'MAPPED' || !!mappedIntv ? 'Mapped' : 'Waiting',
+          'L1 Result': l1Result,
+          'L2 Result': l2Result,
+          'Mapped Interview': mappedInterviewStr,
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      
+      // Auto-fit column widths
+      const colWidths = Object.keys(dataToExport[0]).map((key) => {
+        const maxLength = Math.max(
+          key.length,
+          ...dataToExport.map((row: any) => String(row[key] || '').length)
+        );
+        return { wch: maxLength + 2 };
+      });
+      worksheet['!cols'] = colWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Candidates');
+      
+      const fileName = activeDrive 
+        ? `Candidates_Drive_${activeDrive.collegeName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`
+        : `Candidate_Queue_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+      toast.success('Candidate list exported successfully!');
+    } catch (err: any) {
+      console.error('Failed to export candidates:', err);
+      toast.error('Failed to export candidate list.');
+    }
+  };
+
   // ── Filtered List ─────────────────────────────────────────────────────────
   const filteredCandidates = candidates.filter((c) => {
     const matchesQuery =
       c.name.toLowerCase().includes(candidateSearchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(candidateSearchQuery.toLowerCase());
     const matchesStatus = candidateStatusFilter === 'all' || c.status === candidateStatusFilter;
-    return matchesQuery && matchesStatus;
+    const matchesCollege = candidateCollegeFilter === 'all' ||
+      (c.collegeDrive && c.collegeDrive.toLowerCase() === candidateCollegeFilter.toLowerCase()) ||
+      (c.college && c.college.toLowerCase() === candidateCollegeFilter.toLowerCase());
+    const matchesDate = candidateDateFilter === 'all' || c.preferredDate === candidateDateFilter;
+    const matchesActiveDrive = !scopeToActiveDrive || !activeDrive ||
+      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
+      (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase());
+    return matchesQuery && matchesStatus && matchesCollege && matchesDate && matchesActiveDrive;
   });
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -570,7 +771,26 @@ export default function CandidatesTab({
                 List of candidates uploaded and waiting for/mapped to L1 interviews.
               </p>
             </div>
-            <div className="flex-gap-2">
+            <div className="flex-gap-2" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                onClick={handleExportCandidates}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: '0.75rem',
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--border-glass)',
+                  color: 'var(--text-main)',
+                  cursor: 'pointer'
+                }}
+              >
+                <span>Export to Excel</span>
+              </button>
               <div style={{ position: 'relative', width: '180px' }}>
                 <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
@@ -582,8 +802,26 @@ export default function CandidatesTab({
                   style={{ paddingLeft: '28px', fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)' }}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Queue Filter Bar */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '0.75rem',
+            padding: '0.75rem 1rem',
+            background: 'rgba(255,255,255,0.01)',
+            border: '1px solid var(--border-glass)',
+            borderRadius: 'var(--radius-md)',
+            marginBottom: '1.5rem',
+            alignItems: 'center'
+          }}>
+            {/* Status Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Status</label>
               <Select value={candidateStatusFilter} onValueChange={(val) => setCandidateStatusFilter(val as any)}>
-                <SelectTrigger className="text-left" style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
+                <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
@@ -592,6 +830,70 @@ export default function CandidatesTab({
                   <SelectItem value="MAPPED">Mapped</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* College Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>College (Drive)</label>
+              <Select value={candidateCollegeFilter} onValueChange={(val) => setCandidateCollegeFilter(val || 'all')}>
+                <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
+                  <SelectValue placeholder="All Colleges" />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectItem value="all">All Colleges</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Drive Date</label>
+              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={candidateDateFilter === 'all' ? '' : candidateDateFilter}
+                  onChange={(e) => setCandidateDateFilter(e.target.value || 'all')}
+                  style={{
+                    width: '100%',
+                    padding: '0.3rem 0.5rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border-glass)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'inherit',
+                    fontSize: '0.75rem',
+                    height: '32px',
+                    colorScheme: 'dark',
+                    cursor: 'pointer'
+                  }}
+                />
+                {candidateDateFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setCandidateDateFilter('all')}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title="Clear date filter"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Active Drive Scope */}
+            <div style={{ display: 'flex', alignItems: 'center', height: '100%', paddingTop: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={scopeToActiveDrive && !!activeDrive}
+                  disabled={!activeDrive}
+                  onChange={(e) => setScopeToActiveDrive(e.target.checked)}
+                  style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
+                />
+                <span>Scope to Active Drive {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+              </label>
             </div>
           </div>
 
@@ -611,7 +913,8 @@ export default function CandidatesTab({
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Date</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Outcome</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L1 Result</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L2 Result</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
                     <th style={{ padding: '0.75rem 1rem', width: '220px' }}></th>
                   </tr>
@@ -690,7 +993,25 @@ export default function CandidatesTab({
                           </>
                         ) : (
                           <>
-                            <td style={{ padding: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>{candidate.name}</td>
+                            <td style={{ padding: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                              <button
+                                onClick={() => setSelectedFeedbackCandidate(candidate)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  padding: 0,
+                                  color: 'inherit',
+                                  font: 'inherit',
+                                  cursor: 'pointer',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                                title="Click to view round feedbacks"
+                              >
+                                {candidate.name}
+                              </button>
+                            </td>
                             <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{candidate.email}</td>
                             <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
                               {candidate.college ? (
@@ -712,13 +1033,13 @@ export default function CandidatesTab({
                             </td>
                             <td style={{ padding: '1rem' }}>
                               <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString() : '—'}
+                                {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US') : '—'}
                               </span>
                             </td>
                           </>
                         )}
                         <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          {new Date(candidate.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {new Date(candidate.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </td>
                         <td style={{ padding: '1rem' }}>
                           {!isMapped ? (
@@ -729,13 +1050,24 @@ export default function CandidatesTab({
                         </td>
                         <td style={{ padding: '1rem' }}>
                           {(() => {
-                            const os = (candidate as any).outcomeStatus;
-                            if (!os || os === 'PENDING') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending</span>;
-                            if (os === 'PASSED_L1') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Passed L1</span>;
-                            if (os === 'PASSED_L2') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Passed L2</span>;
-                            if (os === 'SELECTED') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Selected</span>;
-                            if (os === 'REJECTED') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
-                            return <span className="badge" style={{ fontSize: '0.62rem' }}>{os}</span>;
+                            const { l1Result } = getCandidateRoundResults(candidate, interviews);
+                            if (l1Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Passed</span>;
+                            if (l1Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                            if (l1Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
+                            if (l1Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Scheduled</span>;
+                            if (l1Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
+                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
+                          })()}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          {(() => {
+                            const { l2Result } = getCandidateRoundResults(candidate, interviews);
+                            if (l2Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem', background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: '#34d399' }}>Passed</span>;
+                            if (l2Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
+                            if (l2Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
+                            if (l2Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Scheduled</span>;
+                            if (l2Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
+                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
                           })()}
                         </td>
                         <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
@@ -744,7 +1076,7 @@ export default function CandidatesTab({
                               <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
                               <span className="text-muted" style={{ fontSize: '0.75rem' }}>
                                 {mappedIntv.scheduledSlotStart
-                                  ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                  ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                                   : 'Pending Slot'}
                               </span>
                             </div>
@@ -780,7 +1112,7 @@ export default function CandidatesTab({
                                       .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
                                       .map((i) => (
                                         <SelectItem key={i.id} value={i.id}>
-                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString()} - {i.panels.map(p => p.name).join(', ')})
+                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString('en-US')} - {i.panels.map(p => p.name).join(', ')})
                                         </SelectItem>
                                       ))}
                                   </SelectContent>
@@ -871,7 +1203,7 @@ export default function CandidatesTab({
 
                   {candidates.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <td colSpan={10} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                         No candidates registered in the queue. Download the template on the left and upload candidates.
                       </td>
                     </tr>
@@ -882,6 +1214,280 @@ export default function CandidatesTab({
           )}
         </div>
       </div>
+
+      {/* Candidate Feedbacks Dialog Modal */}
+      {selectedFeedbackCandidate && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-glass)',
+            borderRadius: 'var(--radius-lg)',
+            width: '90%',
+            maxWidth: '650px',
+            maxHeight: '85vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: 'var(--shadow-card)',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid var(--border-glass)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255,255,255,0.01)',
+              width: '100%'
+            }}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                  {selectedFeedbackCandidate.name}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', margin: '0.2rem 0 0 0' }}>
+                  {selectedFeedbackCandidate.email} · {selectedFeedbackCandidate.college}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedFeedbackCandidate(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.5rem'
+            }}>
+              {/* Summary Badges */}
+              {(() => {
+                const { l1Result, l2Result } = getCandidateRoundResults(selectedFeedbackCandidate, interviews);
+                
+                const getBadge = (result: string) => {
+                  if (result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Passed</span>;
+                  if (result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>Rejected</span>;
+                  if (result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.65rem' }}>Pending Feedback</span>;
+                  if (result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>Scheduled</span>;
+                  return <span className="badge" style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
+                };
+
+                return (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '1rem',
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border-glass)',
+                    borderRadius: 'var(--radius-sm)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>L1 Stage:</span>
+                      {getBadge(l1Result)}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>L2 Stage:</span>
+                      {getBadge(l2Result)}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* L1 & L2 Details */}
+              {['L1', 'L2'].map((round) => {
+                const roundInterviews = interviews.filter((i) =>
+                  i.candidateEmail.toLowerCase() === selectedFeedbackCandidate.email.toLowerCase() &&
+                  i.role.toLowerCase().includes(round.toLowerCase())
+                );
+
+                const borderStyle = round === 'L1' 
+                  ? '3px solid #3b82f6' 
+                  : '3px solid #7c3aed';
+
+                return (
+                  <div key={round} style={{
+                    borderLeft: borderStyle,
+                    paddingLeft: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem'
+                  }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                      {round} Round Details
+                    </h4>
+
+                    {roundInterviews.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No {round} interviews scheduled.
+                      </p>
+                    ) : (
+                      roundInterviews.map((interview) => {
+                        const submittedPanels = (interview.panels || []).filter(p => p.status === 'SUBMITTED');
+                        const pendingPanels = (interview.panels || []).filter(p => p.status === 'PENDING');
+
+                        return (
+                          <div key={interview.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              Interview Status: <strong style={{ color: 'var(--text-main)' }}>{interview.status}</strong>
+                              {interview.scheduledSlotStart && (
+                                <> · Scheduled for: <strong style={{ color: 'var(--text-main)' }}>{new Date(interview.scheduledSlotStart).toLocaleString()}</strong></>
+                              )}
+                            </div>
+
+                            {/* Panel Feedbacks */}
+                            {submittedPanels.length === 0 && pendingPanels.length === 0 && (
+                              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                No panel members nominated for this interview slot.
+                              </p>
+                            )}
+
+                            {submittedPanels.map((panel) => {
+                              const parsed = parseFeedbackSafely(panel.feedback);
+                              const isPassed = panel.decision === 'PASSED';
+                              const badgeColor = isPassed ? 'var(--success)' : 'var(--danger)';
+                              const badgeBg = isPassed ? 'var(--success-glow)' : 'var(--danger-glow)';
+                              const badgeBorder = isPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+
+                              return (
+                                <div key={panel.id} style={{
+                                  padding: '0.75rem 1rem',
+                                  background: 'rgba(255,255,255,0.01)',
+                                  border: '1px solid var(--border-glass)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.5rem'
+                                }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                      Panelist: <span style={{ color: 'var(--text-main)' }}>{panel.name}</span>
+                                    </div>
+                                    <span className="badge" style={{
+                                      fontSize: '0.62rem',
+                                      background: badgeBg,
+                                      border: `1px solid ${badgeBorder}`,
+                                      color: badgeColor
+                                    }}>
+                                      {panel.decision}
+                                    </span>
+                                  </div>
+
+                                  {/* Star Ratings */}
+                                  {parsed && parsed.scores && (
+                                    <div style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '0.25rem',
+                                      margin: '0.25rem 0',
+                                      background: 'rgba(255,255,255,0.01)',
+                                      padding: '0.4rem',
+                                      borderRadius: '4px'
+                                    }}>
+                                      {Object.entries(parsed.scores).map(([metric, score]) => {
+                                        const displayNames: Record<string, string> = {
+                                          coding: 'Coding & Problem Solving',
+                                          communication: 'Technical Communication',
+                                          fundamentals: 'CS Fundamentals',
+                                          systemDesign: 'System Design & Scalability',
+                                          technicalDepth: 'Technical Depth & Experience',
+                                          leadership: 'Leadership & Ownership',
+                                          culturalFit: 'Cultural Fit & MS Values',
+                                          technical: 'Technical Depth',
+                                          collaboration: 'Collaboration & Teamwork'
+                                        };
+                                        return (
+                                          <div key={metric} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                              {displayNames[metric] || metric}:
+                                            </span>
+                                            {renderStarsStatic(score as number)}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Comments */}
+                                  <div style={{ fontSize: '0.78rem' }}>
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '2px' }}>
+                                      Comments
+                                    </span>
+                                    <p style={{ margin: 0, color: 'var(--text-main)', lineHeight: 1.4, whiteSpace: 'pre-wrap', fontSize: '0.78rem' }}>
+                                      {parsed ? parsed.comments : (panel.feedback || 'No comments provided.')}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {pendingPanels.map((panel) => (
+                              <div key={panel.id} style={{
+                                padding: '0.5rem 0.75rem',
+                                border: '1px dashed var(--border-glass)',
+                                borderRadius: 'var(--radius-sm)',
+                                color: 'var(--text-muted)',
+                                fontSize: '0.78rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}>
+                                <span>Panelist: <strong>{panel.name}</strong> ({panel.email})</span>
+                                <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Feedback Pending</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid var(--border-glass)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: 'rgba(255,255,255,0.01)'
+            }}>
+              <button className="btn btn-secondary" onClick={() => setSelectedFeedbackCandidate(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

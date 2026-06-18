@@ -154,7 +154,7 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
                     <tr key={college.id} style={{ borderBottom: '1px solid var(--border-glass)', transition: 'var(--transition-fast)' }} className="search-item-hover">
                       <td style={{ padding: '1rem', fontWeight: 500, color: 'var(--text-main)' }}>{college.name}</td>
                       <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-                        {new Date(college.createdAt).toLocaleDateString(undefined, {
+                        {new Date(college.createdAt).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric'
@@ -202,3 +202,4 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
     </div>
   );
 }
+

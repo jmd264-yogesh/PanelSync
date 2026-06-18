@@ -59,6 +59,10 @@ export default function PanelistsTab({
   const [isAdminSaving, setIsAdminSaving] = useState(false);
   const [panelistFilterText, setPanelistFilterText] = useState('');
 
+  // ── Matching Filters State ────────────────────────────────────────────────
+  const [filterCollege, setFilterCollege] = useState(activeDrive ? activeDrive.collegeName : '');
+  const [filterDate, setFilterDate] = useState(activeDrive ? activeDrive.startDate : '');
+
   // ── Bulk selection ────────────────────────────────────────────────────────
   const [bulkSelectedL1Ids, setBulkSelectedL1Ids] = useState<string[]>([]);
   const [bulkSelectedL2Ids, setBulkSelectedL2Ids] = useState<string[]>([]);
@@ -81,8 +85,38 @@ export default function PanelistsTab({
       setDefaultEndDate(activeDrive.endDate);
       setReqStartDate(activeDrive.startDate);
       setReqEndDate(activeDrive.endDate);
+      setFilterCollege(activeDrive.collegeName);
+      setFilterDate(activeDrive.startDate);
     }
   }, [activeDrive]);
+
+  // Helper to determine if a panelist matches active drive / selected filters
+  const isPanelistMatched = React.useCallback((panelistId: string) => {
+    if (!filterCollege && !filterDate) return false;
+
+    // Find all interviews this panelist is nominated in
+    const panelistInterviews = interviews.filter((i) =>
+      i.panels.some((p) => p.userId === panelistId)
+    );
+
+    const matchesCollege = !filterCollege || panelistInterviews.some((i) => {
+      const parts = i.role.split(' - ');
+      const interviewCollege = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+      return interviewCollege === filterCollege.toLowerCase();
+    });
+
+    const matchesDate = !filterDate || panelistInterviews.some((i) => {
+      if (i.scheduledSlotStart) {
+        return i.scheduledSlotStart.split('T')[0] === filterDate;
+      }
+      const fDate = filterDate;
+      const sDate = i.startDate.split('T')[0];
+      const eDate = i.endDate.split('T')[0];
+      return fDate >= sDate && fDate <= eDate;
+    });
+
+    return matchesCollege && matchesDate;
+  }, [filterCollege, filterDate, interviews]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredPanelists = panelists.filter(
@@ -90,8 +124,29 @@ export default function PanelistsTab({
       p.displayName.toLowerCase().includes(panelistFilterText.toLowerCase()) ||
       p.email.toLowerCase().includes(panelistFilterText.toLowerCase())
   );
-  const l1Panelists = filteredPanelists.filter((p) => p.roles.includes('L1'));
-  const l2Panelists = filteredPanelists.filter((p) => p.roles.includes('L2'));
+
+  const matchedPanelistIds = React.useMemo(() => {
+    const matched = new Set<string>();
+    filteredPanelists.forEach((p) => {
+      if (isPanelistMatched(p.id)) {
+        matched.add(p.id);
+      }
+    });
+    return matched;
+  }, [filteredPanelists, isPanelistMatched]);
+
+  const sortPanelists = React.useCallback((list: Panelist[]) => {
+    return [...list].sort((a, b) => {
+      const aMatched = matchedPanelistIds.has(a.id);
+      const bMatched = matchedPanelistIds.has(b.id);
+      if (aMatched && !bMatched) return -1;
+      if (!aMatched && bMatched) return 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [matchedPanelistIds]);
+
+  const l1Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L1')));
+  const l2Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L2')));
 
   const allL1Selected =
     l1Panelists.length > 0 && l1Panelists.every((p) => bulkSelectedL1Ids.includes(p.id));
@@ -125,10 +180,49 @@ export default function PanelistsTab({
     ).length;
 
   // ── Column summary stats ──────────────────────────────────────────────────
-  const l1AvailableCount = l1Panelists.filter((p) => panelistPendingCount(p.id) === 0).length;
-  const l2AvailableCount = l2Panelists.filter((p) => panelistPendingCount(p.id) === 0).length;
-  const l1ScheduledTotal = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l1')).length;
-  const l2ScheduledTotal = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l2')).length;
+  const l1ScheduledTotal = React.useMemo(() => {
+    return interviews.filter((i) => {
+      if (i.status !== 'SCHEDULED' || !i.role.toLowerCase().includes('l1')) return false;
+      
+      const parts = i.role.split(' - ');
+      const interviewCollege = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+      if (filterCollege && interviewCollege !== filterCollege.toLowerCase()) return false;
+      
+      if (filterDate) {
+        if (i.scheduledSlotStart) {
+          if (i.scheduledSlotStart.split('T')[0] !== filterDate) return false;
+        } else {
+          const fDate = filterDate;
+          const sDate = i.startDate.split('T')[0];
+          const eDate = i.endDate.split('T')[0];
+          if (fDate < sDate || fDate > eDate) return false;
+        }
+      }
+      return true;
+    }).length;
+  }, [interviews, filterCollege, filterDate]);
+
+  const l2ScheduledTotal = React.useMemo(() => {
+    return interviews.filter((i) => {
+      if (i.status !== 'SCHEDULED' || !i.role.toLowerCase().includes('l2')) return false;
+      
+      const parts = i.role.split(' - ');
+      const interviewCollege = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+      if (filterCollege && interviewCollege !== filterCollege.toLowerCase()) return false;
+      
+      if (filterDate) {
+        if (i.scheduledSlotStart) {
+          if (i.scheduledSlotStart.split('T')[0] !== filterDate) return false;
+        } else {
+          const fDate = filterDate;
+          const sDate = i.startDate.split('T')[0];
+          const eDate = i.endDate.split('T')[0];
+          if (fDate < sDate || fDate > eDate) return false;
+        }
+      }
+      return true;
+    }).length;
+  }, [interviews, filterCollege, filterDate]);
 
   // ── Debounced admin Entra directory search ────────────────────────────────
   useEffect(() => {
@@ -555,6 +649,84 @@ export default function PanelistsTab({
             </div>
           </div>
 
+          {/* Active Drive Matching Filter Controls */}
+          <div style={{
+            display: 'flex',
+            gap: '1rem',
+            marginBottom: '1.25rem',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            background: 'rgba(255, 255, 255, 0.01)',
+            border: '1px solid var(--border-glass)',
+            padding: '0.65rem 0.85rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.8rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="text-muted font-medium">Match College:</span>
+              <select
+                value={filterCollege}
+                onChange={(e) => setFilterCollege(e.target.value)}
+                className="form-input text-xs"
+                style={{
+                  width: '160px',
+                  padding: '0.25rem 0.5rem',
+                  height: '30px',
+                  background: 'rgba(0,0,0,0.2)',
+                  color: 'inherit',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              >
+                <option value="" style={{ background: '#0e131f' }}>All Colleges</option>
+                {collegesList.map((c) => (
+                  <option key={c.id} value={c.name} style={{ background: '#0e131f' }}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="text-muted font-medium">Match Date:</span>
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="form-input text-xs"
+                style={{
+                  width: '130px',
+                  padding: '0.25rem 0.5rem',
+                  height: '30px',
+                  background: 'rgba(0,0,0,0.2)',
+                  colorScheme: 'dark',
+                  color: 'inherit',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              />
+            </div>
+
+            {(filterCollege || filterDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterCollege(activeDrive ? activeDrive.collegeName : '');
+                  setFilterDate(activeDrive ? activeDrive.startDate : '');
+                }}
+                className="btn btn-secondary btn-xs"
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  fontSize: '0.7rem',
+                  height: '30px',
+                  border: '1px solid var(--border-glass)',
+                  background: 'transparent',
+                  marginLeft: 'auto'
+                }}
+              >
+                Reset to Active Drive
+              </button>
+            )}
+          </div>
+
           {filteredPanelists.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '4rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
               <Info size={32} className="text-muted animate-pulse" style={{ margin: '0 auto 0.75rem', opacity: 0.4 }} />
@@ -575,10 +747,6 @@ export default function PanelistsTab({
                   <div style={{ flex: 1, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
                     <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l1ScheduledTotal}</div>
                     <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
-                  </div>
-                  <div style={{ flex: 1, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#4ade80', lineHeight: 1 }}>{l1AvailableCount}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available</div>
                   </div>
                 </div>
                 <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(96,165,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
@@ -621,9 +789,16 @@ export default function PanelistsTab({
                               }}
                               style={{ accentColor: '#60a5fa', marginTop: '3px', cursor: 'pointer' }}
                             />
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                            <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
+                                <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                              </div>
+                              {matchedPanelistIds.has(p.id) && (
+                                <span style={{ fontSize: '0.55rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontWeight: 700, flexShrink: 0 }} title="Matches search/active drive filters">
+                                  Matched
+                                </span>
+                              )}
                             </div>
                           </div>
                           {/* Per-panelist stats row */}
@@ -682,10 +857,6 @@ export default function PanelistsTab({
                     <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l2ScheduledTotal}</div>
                     <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
                   </div>
-                  <div style={{ flex: 1, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#4ade80', lineHeight: 1 }}>{l2AvailableCount}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available</div>
-                  </div>
                 </div>
                 <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(167,139,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
                   <input
@@ -727,9 +898,16 @@ export default function PanelistsTab({
                               }}
                               style={{ accentColor: '#a78bfa', marginTop: '3px', cursor: 'pointer' }}
                             />
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                              <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                            <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
+                                <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                              </div>
+                              {matchedPanelistIds.has(p.id) && (
+                                <span style={{ fontSize: '0.55rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontWeight: 700, flexShrink: 0 }} title="Matches search/active drive filters">
+                                  Matched
+                                </span>
+                              )}
                             </div>
                           </div>
                           {/* Per-panelist stats row */}
@@ -893,8 +1071,8 @@ export default function PanelistsTab({
                     <Clock size={13} style={{ color: 'var(--text-muted)' }} />
                     <span>
                       {activeDrive.startDate === activeDrive.endDate
-                        ? new Date(activeDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-                        : `${new Date(activeDrive.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(activeDrive.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                        ? new Date(activeDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : `${new Date(activeDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeDrive.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
                     </span>
                   </div>
                   <p className="text-xs text-muted" style={{ marginTop: '0.4rem' }}>
@@ -954,7 +1132,7 @@ export default function PanelistsTab({
                             style={{ accentColor: 'var(--primary)' }}
                           />
                           <span>
-                            {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} @ {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (UTC)
+                            {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
                           </span>
                         </label>
                       );
@@ -973,13 +1151,13 @@ export default function PanelistsTab({
                     You have been requested to conduct an <strong>{reqInterviewType} Interview</strong>{reqCollegeName ? <span> for <strong>{reqCollegeName}</strong></span> : ''}.
                   </p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
-                    Proposed Interview Date Range: <strong>{new Date(reqStartDate || todayStr).toLocaleDateString()} - {new Date(reqEndDate || todayStr).toLocaleDateString()}</strong>
+                    Proposed Interview Date Range: <strong>{new Date(reqStartDate || todayStr).toLocaleDateString('en-US')} - {new Date(reqEndDate || todayStr).toLocaleDateString('en-US')}</strong>
                   </p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Please select one of the following proposed slots to book instantly:</p>
                   <div style={{ margin: '8px 0', paddingLeft: '1rem', color: 'var(--text-main)', fontSize: '0.75rem' }}>
                     {reqSlots.filter((s) => s.selected).slice(0, 6).map((s, i) => {
                       const d = new Date(s.startTime);
-                      return <div key={i}>• {d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} @ {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (UTC)</div>;
+                      return <div key={i}>• {d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)</div>;
                     })}
                     {reqSlots.filter((s) => s.selected).length > 6 && <div>• and {reqSlots.filter((s) => s.selected).length - 6} more slots...</div>}
                     {reqSlots.filter((s) => s.selected).length === 0 && <div style={{ fontStyle: 'italic', color: 'var(--danger)' }}>No slots selected! Please enable at least one slot.</div>}
@@ -1008,3 +1186,4 @@ export default function PanelistsTab({
     </div>
   );
 }
+

@@ -3,14 +3,23 @@ import { getAnyValidAccessToken } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
-import { eq, and, gte, lt, sql } from 'drizzle-orm';
+import { eq, and, gte, lt, sql, isNull } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { token, startTime, endTime } = body;
+    let slots = body.slots;
 
-    if (!token || !startTime || !endTime) {
+    if (!token) {
+      return NextResponse.json({ error: 'Missing token' }, { status: 400 });
+    }
+
+    if (!slots && startTime && endTime) {
+      slots = [{ startTime, endTime }];
+    }
+
+    if (!slots || !slots.length) {
       return NextResponse.json({ error: 'Missing required booking details' }, { status: 400 });
     }
 
@@ -32,100 +41,233 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Recruiter session is expired or not logged in' }, { status: 401 });
     }
 
-    // Check and auto-assign candidate if pending
-    let finalCandidateName = interview.candidateName;
-    let finalCandidateEmail = interview.candidateEmail;
-    let mappedCandidate = null;
+    const bookedMeetings = [];
 
-    if (interview.candidateName === 'Pending Assignment') {
-      const slotDate = new Date(startTime);
+    // Fetch waiting candidates once to prevent duplicate assignment in memory
+    const waitingCandidates = await dbClient
+      .select()
+      .from(schema.uploadedCandidates)
+      .where(and(eq(schema.uploadedCandidates.status, 'WAITING'), isNull(schema.uploadedCandidates.deletedAt)))
+      .orderBy(schema.uploadedCandidates.createdAt);
+
+    let collegeNameFromRole = '';
+    const parts = interview.role.split(' - ');
+    if (parts.length > 1) {
+      collegeNameFromRole = parts[1].trim().toLowerCase();
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      const { startTime: slotStart, endTime: slotEnd } = slots[i];
+      const slotDate = new Date(slotStart);
       const startOfDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate()));
       const startOfNextDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate() + 1));
 
-      let collegeNameFromRole = '';
-      const parts = interview.role.split(' - ');
-      if (parts.length > 1) {
-        collegeNameFromRole = parts[1].trim();
+      // Find a matching candidate
+      let matchedCandidate = null;
+      if (interview.candidateName === 'Pending Assignment') {
+        const candidateIndex = waitingCandidates.findIndex(c => {
+          const matchesCollege = collegeNameFromRole ? c.collegeDrive?.toLowerCase() === collegeNameFromRole : true;
+          const cDate = c.preferredDate ? new Date(c.preferredDate) : null;
+          if (!cDate) return false;
+          
+          const matchesDate = cDate.getTime() >= startOfDay.getTime() && cDate.getTime() < startOfNextDay.getTime();
+          return matchesCollege && matchesDate;
+        });
+
+        if (candidateIndex !== -1) {
+          matchedCandidate = waitingCandidates[candidateIndex];
+          // Remove from list so it won't be mapped again in subsequent iterations
+          waitingCandidates.splice(candidateIndex, 1);
+        }
       }
 
-      const conditions = [
-        eq(schema.uploadedCandidates.status, 'WAITING'),
-        gte(schema.uploadedCandidates.preferredDate, startOfDay),
-        lt(schema.uploadedCandidates.preferredDate, startOfNextDay)
-      ];
+      let finalCandidateName = matchedCandidate ? matchedCandidate.name : interview.candidateName;
+      let finalCandidateEmail = matchedCandidate ? matchedCandidate.email : interview.candidateEmail;
 
-      if (collegeNameFromRole) {
-        conditions.push(sql`LOWER(${schema.uploadedCandidates.collegeDrive}) = LOWER(${collegeNameFromRole})`);
-      }
+      // 1. Create Teams meeting
+      const description = matchedCandidate
+        ? `Interview scheduled by panelist ${panel.name} selecting slot option. Candidate automatically mapped from bulk upload queue.`
+        : `Interview scheduled by panelist ${panel.name} selecting slot option.`;
 
-      const [waitingCandidate] = await dbClient
-        .select()
-        .from(schema.uploadedCandidates)
-        .where(and(...conditions))
-        .orderBy(schema.uploadedCandidates.createdAt)
-        .limit(1);
+      const ccEmails = await db.getRecruiterCCEmails(tokenInfo.email);
 
-      if (waitingCandidate) {
-        finalCandidateName = waitingCandidate.name;
-        finalCandidateEmail = waitingCandidate.email;
-        mappedCandidate = waitingCandidate;
+      const meeting = await graph.createTeamsMeeting(
+        tokenInfo.email,
+        {
+          candidateName: finalCandidateName,
+          candidateEmail: finalCandidateEmail,
+          role: interview.role,
+          description,
+          startTime: slotStart,
+          endTime: slotEnd,
+          panelEmails: [panel.email],
+          ccEmails,
+        },
+        tokenInfo.token
+      );
 
-        // Update candidate in DB
+      const teamsMeetingUrl = meeting.joinUrl || meeting.webLink || '';
+      const calendarEventId = meeting.id || '';
+
+      if (i === 0) {
+        // First slot: update original interview
+        if (matchedCandidate) {
+          await dbClient
+            .update(schema.uploadedCandidates)
+            .set({ status: 'MAPPED', mappedInterviewId: interview.id })
+            .where(eq(schema.uploadedCandidates.id, matchedCandidate.id));
+
+          await dbClient
+            .update(schema.interviews)
+            .set({
+              candidateName: finalCandidateName,
+              candidateEmail: finalCandidateEmail,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.interviews.id, interview.id));
+        }
+
+        await db.bookInterview(interview.id, {
+          scheduledSlotStart: slotStart,
+          scheduledSlotEnd: slotEnd,
+          teamsMeetingUrl,
+          calendarEventId,
+        });
+
+        const now = new Date();
         await dbClient
-          .update(schema.uploadedCandidates)
-          .set({ status: 'MAPPED', mappedInterviewId: interview.id })
-          .where(eq(schema.uploadedCandidates.id, waitingCandidate.id));
+          .update(schema.interviewPanels)
+          .set({ status: 'SUBMITTED', submittedAt: now })
+          .where(eq(schema.interviewPanels.id, panel.id));
 
-        // Update interview details in DB
+        // Wipe proposed availabilities and save only the selected slot
         await dbClient
-          .update(schema.interviews)
-          .set({
-            candidateName: finalCandidateName,
-            candidateEmail: finalCandidateEmail,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.interviews.id, interview.id));
+          .delete(schema.panelAvailabilities)
+          .where(eq(schema.panelAvailabilities.panelId, panel.id));
+
+        await dbClient.insert(schema.panelAvailabilities).values({
+          id: crypto.randomUUID(),
+          panelId: panel.id,
+          startTime: new Date(slotStart),
+          endTime: new Date(slotEnd),
+        });
+
+        bookedMeetings.push({
+          startTime: slotStart,
+          endTime: slotEnd,
+          joinUrl: teamsMeetingUrl,
+          candidateName: finalCandidateName,
+        });
+      } else {
+        // Subsequent slots: create new interview and panelist record
+        const newInterviewId = crypto.randomUUID();
+        const now = new Date();
+
+        const newStatus = matchedCandidate ? 'SCHEDULED' : (interview.candidateName === 'Pending Assignment' ? 'COLLECTED' : 'SCHEDULED');
+
+        // Insert new interview
+        await dbClient.insert(schema.interviews).values({
+          id: newInterviewId,
+          candidateName: finalCandidateName,
+          candidateEmail: finalCandidateEmail,
+          role: interview.role,
+          duration: interview.duration,
+          startDate: new Date(interview.startDate),
+          endDate: new Date(interview.endDate),
+          status: newStatus,
+          teamsMeetingUrl,
+          calendarEventId,
+          scheduledSlotStart: new Date(slotStart),
+          scheduledSlotEnd: new Date(slotEnd),
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        if (matchedCandidate) {
+          await dbClient
+            .update(schema.uploadedCandidates)
+            .set({ status: 'MAPPED', mappedInterviewId: newInterviewId })
+            .where(eq(schema.uploadedCandidates.id, matchedCandidate.id));
+        }
+
+        // Insert new panel row
+        const newPanelId = crypto.randomUUID();
+        const newToken = crypto.randomUUID().replace(/-/g, '');
+        await dbClient.insert(schema.interviewPanels).values({
+          id: newPanelId,
+          interviewId: newInterviewId,
+          userId: panel.userId,
+          name: panel.name,
+          email: panel.email,
+          token: newToken,
+          status: 'SUBMITTED',
+          submittedAt: now,
+        });
+
+        // Insert the booked slot for the subsequent panelist record
+        await dbClient.insert(schema.panelAvailabilities).values({
+          id: crypto.randomUUID(),
+          panelId: newPanelId,
+          startTime: new Date(slotStart),
+          endTime: new Date(slotEnd),
+        });
+
+        bookedMeetings.push({
+          startTime: slotStart,
+          endTime: slotEnd,
+          joinUrl: teamsMeetingUrl,
+          candidateName: finalCandidateName,
+        });
+
+        // Notify panelist via Teams if a candidate is assigned
+        const hasCandidate = finalCandidateName && finalCandidateName !== 'Pending Assignment';
+        if (hasCandidate) {
+          try {
+            const timingString = new Date(slotStart).toLocaleString('en-US', {
+              weekday: 'short', month: 'short', day: 'numeric',
+              hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+            });
+
+            // Create 1:1 chat between recruiter and panelist
+            const chat = await graph.createOneOnOneChat(tokenInfo.userId, panel.userId, tokenInfo.token);
+
+            const htmlMessage = `
+              <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #10b981; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <h3 style="margin-top: 0; color: #10b981; font-size: 16px; font-weight: 600;">Candidate Assigned to Interview</h3>
+                <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">Hello <strong>${panel.name}</strong>,</p>
+                <p style="margin: 8px 0; font-size: 14px; color: #94a3b8;">
+                  A candidate has been assigned to your scheduled interview round.
+                </p>
+                <div style="background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px; margin: 12px 0; border: 1px solid rgba(255,255,255,0.05);">
+                  <div style="font-size: 13px; color: #94a3b8; margin-bottom: 2px;">Candidate Name</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${finalCandidateName}</div>
+                  <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Role / Round</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${interview.role}</div>
+                  <div style="font-size: 13px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px;">Scheduled Timing</div>
+                  <div style="font-size: 14px; font-weight: bold; color: #ffffff;">${timingString}</div>
+                </div>
+                ${teamsMeetingUrl ? `
+                <p style="font-size: 14px; color: #94a3b8; margin-bottom: 16px;">
+                  You can join the Teams meeting using the button below:
+                </p>
+                <div style="margin-top: 16px; margin-bottom: 12px;">
+                  <a href="${teamsMeetingUrl}" style="background-color: #10b981; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">
+                    Join Teams Meeting
+                  </a>
+                </div>
+                ` : ''}
+              </div>
+            `;
+
+            await graph.sendTeamsMessage(chat.id, htmlMessage, tokenInfo.token);
+          } catch (chatError) {
+            console.error(`Failed to send confirmation Teams message to panel ${panel.email}:`, chatError);
+          }
+        }
       }
     }
 
-    // 3. Create Microsoft Teams calendar event
-    const description = mappedCandidate
-      ? `Interview scheduled by panelist ${panel.name} selecting slot option. Candidate automatically mapped from bulk upload queue.`
-      : `Interview scheduled by panelist ${panel.name} selecting slot option.`;
-
-    const ccEmails = await db.getRecruiterCCEmails(tokenInfo.email);
-
-    const meeting = await graph.createTeamsMeeting(
-      tokenInfo.email,
-      {
-        candidateName: finalCandidateName,
-        candidateEmail: finalCandidateEmail,
-        role: interview.role,
-        description,
-        startTime,
-        endTime,
-        panelEmails: [panel.email],
-        ccEmails,
-      },
-      tokenInfo.token
-    );
-
-    // 4. Update the interview booking in Neon DB
-    await db.bookInterview(interview.id, {
-      scheduledSlotStart: startTime,
-      scheduledSlotEnd: endTime,
-      teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',
-      calendarEventId: meeting.id || '',
-    });
-
-    // 5. Update panel status to SUBMITTED
-    const now = new Date();
-    await dbClient
-      .update(schema.interviewPanels)
-      .set({ status: 'SUBMITTED', submittedAt: now })
-      .where(eq(schema.interviewPanels.id, panel.id));
-
-    return NextResponse.json({ success: true, meeting });
+    return NextResponse.json({ success: true, meetings: bookedMeetings });
   } catch (error) {
     console.error('Failed to select slot and schedule meeting:', error);
     return NextResponse.json({ error: 'Failed to schedule meeting' }, { status: 500 });
