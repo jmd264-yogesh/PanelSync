@@ -899,7 +899,7 @@ export const db = {
       .where(
         and(
           eq(schema.interviewPanels.email, normalizedEmail),
-          eq(schema.interviewPanels.status, 'SUBMITTED')
+          inArray(schema.interviewPanels.status, ['SUBMITTED', 'PENDING'])
         )
       );
 

@@ -58,6 +58,18 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: '#ef4444',
 };
 
+function parseFeedbackSafely(rawFeedback: string | null | undefined) {
+  if (!rawFeedback) return null;
+  if (rawFeedback.trim().startsWith('{')) {
+    try {
+      return JSON.parse(rawFeedback);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
 export default function PanelistClient({ initialInterviews, initialRequests, panelistRoles, panelistName, activeDrive }: PanelistClientProps) {
   const [interviews, setInterviews] = useState<PanelistInterview[]>(initialInterviews);
   const [pendingRequests, setPendingRequests] = useState<{ interview: Interview; panel: InterviewPanel }[]>(initialRequests);
@@ -75,9 +87,36 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
   // Accordion state for feedback cards
   const [expandedFeedbacks, setExpandedFeedbacks] = useState<Record<string, boolean>>({});
+  const [l1FeedbacksForCandidate, setL1FeedbacksForCandidate] = useState<Record<string, { panelId: string; panelistName: string; panelistEmail: string; role: string; decision: string; feedback: string; submittedAt: string | null }[]>>({});
+  const [loadingL1Feedbacks, setLoadingL1Feedbacks] = useState<Record<string, boolean>>({});
+  
+  // Round Tab state for filtering L1 vs L2 candidates
+  const [activeRoundTab, setActiveRoundTab] = useState<'ALL' | 'L1' | 'L2'>('ALL');
 
-  const toggleFeedbackExpansion = (panelId: string) => {
-    setExpandedFeedbacks((prev) => ({ ...prev, [panelId]: !prev[panelId] }));
+  const fetchL1FeedbackForCandidate = async (candidateEmail: string, panelId: string) => {
+    if (l1FeedbacksForCandidate[panelId]) return;
+    setLoadingL1Feedbacks((prev) => ({ ...prev, [panelId]: true }));
+    try {
+      const res = await fetch(`/api/panelist/l1-feedback?email=${encodeURIComponent(candidateEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setL1FeedbacksForCandidate((prev) => ({ ...prev, [panelId]: data.feedbacks }));
+      }
+    } catch (err) {
+      console.error('Failed to load L1 feedbacks:', err);
+    } finally {
+      setLoadingL1Feedbacks((prev) => ({ ...prev, [panelId]: false }));
+    }
+  };
+
+  const toggleFeedbackExpansion = (panelId: string, isL2Role: boolean, candidateEmail: string) => {
+    setExpandedFeedbacks((prev) => {
+      const nextState = !prev[panelId];
+      if (nextState && isL2Role && candidateEmail) {
+        fetchL1FeedbackForCandidate(candidateEmail, panelId);
+      }
+      return { ...prev, [panelId]: nextState };
+    });
   };
 
   // Structured score states keyed by panelId
@@ -145,6 +184,12 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       });
     }
 
+    if (activeRoundTab === 'L1') {
+      result = result.filter((i) => i.role.toLowerCase().includes('l1'));
+    } else if (activeRoundTab === 'L2') {
+      result = result.filter((i) => i.role.toLowerCase().includes('l2'));
+    }
+
     return result.sort((a, b) => {
       const aActive = isFromActiveDrive(a.role);
       const bActive = isFromActiveDrive(b.role);
@@ -161,7 +206,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       const bCollege = getCollegeNameFromRole(b.role);
       return aCollege.localeCompare(bCollege);
     });
-  }, [interviews, activeDrive, filterActiveDrive, filterToday]);
+  }, [interviews, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
 
   // Memoized sorted and filtered pending requests (slots):
   // 1. Active drive first
@@ -186,6 +231,12 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       });
     }
 
+    if (activeRoundTab === 'L1') {
+      result = result.filter((req) => req.interview.role.toLowerCase().includes('l1'));
+    } else if (activeRoundTab === 'L2') {
+      result = result.filter((req) => req.interview.role.toLowerCase().includes('l2'));
+    }
+
     return result.sort((a, b) => {
       const aActive = isFromActiveDrive(a.interview.role);
       const bActive = isFromActiveDrive(b.interview.role);
@@ -202,7 +253,50 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       const bCreate = b.interview.createdAt ? new Date(b.interview.createdAt).getTime() : 0;
       return bCreate - aCreate; // latest first
     });
-  }, [pendingRequests, activeDrive, filterActiveDrive, filterToday]);
+  }, [pendingRequests, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
+
+  // Memoized dynamic counts for L1 / L2 tabs (taking into account active drive and date filters)
+  const roundCounts = React.useMemo(() => {
+    let tempReqs = [...pendingRequests];
+    if (filterActiveDrive && activeDrive) {
+      tempReqs = tempReqs.filter((req) => isFromActiveDrive(req.interview.role));
+    }
+    if (filterToday) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      tempReqs = tempReqs.filter((req) => {
+        const start = new Date(req.interview.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(req.interview.endDate);
+        end.setHours(23, 59, 59, 999);
+        return today >= start && today <= end;
+      });
+    }
+
+    let tempInterviews = [...interviews];
+    if (filterActiveDrive && activeDrive) {
+      tempInterviews = tempInterviews.filter((i) => isFromActiveDrive(i.role));
+    }
+    if (filterToday) {
+      const todayStr = new Date().toDateString();
+      tempInterviews = tempInterviews.filter((i) => {
+        if (!i.scheduledSlotStart) return false;
+        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+      });
+    }
+
+    const l1Reqs = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l1')).length;
+    const l1Ints = tempInterviews.filter(i => i.role.toLowerCase().includes('l1')).length;
+
+    const l2Reqs = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l2')).length;
+    const l2Ints = tempInterviews.filter(i => i.role.toLowerCase().includes('l2')).length;
+
+    return {
+      all: tempReqs.length + tempInterviews.length,
+      l1: l1Reqs + l1Ints,
+      l2: l2Reqs + l2Ints,
+    };
+  }, [interviews, pendingRequests, filterActiveDrive, filterToday, activeDrive]);
 
   const refreshInterviews = async () => {
     try {
@@ -558,6 +652,108 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
           </button>
         )}
       </div>
+ 
+      {/* Round Tab Switcher */}
+      <div style={{
+        display: 'flex',
+        gap: '0.35rem',
+        marginBottom: '2rem',
+        padding: '0.25rem',
+        background: 'rgba(255, 255, 255, 0.01)',
+        border: '1px solid var(--border-glass)',
+        borderRadius: '8px',
+        width: 'fit-content'
+      }}>
+        <button
+          onClick={() => setActiveRoundTab('ALL')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'ALL' ? 'var(--primary-glow)' : 'transparent',
+            color: activeRoundTab === 'ALL' ? 'var(--primary)' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>All Panels</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'ALL' ? 'var(--primary)' : 'var(--border-glass)',
+            color: activeRoundTab === 'ALL' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.all}
+          </span>
+        </button>
+        
+        <button
+          onClick={() => setActiveRoundTab('L1')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'L1' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+            color: activeRoundTab === 'L1' ? '#0ea5e9' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>L1 Round</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'L1' ? '#0ea5e9' : 'var(--border-glass)',
+            color: activeRoundTab === 'L1' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.l1}
+          </span>
+        </button>
+        
+        <button
+          onClick={() => setActiveRoundTab('L2')}
+          style={{
+            padding: '0.45rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: activeRoundTab === 'L2' ? 'rgba(124, 58, 237, 0.1)' : 'transparent',
+            color: activeRoundTab === 'L2' ? '#7c3aed' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'var(--transition-fast)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
+        >
+          <span>L2 Round</span>
+          <span style={{
+            fontSize: '0.72rem',
+            background: activeRoundTab === 'L2' ? '#7c3aed' : 'var(--border-glass)',
+            color: activeRoundTab === 'L2' ? '#ffffff' : 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700
+          }}>
+            {roundCounts.l2}
+          </span>
+        </button>
+      </div>
 
       {/* Pending Action / Slot Requests Section */}
       <div style={{ marginBottom: '2.5rem' }}>
@@ -741,7 +937,11 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                 {/* Feedback section */}
                 <div>
                   <button
-                    onClick={() => toggleFeedbackExpansion(interview.panelId)}
+                    onClick={() => toggleFeedbackExpansion(
+                      interview.panelId,
+                      interview.role.toLowerCase().includes('l2'),
+                      interview.candidateEmail
+                    )}
                     style={{
                       width: '100%',
                       background: 'rgba(255, 255, 255, 0.02)',
@@ -774,6 +974,104 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                   {expandedFeedbacks[interview.panelId] && (
                     <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
+                      
+                      {/* L1 Feedback for L2 Panelists */}
+                      {interview.role.toLowerCase().includes('l2') && (
+                        <div style={{
+                          marginBottom: '1.5rem',
+                          padding: '1rem',
+                          background: 'rgba(59, 130, 246, 0.02)',
+                          border: '1px solid var(--border-glass)',
+                          borderRadius: 'var(--radius-sm)',
+                        }}>
+                          <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-main)' }}>
+                            <MessageSquare size={14} className="text-primary" />
+                            L1 Round Feedback (Reference)
+                          </h4>
+
+                          {loadingL1Feedbacks[interview.panelId] ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              <Loader2 size={14} className="animate-spin text-primary" />
+                              <span>Loading L1 feedback...</span>
+                            </div>
+                          ) : !l1FeedbacksForCandidate[interview.panelId] || l1FeedbacksForCandidate[interview.panelId].length === 0 ? (
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              No submitted L1 feedback found for this candidate.
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                              {l1FeedbacksForCandidate[interview.panelId].map((l1, idx) => {
+                                const parsedL1 = parseFeedbackSafely(l1.feedback);
+                                const isPassedL1 = l1.decision === 'PASSED';
+                                const badgeColor = isPassedL1 ? 'var(--success)' : 'var(--danger)';
+                                const badgeBg = isPassedL1 ? 'var(--success-glow)' : 'var(--danger-glow)';
+                                const badgeBorder = isPassedL1 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+
+                                return (
+                                  <div key={l1.panelId || idx} style={{
+                                    borderLeft: '2px solid var(--border-glass)',
+                                    paddingLeft: '0.75rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.4rem'
+                                  }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Evaluator: <strong style={{ color: 'var(--text-main)' }}>{l1.panelistName}</strong>
+                                      </div>
+                                      <span className="badge" style={{
+                                        fontSize: '0.58rem',
+                                        background: badgeBg,
+                                        border: `1px solid ${badgeBorder}`,
+                                        color: badgeColor
+                                      }}>
+                                        {l1.decision}
+                                      </span>
+                                    </div>
+
+                                    {parsedL1 && parsedL1.scores && (
+                                      <div style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.25rem',
+                                        margin: '0.25rem 0',
+                                        background: 'rgba(255,255,255,0.01)',
+                                        padding: '0.4rem',
+                                        borderRadius: '4px'
+                                      }}>
+                                        {Object.entries(parsedL1.scores).map(([metric, score]) => {
+                                          const displayNames: Record<string, string> = {
+                                            coding: 'Coding',
+                                            communication: 'Communication',
+                                            fundamentals: 'Fundamentals'
+                                          };
+                                          return (
+                                            <div key={metric} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                                {displayNames[metric] || metric}:
+                                              </span>
+                                              {renderStarsStatic(score as number)}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+
+                                    <div style={{ fontSize: '0.78rem' }}>
+                                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '1px' }}>
+                                        Comments
+                                      </span>
+                                      <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.78rem', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                                        {parsedL1 ? parsedL1.comments : (l1.feedback || 'No comments.')}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {feedbackAlreadySubmitted && !isEditing[interview.panelId] ? (
                     (() => {
                       let parsed: any = null;
