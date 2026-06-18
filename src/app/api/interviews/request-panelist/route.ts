@@ -69,11 +69,11 @@ export async function POST(request: NextRequest) {
               Proposed Interview Date Range: <strong>${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}</strong>
             </p>
             <p style="font-size: 14px; color: #94a3b8; margin-bottom: 16px;">
-              Please click the button below to view the proposed slots and select **one** to book:
+              Please click the button below to view the proposed slots and select **one or more** slots to book:
             </p>
             <div style="margin-top: 16px; margin-bottom: 12px;">
               <a href="${availabilityLink}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; transition: background-color 0.2s;">
-                Select Slot Option
+                Select Slots / Provide Availability
               </a>
             </div>
             <div style="font-size: 11px; color: #64748b; margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">

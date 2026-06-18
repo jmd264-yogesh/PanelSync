@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PanelistInterview } from '@/lib/db';
+import { PanelistInterview, Interview, InterviewPanel } from '@/lib/db';
+import AvailabilityClient from '../availability/[token]/AvailabilityClient';
 import {
   Video,
   CheckCircle,
@@ -11,6 +12,8 @@ import {
   MessageSquare,
   Loader2,
   CalendarCheck,
+  Calendar,
+  AlertCircle
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -25,6 +28,7 @@ import {
 
 interface PanelistClientProps {
   initialInterviews: PanelistInterview[];
+  initialRequests: { interview: Interview; panel: InterviewPanel }[];
   panelistRoles: string[];
   panelistName: string;
 }
@@ -53,8 +57,10 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: '#ef4444',
 };
 
-export default function PanelistClient({ initialInterviews, panelistRoles, panelistName }: PanelistClientProps) {
+export default function PanelistClient({ initialInterviews, initialRequests, panelistRoles, panelistName }: PanelistClientProps) {
   const [interviews, setInterviews] = useState<PanelistInterview[]>(initialInterviews);
+  const [pendingRequests, setPendingRequests] = useState<{ interview: Interview; panel: InterviewPanel }[]>(initialRequests);
+  const [selectedRequest, setSelectedRequest] = useState<{ interview: Interview; panel: InterviewPanel } | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, string>>({});
   const [submittingFeedback, setSubmittingFeedback] = useState<Record<string, boolean>>({});
   const [updatingStatus, setUpdatingStatus] = useState<Record<string, boolean>>({});
@@ -72,10 +78,14 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
 
   const refreshInterviews = async () => {
     try {
-      const res = await fetch('/api/panelist/interviews');
-      if (res.ok) setInterviews(await res.json());
+      const [interviewsRes, requestsRes] = await Promise.all([
+        fetch('/api/panelist/interviews'),
+        fetch('/api/panelist/requests')
+      ]);
+      if (interviewsRes.ok) setInterviews(await interviewsRes.ok ? await interviewsRes.json() : []);
+      if (requestsRes.ok) setPendingRequests(await requestsRes.ok ? await requestsRes.json() : []);
     } catch (err) {
-      console.error('Failed to refresh interviews', err);
+      console.error('Failed to refresh interviews or requests', err);
     }
   };
 
@@ -371,6 +381,73 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
             </span>
           )}
         </p>
+      </div>
+
+      {/* Pending Action / Slot Requests Section */}
+      <div style={{ marginBottom: '2.5rem' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Calendar size={18} className="text-primary" />
+          Pending Action / Slot Requests
+          {pendingRequests.length > 0 && (
+            <span className="badge badge-pending" style={{ fontSize: '0.65rem', marginLeft: '8px' }}>
+              {pendingRequests.length} action required
+            </span>
+          )}
+        </h2>
+
+        {pendingRequests.length === 0 ? (
+          <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-glass)' }}>
+            <span className="text-muted text-sm">No pending slot requests at the moment.</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {pendingRequests.map((req) => {
+              const dateRange = `${new Date(req.interview.startDate).toLocaleDateString()} - ${new Date(req.interview.endDate).toLocaleDateString()}`;
+              return (
+                <div
+                  key={req.panel.id}
+                  className="glass-card"
+                  style={{
+                    padding: '1.25rem 1.5rem',
+                    borderLeft: '4px solid var(--primary)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '1rem',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{req.interview.role}</span>
+                      <span className="badge badge-pending" style={{ fontSize: '0.6rem' }}>
+                        Availability Requested
+                      </span>
+                    </div>
+                    <div className="text-muted text-xs" style={{ marginBottom: '0.25rem' }}>
+                      Proposed Date Range: <strong>{dateRange}</strong>
+                    </div>
+                    <div className="text-muted text-xs">
+                      Duration: <strong>{req.interview.duration} minutes</strong>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setSelectedRequest(req)}
+                  >
+                    Provide Availability / Select Slot
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+          Scheduled Assignments
+        </h2>
       </div>
 
       {interviews.length === 0 ? (
@@ -1077,6 +1154,57 @@ export default function PanelistClient({ initialInterviews, panelistRoles, panel
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {selectedRequest && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1.5rem',
+        }}>
+          <div className="glass-card" style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            position: 'relative',
+            padding: '2rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+          }}>
+            <button
+              onClick={() => {
+                setSelectedRequest(null);
+                refreshInterviews();
+              }}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '1.5rem',
+                lineHeight: 1,
+              }}
+            >
+              &times;
+            </button>
+            <AvailabilityClient
+              interview={selectedRequest.interview}
+              panel={selectedRequest.panel}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
