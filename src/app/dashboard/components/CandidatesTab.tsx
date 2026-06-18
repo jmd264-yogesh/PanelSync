@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle
+  Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle, X
 } from 'lucide-react';
 import { UploadedCandidate, Interview, College, Drive } from '@/lib/db';
 import * as XLSX from 'xlsx';
@@ -66,6 +66,9 @@ export default function CandidatesTab({
   // ── Queue filters ─────────────────────────────────────────────────────────
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
+  const [candidateCollegeFilter, setCandidateCollegeFilter] = useState<string>('all');
+  const [candidateDateFilter, setCandidateDateFilter] = useState<string>('all');
+  const [scopeToActiveDrive, setScopeToActiveDrive] = useState<boolean>(!!activeDrive);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
 
   // ── Load on mount ─────────────────────────────────────────────────────────
@@ -94,6 +97,9 @@ export default function CandidatesTab({
       setSingleCandidateDate(activeDrive.startDate);
       setSingleCandidateCollege(activeDrive.collegeName);
       setSingleCandidateCollegeDrive(activeDrive.collegeName);
+      setScopeToActiveDrive(true);
+    } else {
+      setScopeToActiveDrive(false);
     }
   }, [activeDrive]);
 
@@ -400,7 +406,13 @@ export default function CandidatesTab({
       c.name.toLowerCase().includes(candidateSearchQuery.toLowerCase()) ||
       c.email.toLowerCase().includes(candidateSearchQuery.toLowerCase());
     const matchesStatus = candidateStatusFilter === 'all' || c.status === candidateStatusFilter;
-    return matchesQuery && matchesStatus;
+    const matchesCollege = candidateCollegeFilter === 'all' ||
+      (c.collegeDrive && c.collegeDrive.toLowerCase() === candidateCollegeFilter.toLowerCase()) ||
+      (c.college && c.college.toLowerCase() === candidateCollegeFilter.toLowerCase());
+    const matchesDate = candidateDateFilter === 'all' || c.preferredDate === candidateDateFilter;
+    const matchesActiveDrive = !scopeToActiveDrive || !activeDrive ||
+      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase());
+    return matchesQuery && matchesStatus && matchesCollege && matchesDate && matchesActiveDrive;
   });
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -582,8 +594,26 @@ export default function CandidatesTab({
                   style={{ paddingLeft: '28px', fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)' }}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Queue Filter Bar */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '0.75rem',
+            padding: '0.75rem 1rem',
+            background: 'rgba(255,255,255,0.01)',
+            border: '1px solid var(--border-glass)',
+            borderRadius: 'var(--radius-md)',
+            marginBottom: '1.5rem',
+            alignItems: 'center'
+          }}>
+            {/* Status Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Status</label>
               <Select value={candidateStatusFilter} onValueChange={(val) => setCandidateStatusFilter(val as any)}>
-                <SelectTrigger className="text-left" style={{ fontSize: '0.75rem', height: '32px', width: '120px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
+                <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
@@ -592,6 +622,70 @@ export default function CandidatesTab({
                   <SelectItem value="MAPPED">Mapped</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* College Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>College (Drive)</label>
+              <Select value={candidateCollegeFilter} onValueChange={(val) => setCandidateCollegeFilter(val || 'all')}>
+                <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
+                  <SelectValue placeholder="All Colleges" />
+                </SelectTrigger>
+                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectItem value="all">All Colleges</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Drive Date</label>
+              <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={candidateDateFilter === 'all' ? '' : candidateDateFilter}
+                  onChange={(e) => setCandidateDateFilter(e.target.value || 'all')}
+                  style={{
+                    width: '100%',
+                    padding: '0.3rem 0.5rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border-glass)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'inherit',
+                    fontSize: '0.75rem',
+                    height: '32px',
+                    colorScheme: 'dark',
+                    cursor: 'pointer'
+                  }}
+                />
+                {candidateDateFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setCandidateDateFilter('all')}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title="Clear date filter"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Active Drive Scope */}
+            <div style={{ display: 'flex', alignItems: 'center', height: '100%', paddingTop: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={scopeToActiveDrive && !!activeDrive}
+                  disabled={!activeDrive}
+                  onChange={(e) => setScopeToActiveDrive(e.target.checked)}
+                  style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
+                />
+                <span>Scope to Active Drive {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+              </label>
             </div>
           </div>
 

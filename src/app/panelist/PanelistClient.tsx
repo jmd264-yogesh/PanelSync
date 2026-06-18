@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { PanelistInterview, Interview, InterviewPanel } from '@/lib/db';
+import { PanelistInterview, Interview, InterviewPanel, Drive } from '@/lib/db';
 import AvailabilityClient from '../availability/[token]/AvailabilityClient';
 import {
   Video,
@@ -31,6 +31,7 @@ interface PanelistClientProps {
   initialRequests: { interview: Interview; panel: InterviewPanel }[];
   panelistRoles: string[];
   panelistName: string;
+  activeDrive: Drive | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -57,7 +58,7 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: '#ef4444',
 };
 
-export default function PanelistClient({ initialInterviews, initialRequests, panelistRoles, panelistName }: PanelistClientProps) {
+export default function PanelistClient({ initialInterviews, initialRequests, panelistRoles, panelistName, activeDrive }: PanelistClientProps) {
   const [interviews, setInterviews] = useState<PanelistInterview[]>(initialInterviews);
   const [pendingRequests, setPendingRequests] = useState<{ interview: Interview; panel: InterviewPanel }[]>(initialRequests);
   const [selectedRequest, setSelectedRequest] = useState<{ interview: Interview; panel: InterviewPanel } | null>(null);
@@ -68,6 +69,17 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
   const [isEditing, setIsEditing] = useState<Record<string, boolean>>({});
   const [pendingL1PassConfirm, setPendingL1PassConfirm] = useState<PanelistInterview | null>(null);
 
+  // Filter states
+  const [filterActiveDrive, setFilterActiveDrive] = useState(!!activeDrive);
+  const [filterToday, setFilterToday] = useState(false);
+
+  // Accordion state for feedback cards
+  const [expandedFeedbacks, setExpandedFeedbacks] = useState<Record<string, boolean>>({});
+
+  const toggleFeedbackExpansion = (panelId: string) => {
+    setExpandedFeedbacks((prev) => ({ ...prev, [panelId]: !prev[panelId] }));
+  };
+
   // Structured score states keyed by panelId
   const [l1Ratings, setL1Ratings] = useState<Record<string, { coding: number; communication: number; fundamentals: number; codingNotes: string; commNotes: string; fundNotes: string; comments: string }>>({});
   const [l2Ratings, setL2Ratings] = useState<Record<string, { design: number; depth: number; leadership: number; fit: number; designNotes: string; depthNotes: string; leadNotes: string; fitNotes: string; comments: string }>>({});
@@ -75,6 +87,95 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
   const isL1 = panelistRoles.includes('L1');
   const isL2 = panelistRoles.includes('L2');
+
+  const getCollegeNameFromRole = (role: string): string => {
+    const parts = role.split(' - ');
+    return parts.length > 1 ? parts[1].trim() : '';
+  };
+
+  const isFromActiveDrive = (role: string): boolean => {
+    if (!activeDrive || !activeDrive.collegeName) return false;
+    const college = getCollegeNameFromRole(role);
+    return college.toLowerCase() === activeDrive.collegeName.toLowerCase();
+  };
+
+  // Memoized sorted and filtered interviews:
+  // 1. Active drive first
+  // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
+  // 3. Alphabetically by college name
+  const filteredSortedInterviews = React.useMemo(() => {
+    let result = [...interviews];
+
+    if (filterActiveDrive && activeDrive) {
+      result = result.filter((i) => isFromActiveDrive(i.role));
+    }
+
+    if (filterToday) {
+      const todayStr = new Date().toDateString();
+      result = result.filter((i) => {
+        if (!i.scheduledSlotStart) return false;
+        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+      });
+    }
+
+    return result.sort((a, b) => {
+      const aActive = isFromActiveDrive(a.role);
+      const bActive = isFromActiveDrive(b.role);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const aTime = new Date(a.scheduledSlotStart).getTime();
+      const bTime = new Date(b.scheduledSlotStart).getTime();
+      if (aTime !== bTime) {
+        return aTime - bTime;
+      }
+
+      const aCollege = getCollegeNameFromRole(a.role);
+      const bCollege = getCollegeNameFromRole(b.role);
+      return aCollege.localeCompare(bCollege);
+    });
+  }, [interviews, activeDrive, filterActiveDrive, filterToday]);
+
+  // Memoized sorted and filtered pending requests (slots):
+  // 1. Active drive first
+  // 2. Chronologically descending (latest startDate first)
+  // 3. Fallback to newest creation time (createdAt) first
+  const filteredSortedRequests = React.useMemo(() => {
+    let result = [...pendingRequests];
+
+    if (filterActiveDrive && activeDrive) {
+      result = result.filter((req) => isFromActiveDrive(req.interview.role));
+    }
+
+    if (filterToday) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      result = result.filter((req) => {
+        const start = new Date(req.interview.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(req.interview.endDate);
+        end.setHours(23, 59, 59, 999);
+        return today >= start && today <= end;
+      });
+    }
+
+    return result.sort((a, b) => {
+      const aActive = isFromActiveDrive(a.interview.role);
+      const bActive = isFromActiveDrive(b.interview.role);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const aStart = new Date(a.interview.startDate).getTime();
+      const bStart = new Date(b.interview.startDate).getTime();
+      if (aStart !== bStart) {
+        return bStart - aStart; // latest first
+      }
+
+      const aCreate = a.interview.createdAt ? new Date(a.interview.createdAt).getTime() : 0;
+      const bCreate = b.interview.createdAt ? new Date(b.interview.createdAt).getTime() : 0;
+      return bCreate - aCreate; // latest first
+    });
+  }, [pendingRequests, activeDrive, filterActiveDrive, filterToday]);
 
   const refreshInterviews = async () => {
     try {
@@ -383,6 +484,54 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
         </p>
       </div>
 
+      {/* Filter Bar */}
+      <div className="glass-card" style={{ padding: '1rem 1.5rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap', border: '1px solid var(--border-glass)' }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filters:</div>
+        
+        {/* Active Drive Scope */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)' }}>
+          <input
+            type="checkbox"
+            checked={filterActiveDrive && !!activeDrive}
+            disabled={!activeDrive}
+            onChange={(e) => setFilterActiveDrive(e.target.checked)}
+            style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
+          />
+          <span>Active Drive Only {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+        </label>
+
+        {/* Current Date Filter */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filterToday}
+            onChange={(e) => setFilterToday(e.target.checked)}
+            style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+          />
+          <span>Today's Date Only ({new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})</span>
+        </label>
+
+        {/* Reset Filters Link */}
+        {(filterActiveDrive || filterToday) && (
+          <button
+            onClick={() => { setFilterActiveDrive(false); setFilterToday(false); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--primary)',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginLeft: 'auto',
+              padding: 0,
+              textDecoration: 'underline'
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
+
       {/* Pending Action / Slot Requests Section */}
       <div style={{ marginBottom: '2.5rem' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -390,18 +539,24 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
           Pending Action / Slot Requests
           {pendingRequests.length > 0 && (
             <span className="badge badge-pending" style={{ fontSize: '0.65rem', marginLeft: '8px' }}>
-              {pendingRequests.length} action required
+              {filteredSortedRequests.length !== pendingRequests.length 
+                ? `${filteredSortedRequests.length} of ${pendingRequests.length} filtered` 
+                : `${pendingRequests.length} action required`}
             </span>
           )}
         </h2>
 
-        {pendingRequests.length === 0 ? (
+        {filteredSortedRequests.length === 0 ? (
           <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-glass)' }}>
-            <span className="text-muted text-sm">No pending slot requests at the moment.</span>
+            <span className="text-muted text-sm">
+              {pendingRequests.length === 0 
+                ? 'No pending slot requests at the moment.' 
+                : 'No pending slot requests match the active filters.'}
+            </span>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {pendingRequests.map((req) => {
+            {filteredSortedRequests.map((req) => {
               const dateRange = `${new Date(req.interview.startDate).toLocaleDateString()} - ${new Date(req.interview.endDate).toLocaleDateString()}`;
               return (
                 <div
@@ -447,18 +602,29 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       <div style={{ marginBottom: '2rem' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem' }}>
           Scheduled Assignments
+          {filteredSortedInterviews.length !== interviews.length && (
+            <span className="text-muted text-xs" style={{ marginLeft: '8px', fontWeight: 400 }}>
+              ({filteredSortedInterviews.length} of {interviews.length} shown)
+            </span>
+          )}
         </h2>
       </div>
 
-      {interviews.length === 0 ? (
+      {filteredSortedInterviews.length === 0 ? (
         <div className="glass-card text-center" style={{ padding: '4rem 2rem' }}>
           <CalendarCheck size={44} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.3, display: 'block' }} />
-          <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>No Interviews Yet</p>
-          <p className="text-muted text-sm">Once a recruiter schedules an interview and assigns you as a panelist, it will appear here.</p>
+          <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>
+            {interviews.length === 0 ? 'No Interviews Yet' : 'No Matching Interviews'}
+          </p>
+          <p className="text-muted text-sm">
+            {interviews.length === 0 
+              ? 'Once a recruiter schedules an interview and assigns you as a panelist, it will appear here.'
+              : 'Try adjusting your filters above to see other scheduled assignments.'}
+          </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {interviews.map((interview) => {
+          {filteredSortedInterviews.map((interview) => {
             const outcomeStatus = interview.outcomeStatus || 'PENDING';
             const statusColor = STATUS_COLOR[outcomeStatus] || '#94a3b8';
             const badgeClass = STATUS_BADGE[outcomeStatus] || 'badge-pending';
@@ -523,11 +689,41 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                 {/* Feedback section */}
                 <div>
-                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <MessageSquare size={11} /> Feedback
-                  </div>
+                  <button
+                    onClick={() => toggleFeedbackExpansion(interview.panelId)}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-glass)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.6rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      transition: 'background 0.2s',
+                      outline: 'none',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <MessageSquare size={13} className="text-primary" />
+                      <span>Feedback {feedbackAlreadySubmitted ? '(Submitted)' : '(Pending Submission)'}</span>
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {expandedFeedbacks[interview.panelId] ? '▲ Collapse' : '▼ Expand'}
+                    </span>
+                  </button>
 
-                  {feedbackAlreadySubmitted && !isEditing[interview.panelId] ? (
+                  {expandedFeedbacks[interview.panelId] && (
+                    <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1rem' }}>
+                      {feedbackAlreadySubmitted && !isEditing[interview.panelId] ? (
                     (() => {
                       let parsed: any = null;
                       let isJson = false;
@@ -1119,6 +1315,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                         </div>
                       );
                     })()
+                  )}
+                    </div>
                   )}
                 </div>
               </div>
