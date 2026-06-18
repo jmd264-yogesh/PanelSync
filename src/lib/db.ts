@@ -883,6 +883,32 @@ export const db = {
     return result;
   },
 
+  getPanelistRequests: async (panelistEmail: string): Promise<{ interview: Interview; panel: InterviewPanel }[]> => {
+    const normalizedEmail = panelistEmail.trim().toLowerCase();
+
+    const panelRows = await dbClient
+      .select()
+      .from(schema.interviewPanels)
+      .where(
+        and(
+          eq(schema.interviewPanels.email, normalizedEmail),
+          eq(schema.interviewPanels.status, 'PENDING')
+        )
+      );
+
+    const result: { interview: Interview; panel: InterviewPanel }[] = [];
+    for (const panelRow of panelRows) {
+      const interview = await db.getInterview(panelRow.interviewId);
+      if (!interview || interview.status === 'CANCELLED' || interview.status === 'SCHEDULED') continue;
+
+      const activePanel = interview.panels.find((p) => p.id === panelRow.id);
+      if (activePanel) {
+        result.push({ interview, panel: activePanel });
+      }
+    }
+    return result;
+  },
+
   submitPanelFeedback: async (panelId: string, feedback: string, decision: 'PASSED' | 'REJECTED'): Promise<boolean> => {
     // Keep the original submission timestamp if it was already submitted (for editing)
     const [existing] = await dbClient

@@ -621,21 +621,41 @@ export default function InterviewsTab({
   const interviewsForMetricsList = getInterviewsForMetrics();
 
   const drivePanels = interviewsForMetricsList.flatMap((i) =>
-    i.panels.map((p) => ({ ...p, candidateName: i.candidateName, role: i.role }))
+    i.panels.map((p) => ({
+      ...p,
+      candidateName: i.candidateName,
+      role: i.role,
+      interviewStatus: i.status,
+      scheduledSlotStart: i.scheduledSlotStart,
+      scheduledSlotEnd: i.scheduledSlotEnd,
+      interviewDuration: i.duration
+    }))
   );
 
   // Deduplicate drive panels by panelist email for requested/replied/rejected/pending slot request metrics,
-  // accumulating candidate names and roles for clear display.
+  // accumulating candidate names, roles, and given slot timings for clear display.
   const getUniqueDrivePanels = (panelsList: typeof drivePanels) => {
-    const panelsMap = new Map<string, typeof drivePanels[0] & { candidateNames: string[]; roles: string[] }>();
+    const panelsMap = new Map<string, typeof drivePanels[0] & {
+      candidateNames: string[];
+      roles: string[];
+      givenSlots: { startTime: string; endTime: string }[];
+    }>();
+
     for (const p of panelsList) {
       const emailKey = p.email.toLowerCase();
+      const slots = p.status === 'SUBMITTED'
+        ? (p.scheduledSlotStart
+            ? [{ startTime: p.scheduledSlotStart, endTime: p.scheduledSlotEnd || '' }]
+            : (p.availabilities || []).map(av => ({ startTime: av.startTime, endTime: av.endTime })))
+        : [];
+
       const existing = panelsMap.get(emailKey);
       if (!existing) {
         panelsMap.set(emailKey, {
           ...p,
           candidateNames: [p.candidateName],
-          roles: [p.role]
+          roles: [p.role],
+          givenSlots: slots
         });
       } else {
         if (!existing.candidateNames.includes(p.candidateName)) {
@@ -644,6 +664,17 @@ export default function InterviewsTab({
         if (!existing.roles.includes(p.role)) {
           existing.roles.push(p.role);
         }
+
+        // Accumulate given slots (avoiding duplicates)
+        for (const s of slots) {
+          const isDup = existing.givenSlots.some(
+            (existSlot) => existSlot.startTime === s.startTime && existSlot.endTime === s.endTime
+          );
+          if (!isDup) {
+            existing.givenSlots.push(s);
+          }
+        }
+
         // Resolve status: prioritize SUBMITTED, then REJECTED, then PENDING
         if (p.status === 'SUBMITTED') {
           existing.status = 'SUBMITTED';
@@ -667,6 +698,10 @@ export default function InterviewsTab({
   const drivePanelistsReplied = uniqueDrivePanels.filter((p) => p.status === 'SUBMITTED').length;
   const drivePanelistsRejected = uniqueDrivePanels.filter((p) => p.status === 'REJECTED').length;
   const drivePanelistsPending = uniqueDrivePanels.filter((p) => p.status === 'PENDING').length;
+
+  const totalSlotsGiven = uniqueDrivePanels
+    .filter((p) => p.status === 'SUBMITTED')
+    .reduce((sum, p) => sum + (p.givenSlots?.length || 0), 0);
 
   const drivePassed = drivePanels.filter((p) => p.decision === 'PASSED').length;
   const driveRejected = drivePanels.filter((p) => p.decision === 'REJECTED').length;
@@ -996,7 +1031,7 @@ export default function InterviewsTab({
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>sent</span>
               </div>
               <div style={{ display: 'flex', gap: '0.6rem', fontSize: '0.7rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#10b981', fontWeight: 600 }}>{drivePanelistsReplied} accepted</span>
+                <span style={{ color: '#10b981', fontWeight: 600 }}>{drivePanelistsReplied} accepted ({totalSlotsGiven} slots)</span>
                 <span style={{ color: '#ef4444', fontWeight: 600 }}>{drivePanelistsRejected} rejected</span>
                 <span style={{ color: '#f59e0b', fontWeight: 600 }}>{drivePanelistsPending} yet to respond</span>
               </div>
@@ -1162,21 +1197,46 @@ export default function InterviewsTab({
                                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                                         {/* Slots Badge */}
                                         {p.status === 'SUBMITTED' ? (
-                                          <span style={{
-                                            fontSize: '0.65rem',
-                                            fontWeight: 700,
-                                            padding: '0.15rem 0.4rem',
-                                            background: 'rgba(16, 185, 129, 0.1)',
-                                            border: '1px solid rgba(16, 185, 129, 0.2)',
-                                            borderRadius: '4px',
-                                            color: '#10b981',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}>
-                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                            Slots Provided
-                                          </span>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                            <span style={{
+                                              fontSize: '0.65rem',
+                                              fontWeight: 700,
+                                              padding: '0.15rem 0.4rem',
+                                              background: 'rgba(16, 185, 129, 0.1)',
+                                              border: '1px solid rgba(16, 185, 129, 0.2)',
+                                              borderRadius: '4px',
+                                              color: '#10b981',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '0.25rem',
+                                              width: 'fit-content'
+                                            }}>
+                                              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
+                                              Slots Provided
+                                            </span>
+                                            {p.availabilities && p.availabilities.length > 0 && !interview.scheduledSlotStart && (
+                                              <div style={{
+                                                fontSize: '0.7rem',
+                                                color: 'var(--text-muted)',
+                                                paddingLeft: '0.5rem',
+                                                borderLeft: '1px dashed rgba(16, 185, 129, 0.3)',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.1rem'
+                                              }}>
+                                                {p.availabilities.map((av) => {
+                                                  const start = new Date(av.startTime);
+                                                  const end = new Date(av.endTime);
+                                                  return (
+                                                    <div key={av.id}>
+                                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                                      {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
                                         ) : (
                                           <span style={{
                                             fontSize: '0.65rem',
@@ -1269,21 +1329,46 @@ export default function InterviewsTab({
                               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                                 {/* Slots Badge */}
                                 {panel.status === 'SUBMITTED' ? (
-                                  <span style={{
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.4rem',
-                                    background: 'rgba(16, 185, 129, 0.1)',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    borderRadius: '4px',
-                                    color: '#10b981',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                    Slots Provided
-                                  </span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                    <span style={{
+                                      fontSize: '0.65rem',
+                                      fontWeight: 700,
+                                      padding: '0.15rem 0.4rem',
+                                      background: 'rgba(16, 185, 129, 0.1)',
+                                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                                      borderRadius: '4px',
+                                      color: '#10b981',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.25rem',
+                                      width: 'fit-content'
+                                    }}>
+                                      <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
+                                      Slots Provided
+                                    </span>
+                                    {panel.availabilities && panel.availabilities.length > 0 && !interview.scheduledSlotStart && (
+                                      <div style={{
+                                        fontSize: '0.7rem',
+                                        color: 'var(--text-muted)',
+                                        paddingLeft: '0.5rem',
+                                        borderLeft: '1px dashed rgba(16, 185, 129, 0.3)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.1rem'
+                                      }}>
+                                        {panel.availabilities.map((av) => {
+                                          const start = new Date(av.startTime);
+                                          const end = new Date(av.endTime);
+                                          return (
+                                            <div key={av.id}>
+                                              {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                              {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span style={{
                                     fontSize: '0.65rem',
@@ -1359,7 +1444,7 @@ export default function InterviewsTab({
 
                         {/* Timing Block */}
                         <div style={{ fontSize: '0.75rem', color: statusColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
-                          {interview.status === 'SCHEDULED' && interview.scheduledSlotStart ? (
+                          {interview.scheduledSlotStart ? (
                             <>
                               <CalendarCheck size={13} style={{ color: statusColor }} />
                               <span>
@@ -1827,6 +1912,28 @@ export default function InterviewsTab({
                           <div>Candidate: {panel.candidateNames.join(', ')}</div>
                           <div>Role: {panel.roles.join(', ')}</div>
                         </div>
+                        {panel.givenSlots && panel.givenSlots.length > 0 && (
+                          <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed rgba(16,185,129,0.2)' }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#10b981', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <Clock size={11} />
+                              Slots Provided ({panel.givenSlots.length}):
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', paddingLeft: '0.85rem' }}>
+                              {panel.givenSlots.map((slot, sIdx) => {
+                                const start = new Date(slot.startTime);
+                                const end = new Date(slot.endTime);
+                                return (
+                                  <div key={sIdx} style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
+                                    <span style={{ fontWeight: 600, color: 'inherit' }}>
+                                      {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

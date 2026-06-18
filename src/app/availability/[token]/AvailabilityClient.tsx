@@ -32,14 +32,9 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
 
   // State for Flow A
   const [isBooked, setIsBooked] = useState(interview.status === 'SCHEDULED');
-  const [bookedSlot, setBookedSlot] = useState<{ startTime: string; endTime: string } | null>(
-    interview.scheduledSlotStart && interview.scheduledSlotEnd
-      ? { startTime: interview.scheduledSlotStart, endTime: interview.scheduledSlotEnd }
-      : null
-  );
-  const [meetingUrl, setMeetingUrl] = useState(interview.teamsMeetingUrl || '');
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  const [bookedMeetings, setBookedMeetings] = useState<{ startTime: string; endTime: string; joinUrl: string; candidateName: string }[]>([]);
   const [isBooking, setIsBooking] = useState(false);
-  const [selectingSlotId, setSelectingSlotId] = useState<string | null>(null);
   const [hoveredSlotId, setHoveredSlotId] = useState<string | null>(null);
 
   // State for Flow B (Original Availability submission builder)
@@ -57,10 +52,22 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
   const maxDate = new Date(interview.endDate).toISOString().split('T')[0];
 
   // Flow A actions
-  const handleSelectSlot = async (startTime: string, endTime: string, slotId: string) => {
+  const toggleSlotSelection = (slotId: string) => {
+    setSelectedSlots((prev) =>
+      prev.includes(slotId)
+        ? prev.filter((id) => id !== slotId)
+        : [...prev, slotId]
+    );
+  };
+
+  const handleBookSelectedSlots = async () => {
+    if (selectedSlots.length === 0) return;
     setIsBooking(true);
-    setSelectingSlotId(slotId);
     setErrorMsg('');
+
+    const slotsToBook = panel.availabilities
+      .filter((a) => selectedSlots.includes(a.id))
+      .map((a) => ({ startTime: a.startTime, endTime: a.endTime }));
 
     try {
       const res = await fetch('/api/availability/select-slot', {
@@ -68,26 +75,23 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token: panel.token,
-          startTime,
-          endTime,
+          slots: slotsToBook,
         }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to book slot.');
+        throw new Error(data.error || 'Failed to book slots.');
       }
 
       const data = await res.json();
-      setBookedSlot({ startTime, endTime });
-      setMeetingUrl(data.meeting?.joinUrl || data.meeting?.webLink || '');
+      setBookedMeetings(data.meetings || []);
       setIsBooked(true);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'An error occurred while booking this slot.');
+      setErrorMsg(err.message || 'An error occurred while booking selected slots.');
     } finally {
       setIsBooking(false);
-      setSelectingSlotId(null);
     }
   };
 
@@ -291,42 +295,51 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
           <CheckCircle size={56} style={{ color: 'var(--success)', margin: '0 auto 1.5rem' }} />
           <h2 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>Interview Scheduled</h2>
           <p className="text-muted" style={{ fontSize: '0.95rem', marginBottom: '2rem' }}>
-            Thank you, <strong>{panel.name}</strong>. The <strong>{interview.role}</strong> interview is officially scheduled.
+            Thank you, <strong>{panel.name}</strong>. The <strong>{interview.role}</strong> interview slot bookings are confirmed.
           </p>
           
-          {bookedSlot && (
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', textAlign: 'left', marginBottom: '2rem' }}>
-              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <Calendar size={18} className="text-primary" />
-                <div>
-                  <span className="text-xs text-muted block">Date</span>
-                  <span className="font-semibold text-sm">
-                    {new Date(bookedSlot.startTime).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                  </span>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <Clock size={18} className="text-primary" />
-                <div>
-                  <span className="text-xs text-muted block">Time (UTC)</span>
-                  <span className="font-semibold text-sm">
-                    {new Date(bookedSlot.startTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {new Date(bookedSlot.endTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              </div>
-              {meetingUrl && (
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <Video size={18} className="text-primary" />
-                  <div>
-                    <span className="text-xs text-muted block">Teams Meeting Link</span>
-                    <a href={meetingUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-primary flex-gap-1 hover-underline">
-                      Join Teams Meeting <ExternalLink size={12} />
-                    </a>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '350px', overflowY: 'auto', marginBottom: '2rem', paddingRight: '4px' }}>
+            {bookedMeetings.map((meeting, idx) => {
+              const start = new Date(meeting.startTime);
+              const end = new Date(meeting.endTime);
+              return (
+                <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--primary)', marginBottom: '0.5rem' }}>
+                    Slot Booking #{idx + 1}: {meeting.candidateName}
                   </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                    <Calendar size={16} className="text-primary" />
+                    <div>
+                      <span className="text-xs text-muted block">Date</span>
+                      <span className="font-semibold text-xs">
+                        {start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                    <Clock size={16} className="text-primary" />
+                    <div>
+                      <span className="text-xs text-muted block">Time (UTC)</span>
+                      <span className="font-semibold text-xs">
+                        {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                  {meeting.joinUrl && (
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <Video size={16} className="text-primary" />
+                      <div>
+                        <span className="text-xs text-muted block">Teams Meeting Link</span>
+                        <a href={meeting.joinUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-primary flex-gap-1 hover-underline">
+                          Join Teams Meeting <ExternalLink size={10} />
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })}
+          </div>
 
           <p className="text-muted text-xs">
             A calendar invitation has been sent to your Outlook account. You can safely close this page now.
@@ -342,9 +355,9 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
           <div className="badge badge-info" style={{ marginBottom: '0.75rem' }}>
             Interview Slot Selection
           </div>
-          <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>Select a Slot for {interview.role}</h2>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>Select Slots for {interview.role}</h2>
           <p className="text-muted text-sm">
-            Hi <strong>{panel.name}</strong>, please select **one** of the proposed slots below to schedule this interview. Clicking a slot will book it instantly on the coordinator's calendar.
+            Hi <strong>{panel.name}</strong>, please select **one or more** of the proposed slots below. You can book multiple slots if you are free to conduct multiple interviews.
           </p>
         </div>
 
@@ -356,7 +369,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
         )}
 
         {/* Proposed Slots List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2.5rem' }}>
           {panel.availabilities.length === 0 ? (
             <div style={{ padding: '2.5rem', textAlign: 'center', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.1)' }}>
               <span className="text-muted text-sm block">No proposed slots found.</span>
@@ -366,11 +379,12 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
             panel.availabilities.map((slot) => {
               const start = new Date(slot.startTime);
               const end = new Date(slot.endTime);
-              const isSelecting = selectingSlotId === slot.id;
+              const isSelected = selectedSlots.includes(slot.id);
 
               return (
                 <div
                   key={slot.id}
+                  onClick={() => toggleSlotSelection(slot.id)}
                   onMouseEnter={() => setHoveredSlotId(slot.id)}
                   onMouseLeave={() => setHoveredSlotId(null)}
                   style={{
@@ -378,16 +392,32 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '1.25rem',
-                    background: hoveredSlotId === slot.id ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.02)',
-                    border: hoveredSlotId === slot.id ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
+                    background: isSelected ? 'rgba(99, 102, 241, 0.08)' : (hoveredSlotId === slot.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)'),
+                    border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
                     borderRadius: 'var(--radius-md)',
-                    transform: hoveredSlotId === slot.id ? 'translateY(-2px)' : 'none',
-                    boxShadow: hoveredSlotId === slot.id ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
+                    cursor: 'pointer',
+                    transform: isSelected ? 'translateY(-2px)' : 'none',
+                    boxShadow: isSelected ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
                     transition: 'all 0.2s ease',
                   }}
                 >
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <Calendar size={20} className="text-muted" />
+                    <div style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '4px',
+                      border: isSelected ? '2px solid var(--primary)' : '2px solid var(--border-glass)',
+                      background: isSelected ? 'var(--primary)' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0
+                    }}>
+                      {isSelected && (
+                        <span style={{ color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }}>✓</span>
+                      )}
+                    </div>
                     <div>
                       <span className="font-semibold block text-sm">
                         {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -397,27 +427,33 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                       </span>
                     </div>
                   </div>
-
-                  <button
-                    className="btn btn-primary btn-sm"
-                    disabled={isBooking}
-                    onClick={() => handleSelectSlot(slot.startTime, slot.endTime, slot.id)}
-                    style={{ minWidth: '100px' }}
-                  >
-                    {isSelecting ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      'Book Slot'
-                    )}
-                  </button>
+                  <span className="text-muted text-xs">
+                    {isSelected ? 'Selected' : 'Click to select'}
+                  </span>
                 </div>
               );
             })
           )}
         </div>
 
-        <p className="text-muted text-xs text-center">
-          Note: This booking will immediately reserve a Teams meeting room and coordinate calendar schedules.
+        {/* Action Button */}
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', padding: '1rem' }}
+          disabled={selectedSlots.length === 0 || isBooking}
+          onClick={handleBookSelectedSlots}
+        >
+          {isBooking ? (
+            <>
+              <Loader2 size={18} className="animate-spin" /> Booking selected slots...
+            </>
+          ) : (
+            `Book Selected Slot${selectedSlots.length > 1 ? 's' : ''} (${selectedSlots.length})`
+          )}
+        </button>
+
+        <p className="text-muted text-xs text-center" style={{ marginTop: '1rem' }}>
+          Note: This booking will immediately reserve Teams meeting rooms and coordinate calendar schedules.
         </p>
 
         {/* Rejection Option */}

@@ -39,10 +39,7 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const availabilityLink = `${appUrl}/availability/${panel.token}`;
 
-    if (session.user.id === panel.userId) {
-      console.warn(`[Self-Reminder Warning] Recruiter and panelist are the same user (${panel.email}). Skipping Teams 1:1 chat creation. You can manually copy the slot selection link: ${availabilityLink}`);
-      return NextResponse.json({ success: true, warning: 'Recruiter and panelist are the same user; Teams message skipped.' });
-    }
+
 
     const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
 

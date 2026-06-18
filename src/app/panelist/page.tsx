@@ -13,8 +13,9 @@ export default async function PanelistPage() {
     redirect('/');
   }
 
-  const [interviews, panelistRecord] = await Promise.all([
+  const [interviews, pendingRequests, panelistRecord] = await Promise.all([
     db.getPanelistInterviews(session.user.email),
+    db.getPanelistRequests(session.user.email),
     db.getPanelistByEmail(session.user.email),
   ]);
 
@@ -44,11 +45,12 @@ export default async function PanelistPage() {
           </div>
         </div>
       </header>
-
+      
       <main style={{ flex: 1, padding: '2rem 0' }}>
         <div className="container">
           <PanelistClient
             initialInterviews={interviews}
+            initialRequests={pendingRequests}
             panelistRoles={panelistRecord?.roles ?? []}
             panelistName={session.user.displayName}
           />

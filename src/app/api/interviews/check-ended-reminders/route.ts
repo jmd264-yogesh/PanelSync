@@ -51,10 +51,7 @@ export async function GET(request: NextRequest) {
         );
 
       for (const panel of panelsToRemind) {
-        if (senderEmail.toLowerCase() === panel.email.toLowerCase()) {
-          console.warn(`[AutoReminder] Skipping self-message for ${panel.email}`);
-          continue;
-        }
+
 
         const feedbackLink = `${appUrl}/feedback/${panel.token}`;
         const slotEnd = interview.scheduledSlotEnd
