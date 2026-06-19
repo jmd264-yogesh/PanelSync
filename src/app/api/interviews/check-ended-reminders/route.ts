@@ -75,9 +75,9 @@ export async function GET(request: NextRequest) {
 
           const htmlMessage = `
             <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid ${accentColor}; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 520px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div style="background: ${accentColor}22; border: 1px solid ${accentColor}55; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: ${accentColor};">${isL1 ? 'L1' : isL2 ? 'L2' : 'ROUND'}</div>
-                <h3 style="margin: 0; color: #f8fafc; font-size: 15px; font-weight: 600;">Interview Feedback Required</h3>
+              <div style="margin-bottom: 12px; font-size: 14px;">
+                <div style="background: ${accentColor}22; border: 1px solid ${accentColor}55; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: ${accentColor}; display: inline-block;">${isL1 ? 'L1' : isL2 ? 'L2' : 'ROUND'}</div>
+                <h3 style="margin: 0 0 0 8px; color: #f8fafc; font-size: 15px; font-weight: 600; display: inline-block; vertical-align: middle;">Interview Feedback Required</h3>
               </div>
 
               <p style="margin: 0 0 8px; font-size: 14px; color: #cbd5e1;">
@@ -87,22 +87,30 @@ export async function GET(request: NextRequest) {
                 Your <strong style="color: ${accentColor};">${roundLabel}</strong> interview slot has ended at <strong>${slotEnd}</strong>. Please take a moment to submit your feedback and decision for this candidate.
               </p>
 
-              <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                  <div>
-                    <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em;">Candidate</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.candidateName}</div>
-                  </div>
-                  <div>
-                    <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em;">Role</div>
-                    <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.role}</div>
-                  </div>
-                </div>
+              <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="width: 50%; padding-right: 10px; vertical-align: top;">
+                      <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Candidate</div>
+                      <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.candidateName}</div>
+                    </td>
+                    <td style="width: 50%; vertical-align: top;">
+                      <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Role</div>
+                      <div style="font-size: 14px; font-weight: 700; color: #ffffff;">${interview.role}</div>
+                    </td>
+                  </tr>
+                </table>
               </div>
 
-              <a href="${feedbackLink}" style="display: inline-block; background: ${accentColor}; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 14px; margin-bottom: 14px;">
-                Submit Feedback →
-              </a>
+              <table border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 14px;">
+                <tr>
+                  <td align="center" style="border-radius: 6px;" bgcolor="${accentColor}">
+                    <a href="${feedbackLink}" target="_blank" style="font-size: 14px; font-family: 'Segoe UI', sans-serif; color: #ffffff; text-decoration: none; padding: 10px 22px; border-radius: 6px; border: 1px solid ${accentColor}; display: inline-block; font-weight: 700;">
+                      Submit Feedback &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
 
               <div style="font-size: 11px; color: #475569; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
                 Direct link: <a href="${feedbackLink}" style="color: ${accentColor}; text-decoration: underline;">${feedbackLink}</a>

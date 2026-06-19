@@ -1142,17 +1142,40 @@ export default function PanelistsTab({
               </div>
 
               {/* Teams Message Preview */}
-              <div style={{ background: '#090d16', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', marginBottom: '1.5rem' }}>
-                <span className="text-muted text-xs block font-semibold" style={{ marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
-                <div style={{ borderLeft: '4px solid var(--primary)', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <div style={{ fontWeight: 600, color: 'var(--primary)', marginBottom: '0.25rem' }}>Interview Slot Request</div>
-                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,</p>
+              <div style={{ background: 'var(--preview-bg)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', marginBottom: '1.5rem' }}>
+                <span className="text-muted text-xs block font-semibold" style={{ marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
+                <div style={{ borderLeft: '4px solid #6366f1', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', fontSize: '0.6rem', padding: '1px 6px', textTransform: 'uppercase', fontWeight: 700 }}>REQUEST</span>
+                    <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>Interview Slot Request</span>
+                  </div>
+                  
+                  <p style={{ margin: '4px 0', fontSize: '0.8rem', color: 'var(--text-main)' }}>Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,</p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
-                    You have been requested to conduct an <strong>{reqInterviewType} Interview</strong>{reqCollegeName ? <span> for <strong>{reqCollegeName}</strong></span> : ''}.
+                    You have been requested to conduct an interview.
                   </p>
-                  <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
-                    Proposed Interview Date Range: <strong>{new Date(reqStartDate || todayStr).toLocaleDateString('en-US')} - {new Date(reqEndDate || todayStr).toLocaleDateString('en-US')}</strong>
-                  </p>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Interview Round</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqInterviewType} Interview{reqCollegeName ? ` - ${reqCollegeName}` : ''}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Proposed Dates</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{new Date(reqStartDate || todayStr).toLocaleDateString('en-US')} - {new Date(reqEndDate || todayStr).toLocaleDateString('en-US')}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Duration</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqDuration} minutes</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Nominated Panelist</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</div>
+                      </div>
+                    </div>
+                  </div>
+
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Please select one of the following proposed slots to book instantly:</p>
                   <div style={{ margin: '8px 0', paddingLeft: '1rem', color: 'var(--text-main)', fontSize: '0.75rem' }}>
                     {reqSlots.filter((s) => s.selected).slice(0, 6).map((s, i) => {
@@ -1162,7 +1185,8 @@ export default function PanelistsTab({
                     {reqSlots.filter((s) => s.selected).length > 6 && <div>• and {reqSlots.filter((s) => s.selected).length - 6} more slots...</div>}
                     {reqSlots.filter((s) => s.selected).length === 0 && <div style={{ fontStyle: 'italic', color: 'var(--danger)' }}>No slots selected! Please enable at least one slot.</div>}
                   </div>
-                  <div style={{ marginTop: '0.75rem', background: 'var(--primary)', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'inline-block', fontSize: '0.75rem', fontWeight: 600 }}>Select Slot Option</div>
+                  
+                  <div style={{ marginTop: '0.75rem', background: '#6366f1', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '6px', display: 'inline-block', fontSize: '0.75rem', fontWeight: 700 }}>Select Slots / Provide Availability</div>
                 </div>
               </div>
 
