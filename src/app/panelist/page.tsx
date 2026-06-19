@@ -1,8 +1,9 @@
 import { getPanelistSession } from '@/lib/session';
 import { db } from '@/lib/db';
 import { redirect } from 'next/navigation';
-import { Calendar } from 'lucide-react';
+import { Calendar, LogOut } from 'lucide-react';
 import PanelistClient from './PanelistClient';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,34 +22,42 @@ export default async function PanelistPage() {
   ]);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header style={{ borderBottom: '1px solid var(--border-glass)', padding: '1rem 0', background: 'rgba(0, 0, 0, 0.2)' }}>
-        <div className="container flex-between">
-          <div className="flex-gap-4">
-            <div style={{ backgroundColor: 'var(--primary)', padding: '0.4rem', borderRadius: 'var(--radius-sm)', display: 'flex' }}>
-              <Calendar size={20} color="#ffffff" />
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="app-container app-header-inner" style={{ maxWidth: '1200px' }}>
+          <div className="brand-lockup">
+            <div className="brand-mark">
+              <Calendar size={20} />
             </div>
-            <span style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
-              Panel<span className="gradient-accent-text">Sync</span>
-            </span>
-            <div style={{ borderLeft: '1px solid var(--border-glass)', height: '20px', marginLeft: '8px', paddingLeft: '12px' }} className="text-muted text-sm">
-              Panelist Portal
+            <div>
+              <div className="brand-name">
+                Panel<span>Sync</span>
+              </div>
+              <div className="brand-context">Panelist Portal</div>
             </div>
           </div>
-          <div className="flex-gap-4">
-            <div className="text-right" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{session.user.displayName}</span>
-              <span className="text-muted text-xs">{session.user.email}</span>
+
+          <div className="header-actions">
+            <ThemeToggle />
+            <div className="user-summary">
+              <div className="user-avatar">
+                {session.user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="user-copy">
+                <span>{session.user.displayName}</span>
+                <small>{session.user.email}</small>
+              </div>
             </div>
-            <a href="/api/auth/signout" className="btn btn-secondary btn-sm" style={{ padding: '0.4rem 1rem' }}>
-              Sign Out
+            <a href="/api/auth/signout" className="header-signout">
+              <LogOut size={14} />
+              <span>Sign out</span>
             </a>
           </div>
         </div>
       </header>
       
-      <main style={{ flex: 1, padding: '2rem 0' }}>
-        <div className="container">
+      <main className="app-main">
+        <div className="app-container" style={{ maxWidth: '1200px' }}>
           <PanelistClient
             initialInterviews={interviews}
             initialRequests={pendingRequests}
@@ -59,8 +68,8 @@ export default async function PanelistPage() {
         </div>
       </main>
 
-      <footer style={{ borderTop: '1px solid var(--border-glass)', padding: '1.5rem 0', marginTop: 'auto', background: 'rgba(0, 0, 0, 0.1)' }}>
-        <div className="container flex-between text-muted text-xs">
+      <footer className="app-footer">
+        <div className="app-container flex-between text-muted text-xs" style={{ maxWidth: '1200px' }}>
           <p>© 2026 PanelSync. Panelist Portal.</p>
         </div>
       </footer>

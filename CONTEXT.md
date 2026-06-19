@@ -337,3 +337,13 @@ npx drizzle-kit migrate  # Apply DB migrations
   - Modified `db.getPanelistInterviews` to select panels with both `PENDING` and `SUBMITTED` statuses for scheduled interviews, resolving a bug where scheduled interviews pending feedback were omitted from the panelist's "My Interviews" view.
 - **Hydration Workaround**:
   - Intercepted and suppressed the false-positive React 19 / Next.js warning (`Encountered a script tag while rendering React component`) caused by the unmaintained `next-themes` script injection during local development in `ThemeProvider`.
+
+---
+
+## 14. Past Slot Prevention & Expired Slots Validation
+
+- **Frontend Prevention**: In `AvailabilityClient.tsx`, slot selections from nominations (Flow A) whose start time is in the past compared to `Date.now()` are disabled, greyed out, and visually styled as `Expired` with a red badge tag. Proposing slots in the past (Flow B) is also blocked in the slot adding function with a warning.
+- **Backend Validation**:
+  - **Booking Endpoint** (`/api/availability/select-slot`): Added validation to reject booking requests if any of the selected slots have start times in the past.
+  - **Availability Submission Endpoint** (`/api/availability/submit`): Added validation to check proposed availability lists, rejecting requests that contain past/expired slots.
+

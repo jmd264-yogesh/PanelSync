@@ -33,6 +33,17 @@
   --danger: #ef4444;
   --danger-glow: rgba(239, 68, 68, 0.08);
 
+  --info: #0284c7;
+  --info-glow: rgba(14, 165, 233, 0.08);
+
+  --badge-l1-bg: rgba(14, 165, 233, 0.08);
+  --badge-l1-border: rgba(14, 165, 233, 0.25);
+  --badge-l1-text: #0284c7;
+
+  --badge-l2-bg: rgba(124, 58, 237, 0.08);
+  --badge-l2-border: rgba(124, 58, 237, 0.25);
+  --badge-l2-text: #7c3aed;
+
   --text-main: #111827;
   --text-muted: #4b5563;
   --text-dark: #111827;
@@ -400,8 +411,8 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
 }
 
 .badge-info {
-  background: var(--secondary-glow);
-  color: var(--secondary);
+  background: var(--info-glow);
+  color: var(--info);
   border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
@@ -684,6 +695,18 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
   --text-dark: #111827;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
   --shadow-glow: none;
+  --star-empty: #e2e8f0;
+  --preview-bg: #f3f4f6;
+  --info: #0284c7;
+  --info-glow: rgba(14, 165, 233, 0.08);
+
+  --badge-l1-bg: rgba(14, 165, 233, 0.08);
+  --badge-l1-border: rgba(14, 165, 233, 0.25);
+  --badge-l1-text: #0284c7;
+
+  --badge-l2-bg: rgba(124, 58, 237, 0.08);
+  --badge-l2-border: rgba(124, 58, 237, 0.25);
+  --badge-l2-text: #7c3aed;
 }
 
 .dark {
@@ -715,6 +738,18 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
   --text-main: #f3f4f6;
   --text-muted: #9ca3af;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+  --star-empty: rgba(255, 255, 255, 0.15);
+  --preview-bg: #090d16;
+  --info: #38bdf8;
+  --info-glow: rgba(14, 165, 233, 0.15);
+
+  --badge-l1-bg: rgba(14, 165, 233, 0.12);
+  --badge-l1-border: rgba(14, 165, 233, 0.3);
+  --badge-l1-text: #38bdf8;
+
+  --badge-l2-bg: rgba(124, 58, 237, 0.12);
+  --badge-l2-border: rgba(124, 58, 237, 0.3);
+  --badge-l2-text: #c084fc;
 }
 
 html,

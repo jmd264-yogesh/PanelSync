@@ -59,24 +59,59 @@ export async function POST(request: NextRequest) {
         const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
         
         const htmlMessage = `
-          <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #6366f1; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-            <h3 style="margin-top: 0; color: #6366f1; font-size: 16px; font-weight: 600;">Interview Slot Request</h3>
-            <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">Hello <strong>${panel.name}</strong>,</p>
-            <p style="margin: 8px 0; font-size: 14px; color: #94a3b8;">
-              You have been requested by <strong>${session.user.displayName}</strong> to conduct a <strong>${role}</strong>.
-            </p>
-            <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">
-              Proposed Interview Date Range: <strong>${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}</strong>
-            </p>
-            <p style="font-size: 14px; color: #94a3b8; margin-bottom: 16px;">
-              Please click the button below to view the proposed slots and select **one or more** slots to book:
-            </p>
-            <div style="margin-top: 16px; margin-bottom: 12px;">
-              <a href="${availabilityLink}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; transition: background-color 0.2s;">
-                Select Slots / Provide Availability
-              </a>
+          <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #6366f1; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 520px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+            <div style="margin-bottom: 12px; font-size: 14px;">
+              <div style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: #818cf8; display: inline-block;">REQUEST</div>
+              <h3 style="margin: 0 0 0 8px; color: #f8fafc; font-size: 15px; font-weight: 600; display: inline-block; vertical-align: middle;">Interview Slot Request</h3>
             </div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+
+            <p style="margin: 0 0 8px; font-size: 14px; color: #cbd5e1;">
+              Hello <strong style="color: #f8fafc;">${panel.name}</strong>,
+            </p>
+            <p style="margin: 0 0 14px; font-size: 14px; color: #94a3b8;">
+              You have been requested by <strong style="color: #ffffff;">${session.user.displayName}</strong> to conduct an interview.
+            </p>
+
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="width: 50%; padding-right: 10px; vertical-align: top; padding-bottom: 10px;">
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Interview Round</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${role}</div>
+                  </td>
+                  <td style="width: 50%; vertical-align: top; padding-bottom: 10px;">
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Proposed Dates</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${new Date(startDate).toLocaleDateString('en-US')} - ${new Date(endDate).toLocaleDateString('en-US')}</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="width: 50%; padding-right: 10px; vertical-align: top;">
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Duration</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${duration} minutes</div>
+                  </td>
+                  <td style="width: 50%; vertical-align: top;">
+                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Nominated Panelist</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${panel.name}</div>
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 12px;">
+              Please click the button below to view the proposed slots and select slots to book instantly:
+            </p>
+
+            <table border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 14px;">
+              <tr>
+                <td align="center" style="border-radius: 6px;" bgcolor="#6366f1">
+                  <a href="${availabilityLink}" target="_blank" style="font-size: 14px; font-family: 'Segoe UI', sans-serif; color: #ffffff; text-decoration: none; padding: 10px 22px; border-radius: 6px; border: 1px solid #6366f1; display: inline-block; font-weight: 700;">
+                    Select Slots / Provide Availability
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <div style="font-size: 11px; color: #475569; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
               Access link: <a href="${availabilityLink}" style="color: #6366f1; text-decoration: underline;">${availabilityLink}</a>
             </div>
           </div>
