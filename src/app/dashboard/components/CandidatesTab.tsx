@@ -641,7 +641,7 @@ export default function CandidatesTab({
                   <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                     <SelectValue placeholder="Select College..." />
                   </SelectTrigger>
-                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectContent >
                     <SelectItem value="_none_placeholder">Select College...</SelectItem>
                     {collegesList.map((c) => (
                       <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -730,7 +730,7 @@ export default function CandidatesTab({
                   <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                     <SelectValue placeholder="Select College..." />
                   </SelectTrigger>
-                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectContent >
                     <SelectItem value="_none_placeholder">Select College...</SelectItem>
                     {collegesList.map((c) => (
                       <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -824,7 +824,7 @@ export default function CandidatesTab({
                 <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
-                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                <SelectContent >
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="WAITING">Waiting</SelectItem>
                   <SelectItem value="MAPPED">Mapped</SelectItem>
@@ -839,7 +839,7 @@ export default function CandidatesTab({
                 <SelectTrigger className="text-left w-full" style={{ fontSize: '0.75rem', height: '32px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', color: 'inherit' }}>
                   <SelectValue placeholder="All Colleges" />
                 </SelectTrigger>
-                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                <SelectContent >
                   <SelectItem value="all">All Colleges</SelectItem>
                   {collegesList.map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -971,7 +971,7 @@ export default function CandidatesTab({
                                 <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}>
                                   <SelectValue placeholder="Select College..." />
                                 </SelectTrigger>
-                                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                                <SelectContent >
                                   <SelectItem value="_none_placeholder">Select College...</SelectItem>
                                   {collegesList.map((c) => (
                                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -1106,7 +1106,7 @@ export default function CandidatesTab({
                                   <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', fontSize: '0.75rem', width: '180px', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', borderRadius: 'var(--radius-sm)' }}>
                                     <SelectValue placeholder="Select Available Slot..." />
                                   </SelectTrigger>
-                                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                                  <SelectContent >
                                     <SelectItem value="_none_placeholder">Select Available Slot...</SelectItem>
                                     {interviews
                                       .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))

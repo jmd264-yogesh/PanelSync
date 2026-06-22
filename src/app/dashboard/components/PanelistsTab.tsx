@@ -494,7 +494,7 @@ export default function PanelistsTab({
                 <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                   <SelectValue placeholder="Select College..." />
                 </SelectTrigger>
-                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                <SelectContent >
                   <SelectItem value="_none_placeholder">Select College...</SelectItem>
                   {collegesList.map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -818,8 +818,7 @@ export default function PanelistsTab({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
                             <button
                               onClick={() => handleOpenSlotRequest(p, 'L1')}
-                              className="btn btn-primary btn-xs"
-                              style={{ padding: '0.2rem 0.45rem', fontSize: '0.65rem', height: 'auto', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa' }}
+                              className="btn btn-xs btn-slot-l1"
                             >
                               Request Slots
                             </button>
@@ -927,8 +926,7 @@ export default function PanelistsTab({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
                             <button
                               onClick={() => handleOpenSlotRequest(p, 'L2')}
-                              className="btn btn-primary btn-xs"
-                              style={{ padding: '0.2rem 0.45rem', fontSize: '0.65rem', height: 'auto', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c084fc' }}
+                              className="btn btn-xs btn-slot-l2"
                             >
                               Request Slots
                             </button>
@@ -960,10 +958,12 @@ export default function PanelistsTab({
           {(bulkSelectedL1Ids.length > 0 || bulkSelectedL2Ids.length > 0) && (
             <div style={{
               position: 'sticky', bottom: '1rem',
-              background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 'var(--radius-md)',
+              background: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid color-mix(in srgb, var(--primary) 35%, var(--border-glass))',
+              borderRadius: 'var(--radius-md)',
               padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+              alignItems: 'center', boxShadow: 'var(--shadow-card)',
               zIndex: 90, marginTop: '1.5rem'
             }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
@@ -975,8 +975,7 @@ export default function PanelistsTab({
                     const selectedPanelists = panelists.filter((p) => bulkSelectedL1Ids.includes(p.id));
                     handleOpenSlotRequest(selectedPanelists, 'L1');
                   }}
-                  className="btn btn-primary btn-sm"
-                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#60a5fa' }}
+                  className="btn btn-sm btn-slot-l1"
                   disabled={bulkSelectedL1Ids.length === 0}
                 >
                   Request L1 Slots
@@ -986,8 +985,7 @@ export default function PanelistsTab({
                     const selectedPanelists = panelists.filter((p) => bulkSelectedL2Ids.includes(p.id));
                     handleOpenSlotRequest(selectedPanelists, 'L2');
                   }}
-                  className="btn btn-primary btn-sm"
-                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#c084fc' }}
+                  className="btn btn-sm btn-slot-l2"
                   disabled={bulkSelectedL2Ids.length === 0}
                 >
                   Request L2 Slots
@@ -1038,7 +1036,7 @@ export default function PanelistsTab({
                     <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
                       <SelectValue placeholder="Select Stage" />
                     </SelectTrigger>
-                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectContent >
                       <SelectItem value="L1">L1 Interview</SelectItem>
                       <SelectItem value="L2">L2 Interview</SelectItem>
                       <SelectItem value="General">General / Custom</SelectItem>
@@ -1051,7 +1049,7 @@ export default function PanelistsTab({
                     <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
                       <SelectValue placeholder="Select Duration" />
                     </SelectTrigger>
-                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectContent >
                       <SelectItem value="30">30 mins</SelectItem>
                       <SelectItem value="45">45 mins</SelectItem>
                       <SelectItem value="60">60 mins</SelectItem>
@@ -1089,7 +1087,7 @@ export default function PanelistsTab({
                     <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                       <SelectValue placeholder="Select College..." />
                     </SelectTrigger>
-                    <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                    <SelectContent >
                       <SelectItem value="_none_placeholder">Select College...</SelectItem>
                       {collegesList.map((c) => (
                         <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>

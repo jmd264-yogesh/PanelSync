@@ -846,7 +846,7 @@ export default function InterviewsTab({
             <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
               <SelectValue placeholder="All Drives" />
             </SelectTrigger>
-            <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+            <SelectContent >
               <SelectItem value="all">All Drives</SelectItem>
               {drives.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
@@ -880,7 +880,7 @@ export default function InterviewsTab({
             <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
-            <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+            <SelectContent >
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="PENDING">Awaiting Panels</SelectItem>
               <SelectItem value="COLLECTED">Ready to Book</SelectItem>
@@ -895,7 +895,7 @@ export default function InterviewsTab({
             <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
               <SelectValue placeholder="All Types" />
             </SelectTrigger>
-            <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+            <SelectContent >
               <SelectItem value="all">All Types</SelectItem>
               <SelectItem value="L1">L1 Interviews</SelectItem>
               <SelectItem value="L2">L2 Interviews</SelectItem>
@@ -950,7 +950,7 @@ export default function InterviewsTab({
             <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
               <SelectValue placeholder="All Colleges" />
             </SelectTrigger>
-            <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+            <SelectContent >
               <SelectItem value="all">All Colleges</SelectItem>
               {collegesList.map((c) => (
                 <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -1574,7 +1574,7 @@ export default function InterviewsTab({
                   <SelectTrigger className="w-full text-left" style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
                     <SelectValue placeholder="Select Interview Type" />
                   </SelectTrigger>
-                  <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                  <SelectContent >
                     <SelectItem value="L1">L1 Interview</SelectItem>
                     <SelectItem value="L2">L2 Interview</SelectItem>
                     <SelectItem value="General">General Interview</SelectItem>

@@ -148,7 +148,7 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
                 <SelectTrigger className="w-full text-left" style={{ marginTop: '0.5rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
                   <SelectValue placeholder="Select College / Institution..." />
                 </SelectTrigger>
-                <SelectContent className="dark:bg-[#0e131f] dark:text-white border dark:border-zinc-800">
+                <SelectContent >
                   <SelectItem value="_none_placeholder">Select College / Institution...</SelectItem>
                   {collegesList.map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
