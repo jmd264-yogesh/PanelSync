@@ -408,7 +408,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     background: isPast
                       ? 'rgba(255, 255, 255, 0.01)'
                       : (isSelected
-                          ? 'rgba(99, 102, 241, 0.08)'
+                          ? 'rgba(0, 168, 120, 0.08)'
                           : (hoveredSlotId === slot.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)')),
                     border: isPast
                       ? '1px dashed rgba(255, 255, 255, 0.1)'
@@ -416,7 +416,7 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
                     borderRadius: 'var(--radius-md)',
                     cursor: isPast ? 'not-allowed' : 'pointer',
                     transform: (!isPast && isSelected) ? 'translateY(-2px)' : 'none',
-                    boxShadow: (!isPast && isSelected) ? '0 4px 20px rgba(99, 102, 241, 0.15)' : 'none',
+                    boxShadow: (!isPast && isSelected) ? '0 4px 20px rgba(0, 168, 120, 0.15)' : 'none',
                     transition: 'all 0.2s ease',
                     opacity: isPast ? 0.45 : 1,
                   }}
