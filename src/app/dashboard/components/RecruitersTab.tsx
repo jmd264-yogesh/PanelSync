@@ -75,11 +75,11 @@ export default function RecruitersTab() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '1.25rem' }}>
         
         {/* Left: Add Recruiter Form */}
-        <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+        <div className="glass-card" style={{ height: 'fit-content', padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Shield size={18} className="text-primary" />
             Add Approved Recruiter
@@ -128,7 +128,7 @@ export default function RecruitersTab() {
         </div>
         
         {/* Right: Allowed Recruiters List */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
+        <div className="glass-card" style={{ padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Users size={18} className="text-primary" />
             Authorized Recruiters Directory

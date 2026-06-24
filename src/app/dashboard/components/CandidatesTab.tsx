@@ -606,192 +606,191 @@ export default function CandidatesTab({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div className="dashboard-two-column dashboard-two-column-wide" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+    <div className="candidates-page">
+      {/* Page Header */}
+      <div className="page-header" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 className="page-title" style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0, fontFamily: 'var(--font-heading)' }}>Candidates</h1>
+          <p className="text-muted text-sm" style={{ margin: '4px 0 0 0' }}>Manage candidate uploads, authorization, and interview mapping.</p>
+        </div>
+      </div>
 
-        {/* Left Column: Upload area and Single Add */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <div className="candidates-layout">
+        {/* Left Column: Combined Actions Card */}
+        <div className="glass-card" style={{ padding: '1.25rem' }}>
+          <h3 style={{ fontSize: '1.15rem', marginBottom: '0.25rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            <Users size={18} className="text-primary" />
+            Candidate Actions
+          </h3>
+          <p className="text-muted text-xs" style={{ marginBottom: '1.25rem', marginTop: '4px' }}>
+            Upload candidates in bulk or add one candidate manually.
+          </p>
 
-          {/* Bulk Upload Card */}
-          <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Users size={18} className="text-primary" />
-              Candidate Bulk Upload
-            </h3>
-            <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
-              Upload an Excel template or CSV containing candidate <strong>Name</strong>, <strong>Email</strong>, <strong>College Name of Drive</strong>, and <strong>Drive Date</strong> to add them to the queue.
-            </p>
+          {/* Bulk Upload Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h4 style={{ fontSize: '0.85rem', margin: '0.5rem 0 0.25rem 0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Bulk Upload</h4>
+            
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date (Fallback Default)</label>
+              <input
+                type="date"
+                className="form-input"
+                value={uploadDefaultDate}
+                onChange={(e) => setUploadDefaultDate(e.target.value)}
+                min={todayStr}
+                style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
+              />
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date (Fallback Default)</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={uploadDefaultDate}
-                  onChange={(e) => setUploadDefaultDate(e.target.value)}
-                  min={todayStr}
-                  style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}
-                />
-              </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive (Fallback Default)</label>
+              <Select value={uploadDefaultCollege} onValueChange={(val) => setUploadDefaultCollege(val || '')}>
+                <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                  <SelectValue placeholder="Select College..." />
+                </SelectTrigger>
+                <SelectContent >
+                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive (Fallback Default)</label>
-                <Select value={uploadDefaultCollege} onValueChange={(val) => setUploadDefaultCollege(val || '')}>
-                  <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
-                    <SelectValue placeholder="Select College..." />
-                  </SelectTrigger>
-                  <SelectContent >
-                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
-                    {collegesList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div
-                style={{
-                  border: '2px dashed var(--border-glass)', borderRadius: 'var(--radius-md)',
-                  padding: '2.5rem 1.5rem', textAlign: 'center',
-                  background: 'rgba(0, 0, 0, 0.15)', cursor: 'pointer',
-                  position: 'relative', transition: 'var(--transition-fast)'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = ''}
-              >
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleExcelUpload}
-                  disabled={isUploadingCandidates}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
-                />
-                {isUploadingCandidates ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                    <Loader2 size={32} className="animate-spin text-primary" />
-                    <span className="text-xs text-muted">Parsing &amp; Uploading File...</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                    <Plus size={32} className="text-muted" />
-                    <span className="text-xs font-semibold text-main">Click or Drag File Here</span>
-                    <span className="text-xxs text-muted">Supports XLSX, XLS, CSV</span>
-                  </div>
-                )}
-              </div>
-
-              <button onClick={handleDownloadTemplate} className="btn btn-secondary" style={{ width: '100%' }}>
-                Download CSV Template
-              </button>
-
-              {uploadError && (
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', color: '#f87171', fontSize: '0.8rem' }}>
-                  {uploadError}
+            <div className="upload-zone" style={{ position: 'relative' }}>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleExcelUpload}
+                disabled={isUploadingCandidates}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+              />
+              {isUploadingCandidates ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <Loader2 size={24} className="animate-spin text-primary" />
+                  <span className="text-xs text-muted">Uploading...</span>
                 </div>
-              )}
-              {uploadSuccessMessage && (
-                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', color: '#34d399', fontSize: '0.8rem' }}>
-                  {uploadSuccessMessage}
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <Plus size={24} className="text-primary" />
+                  <span className="text-xs font-semibold text-main">Click or Drag File</span>
+                  <span className="text-xxs text-muted">XLSX, XLS, CSV</span>
                 </div>
               )}
             </div>
+
+            <button onClick={handleDownloadTemplate} className="btn btn-secondary" style={{ width: '100%', fontSize: '0.8rem', height: '36px' }}>
+              Download Template
+            </button>
+
+            {uploadError && (
+              <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: '#f87171', fontSize: '0.75rem' }}>
+                {uploadError}
+              </div>
+            )}
+            {uploadSuccessMessage && (
+              <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: '#34d399', fontSize: '0.75rem' }}>
+                {uploadSuccessMessage}
+              </div>
+            )}
           </div>
 
-          {/* Add Single Candidate Card */}
-          <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Plus size={18} className="text-primary" />
-              Add Single Candidate
-            </h3>
-            <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
-              Manually register a single candidate to the WAITING queue.
-            </p>
-            <form onSubmit={handleAddSingleCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Candidate Name</label>
-                <input type="text" className="form-input" placeholder="John Doe" value={singleCandidateName} onChange={(e) => setSingleCandidateName(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Candidate Email</label>
-                <input type="email" className="form-input" placeholder="john.doe@example.com" value={singleCandidateEmail} onChange={(e) => setSingleCandidateEmail(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date</label>
-                <input type="date" className="form-input" value={singleCandidateDate} onChange={(e) => setSingleCandidateDate(e.target.value)} min={todayStr} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Candidate</label>
-                <input type="text" className="form-input" placeholder="e.g. IIT Madras" value={singleCandidateCollege} onChange={(e) => setSingleCandidateCollege(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>College Name of Drive</label>
-                <Select value={singleCandidateCollegeDrive} onValueChange={(val) => setSingleCandidateCollegeDrive(val || '')}>
-                  <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
-                    <SelectValue placeholder="Select College..." />
-                  </SelectTrigger>
-                  <SelectContent >
-                    <SelectItem value="_none_placeholder">Select College...</SelectItem>
-                    {collegesList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-glass)', margin: '1.25rem 0' }} />
 
-              {singleCandidateError && (
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', color: '#f87171', fontSize: '0.8rem' }}>
-                  {singleCandidateError}
-                </div>
+          {/* Manual Entry Section */}
+          <form onSubmit={handleAddSingleCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h4 style={{ fontSize: '0.85rem', margin: '0 0 0.25rem 0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Manual Entry</h4>
+            
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Name</label>
+              <input type="text" className="form-input" placeholder="John Doe" value={singleCandidateName} onChange={(e) => setSingleCandidateName(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Email</label>
+              <input type="email" className="form-input" placeholder="john.doe@example.com" value={singleCandidateEmail} onChange={(e) => setSingleCandidateEmail(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive Date</label>
+              <input type="date" className="form-input" value={singleCandidateDate} onChange={(e) => setSingleCandidateDate(e.target.value)} min={todayStr} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Candidate College</label>
+              <input type="text" className="form-input" placeholder="e.g. IIT Madras" value={singleCandidateCollege} onChange={(e) => setSingleCandidateCollege(e.target.value)} required style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Drive College</label>
+              <Select value={singleCandidateCollegeDrive} onValueChange={(val) => setSingleCandidateCollegeDrive(val || '')}>
+                <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', marginTop: '0.25rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                  <SelectValue placeholder="Select College..." />
+                </SelectTrigger>
+                <SelectContent >
+                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                  {collegesList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {singleCandidateError && (
+              <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', color: '#f87171', fontSize: '0.75rem' }}>
+                {singleCandidateError}
+              </div>
+            )}
+            
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isAddingSingleCandidate || !singleCandidateName.trim() || !singleCandidateEmail.trim()}
+              style={{ width: '100%', marginTop: '0.5rem' }}
+            >
+              {isAddingSingleCandidate ? (
+                <><Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} /> Adding...</>
+              ) : (
+                'Add Candidate'
               )}
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={isAddingSingleCandidate || !singleCandidateName.trim() || !singleCandidateEmail.trim()}
-                style={{ width: '100%', marginTop: '0.5rem' }}
-              >
-                {isAddingSingleCandidate ? (
-                  <><Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} /> Adding...</>
-                ) : (
-                  'Add Candidate'
-                )}
-              </button>
-            </form>
-          </div>
+            </button>
+          </form>
         </div>
 
         {/* Right Column: Queue Listing */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
-          <div className="flex-between" style={{ marginBottom: '1.5rem' }}>
+        <div className="glass-card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', fontFamily: 'var(--font-heading)' }}>
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem', fontFamily: 'var(--font-heading)', margin: 0 }}>
                 Authorized Candidate Queue
               </h3>
-              <p className="text-muted text-xs">
-                List of candidates uploaded and waiting for/mapped to L1 interviews.
+              <p className="text-muted text-xs" style={{ margin: '4px 0 0 0' }}>
+                Candidates waiting for scheduling or mapped to active drives.
               </p>
             </div>
-            <div className="flex-gap-2" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <button
-                onClick={handleExportCandidates}
-                className="btn btn-secondary"
-                style={{
-                  fontSize: '0.75rem',
-                  height: '32px',
-                  padding: '0 0.75rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid var(--border-glass)',
-                  color: 'var(--text-main)',
-                  cursor: 'pointer'
-                }}
-              >
-                <span>Export to Excel</span>
-              </button>
-              <div style={{ position: 'relative', width: '180px' }}>
+            <button
+              onClick={handleExportCandidates}
+              className="btn btn-secondary"
+              style={{
+                fontSize: '0.75rem',
+                height: '32px',
+                padding: '0 0.75rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid var(--border-glass)',
+                color: 'var(--text-main)',
+                cursor: 'pointer'
+              }}
+            >
+              <span>Export to Excel</span>
+            </button>
+          </div>
+
+          {/* Filter Toolbar */}
+          <div className="filter-toolbar">
+            {/* Search Input */}
+            <div className="search-field" style={{ position: 'relative' }}>
+              <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Search</label>
+              <div style={{ position: 'relative' }}>
                 <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
                   type="text"
@@ -803,20 +802,7 @@ export default function CandidatesTab({
                 />
               </div>
             </div>
-          </div>
 
-          {/* Queue Filter Bar */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '0.75rem',
-            padding: '0.75rem 1rem',
-            background: 'rgba(255,255,255,0.01)',
-            border: '1px solid var(--border-glass)',
-            borderRadius: 'var(--radius-md)',
-            marginBottom: '1.5rem',
-            alignItems: 'center'
-          }}>
             {/* Status Filter */}
             <div>
               <label style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Status</label>
@@ -883,8 +869,8 @@ export default function CandidatesTab({
             </div>
 
             {/* Active Drive Scope */}
-            <div style={{ display: 'flex', alignItems: 'center', height: '100%', paddingTop: '1rem' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)' }}>
+            <div className="checkbox-field">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', cursor: activeDrive ? 'pointer' : 'not-allowed', color: activeDrive ? 'inherit' : 'var(--text-muted)', userSelect: 'none' }}>
                 <input
                   type="checkbox"
                   checked={scopeToActiveDrive && !!activeDrive}
@@ -892,9 +878,17 @@ export default function CandidatesTab({
                   onChange={(e) => setScopeToActiveDrive(e.target.checked)}
                   style={{ accentColor: 'var(--primary)', cursor: activeDrive ? 'pointer' : 'not-allowed' }}
                 />
-                <span>Scope to Active Drive {activeDrive ? `(${activeDrive.collegeName})` : ''}</span>
+                <span>Active Drive only</span>
               </label>
             </div>
+          </div>
+
+          {/* Queue Summary stats inline */}
+          <div className="queue-summary">
+            <span>Total Candidates: <strong>{filteredCandidates.length}</strong></span>
+            <span>Mapped: <strong>{filteredCandidates.filter(c => c.status === 'MAPPED').length}</strong></span>
+            <span>Waiting: <strong>{filteredCandidates.filter(c => c.status === 'WAITING').length}</strong></span>
+            {activeDrive && <span>Active Drive: <strong>{activeDrive.collegeName}</strong></span>}
           </div>
 
           {isLoadingCandidates ? (
@@ -903,20 +897,16 @@ export default function CandidatesTab({
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ minWidth: '1000px', width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+              <table className="queue-table">
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Name</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Email</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Candidate College</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive College</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Drive Date</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Uploaded At</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Queue Status</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L1 Result</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>L2 Result</th>
-                    <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Mapped Interview</th>
-                    <th style={{ padding: '0.75rem 1rem', width: '220px' }}></th>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>College / Drive</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Results</th>
+                    <th>Interview</th>
+                    <th style={{ width: '180px', textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -933,278 +923,280 @@ export default function CandidatesTab({
                     }
                     const isMapped = candidate.status === 'MAPPED' || !!mappedIntv;
                     return (
-                      <tr key={candidate.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }} className="search-item-hover">
+                      <tr key={candidate.id}>
                         {editingCandidateId === candidate.id ? (
                           <>
                             <td style={{ padding: '0.5rem 1rem' }}>
-                              <input
-                                type="text"
-                                className="form-input text-xs"
-                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '120px' }}
-                                value={editCandidateName}
-                                onChange={(e) => setEditCandidateName(e.target.value)}
-                                required
-                              />
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <input
+                                  type="text"
+                                  className="form-input text-xs"
+                                  style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '100%' }}
+                                  value={editCandidateName}
+                                  onChange={(e) => setEditCandidateName(e.target.value)}
+                                  required
+                                  placeholder="Name"
+                                />
+                                <input
+                                  type="email"
+                                  className="form-input text-xs"
+                                  style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '100%' }}
+                                  value={editCandidateEmail}
+                                  onChange={(e) => setEditCandidateEmail(e.target.value)}
+                                  required
+                                  placeholder="Email"
+                                />
+                              </div>
                             </td>
                             <td style={{ padding: '0.5rem 1rem' }}>
-                              <input
-                                type="email"
-                                className="form-input text-xs"
-                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '150px' }}
-                                value={editCandidateEmail}
-                                onChange={(e) => setEditCandidateEmail(e.target.value)}
-                                required
-                              />
-                            </td>
-                            <td style={{ padding: '0.5rem 1rem' }}>
-                              <input
-                                type="text"
-                                className="form-input text-xs"
-                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}
-                                value={editCandidateCollege}
-                                onChange={(e) => setEditCandidateCollege(e.target.value)}
-                                required
-                              />
-                            </td>
-                            <td style={{ padding: '0.5rem 1rem' }}>
-                              <Select value={editCandidateCollegeDrive} onValueChange={(val) => setEditCandidateCollegeDrive(val || '')}>
-                                <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '130px' }}>
-                                  <SelectValue placeholder="Select College..." />
-                                </SelectTrigger>
-                                <SelectContent >
-                                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
-                                  {collegesList.map((c) => (
-                                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <input
+                                  type="text"
+                                  className="form-input text-xs"
+                                  style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '100%' }}
+                                  value={editCandidateCollege}
+                                  onChange={(e) => setEditCandidateCollege(e.target.value)}
+                                  required
+                                  placeholder="College Name"
+                                />
+                                <Select value={editCandidateCollegeDrive} onValueChange={(val) => setEditCandidateCollegeDrive(val || '')}>
+                                  <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '100%' }}>
+                                    <SelectValue placeholder="Select Drive College..." />
+                                  </SelectTrigger>
+                                  <SelectContent >
+                                    <SelectItem value="_none_placeholder">Select Drive College...</SelectItem>
+                                    {collegesList.map((c) => (
+                                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                             </td>
                             <td style={{ padding: '0.5rem 1rem' }}>
                               <input
                                 type="date"
                                 className="form-input text-xs"
-                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '120px' }}
+                                style={{ padding: '0.2rem 0.4rem', height: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', fontSize: '0.8rem', width: '100%' }}
                                 value={editCandidateDate}
                                 onChange={(e) => setEditCandidateDate(e.target.value)}
                                 min={todayStr}
                                 required
                               />
                             </td>
-                          </>
-                        ) : (
-                          <>
-                            <td style={{ padding: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                              <button
-                                onClick={() => setSelectedFeedbackCandidate(candidate)}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  padding: 0,
-                                  color: 'inherit',
-                                  font: 'inherit',
-                                  cursor: 'pointer',
-                                  textAlign: 'left'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
-                                title="Click to view round feedbacks"
-                              >
-                                {candidate.name}
-                              </button>
-                            </td>
-                            <td style={{ padding: '1rem', color: 'var(--text-main)' }}>{candidate.email}</td>
-                            <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
-                              {candidate.college ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#60a5fa' }}>
-                                  <Building2 size={12} /> {candidate.college}
-                                </span>
+                            <td style={{ padding: '0.5rem 1rem' }}>
+                              {!isMapped ? (
+                                <span className="badge badge-pending" style={{ fontSize: '0.65rem' }}>Waiting</span>
                               ) : (
-                                <span className="text-muted font-italic" style={{ fontSize: '0.8rem' }}>—</span>
+                                <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Mapped</span>
                               )}
                             </td>
-                            <td style={{ padding: '1rem', color: 'var(--text-main)' }}>
-                              {candidate.collegeDrive ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: '#fb923c' }}>
-                                  <Building2 size={12} /> {candidate.collegeDrive}
-                                </span>
-                              ) : (
-                                <span className="text-muted font-italic" style={{ fontSize: '0.8rem' }}>—</span>
-                              )}
+                            <td style={{ padding: '0.5rem 1rem' }}>
+                              <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
                             </td>
-                            <td style={{ padding: '1rem' }}>
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                {candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US') : '—'}
-                              </span>
+                            <td style={{ padding: '0.5rem 1rem' }}>
+                              <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
                             </td>
-                          </>
-                        )}
-                        <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          {new Date(candidate.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </td>
-                        <td style={{ padding: '1rem' }}>
-                          {!isMapped ? (
-                            <span className="badge badge-pending">Waiting</span>
-                          ) : (
-                            <span className="badge badge-success">Mapped</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '1rem' }}>
-                          {(() => {
-                            const { l1Result } = getCandidateRoundResults(candidate, interviews);
-                            if (l1Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem' }}>Passed</span>;
-                            if (l1Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
-                            if (l1Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
-                            if (l1Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem' }}>Scheduled</span>;
-                            if (l1Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
-                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
-                          })()}
-                        </td>
-                        <td style={{ padding: '1rem' }}>
-                          {(() => {
-                            const { l2Result } = getCandidateRoundResults(candidate, interviews);
-                            if (l2Result === 'Passed') return <span className="badge badge-success" style={{ fontSize: '0.62rem', background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: '#34d399' }}>Passed</span>;
-                            if (l2Result === 'Rejected') return <span className="badge badge-danger" style={{ fontSize: '0.62rem' }}>Rejected</span>;
-                            if (l2Result === 'Pending Feedback') return <span className="badge badge-pending" style={{ fontSize: '0.62rem' }}>Pending Feedback</span>;
-                            if (l2Result === 'Scheduled') return <span className="badge badge-info" style={{ fontSize: '0.62rem', background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.3)', color: '#a78bfa' }}>Scheduled</span>;
-                            if (l2Result === 'Cancelled') return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(156,163,175,0.12)', borderColor: 'rgba(156,163,175,0.3)', color: '#9ca3af' }}>Cancelled</span>;
-                            return <span className="badge" style={{ fontSize: '0.62rem', background: 'rgba(255,255,255,0.05)', borderColor: 'var(--border-glass)', color: 'var(--text-muted)' }}>Not Started</span>;
-                          })()}
-                        </td>
-                        <td style={{ padding: '1rem', fontSize: '0.8rem' }}>
-                          {mappedIntv ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
-                              <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                {mappedIntv.scheduledSlotStart
-                                  ? new Date(mappedIntv.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                                  : 'Pending Slot'}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-muted font-italic">—</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '1rem', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
-                            {editingCandidateId === candidate.id ? (
-                              <>
-                                <button onClick={() => handleSaveCandidateEdit(candidate.id)} className="btn btn-primary btn-sm animate-pulse-once" style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', height: 'auto', whiteSpace: 'nowrap' }}>
+                            <td style={{ padding: '0.5rem 1rem', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
+                                <button onClick={() => handleSaveCandidateEdit(candidate.id)} className="btn btn-primary btn-sm" style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', height: 'auto', whiteSpace: 'nowrap' }}>
                                   Save
                                 </button>
                                 <button onClick={() => setEditingCandidateId(null)} className="btn btn-secondary btn-sm" style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', height: 'auto', whiteSpace: 'nowrap' }}>
                                   Cancel
                                 </button>
-                              </>
-                            ) : mappingCandidateId === candidate.id ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <Select onValueChange={async (val: any) => {
-                                  if (val && val !== '_none_placeholder') {
-                                    await handleMapCandidateToSlot(candidate, val);
-                                    setMappingCandidateId(null);
-                                  }
-                                }}>
-                                  <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', fontSize: '0.75rem', width: '180px', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', borderRadius: 'var(--radius-sm)' }}>
-                                    <SelectValue placeholder="Select Available Slot..." />
-                                  </SelectTrigger>
-                                  <SelectContent >
-                                    <SelectItem value="_none_placeholder">Select Available Slot...</SelectItem>
-                                    {interviews
-                                      .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
-                                      .map((i) => (
-                                        <SelectItem key={i.id} value={i.id}>
-                                          {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString('en-US')} - {i.panels.map(p => p.name).join(', ')})
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                                <button onClick={() => setMappingCandidateId(null)} className="btn btn-secondary btn-sm" style={{ padding: '0.2rem 0.4rem', fontSize: '0.68rem', height: '28px', whiteSpace: 'nowrap' }}>
-                                  Cancel
-                                </button>
                               </div>
-                            ) : (
-                              <>
-                                {!isMapped && (
-                                  <button
-                                    onClick={() => { setMappingCandidateId(candidate.id); setEditingCandidateId(null); }}
-                                    className="btn btn-sm"
-                                    style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', height: 'auto', whiteSpace: 'nowrap' }}
-                                    title="Map to an available interview slot"
-                                  >
-                                    Map to Slot
-                                  </button>
-                                )}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td>
+                              <div className="candidate-cell">
                                 <button
-                                  onClick={() => {
-                                    setEditingCandidateId(candidate.id);
-                                    setMappingCandidateId(null);
-                                    setEditCandidateName(candidate.name);
-                                    setEditCandidateEmail(candidate.email);
-                                    setEditCandidateCollege(candidate.college || '');
-                                    setEditCandidateCollegeDrive(candidate.collegeDrive || '');
-                                    setEditCandidateDate(candidate.preferredDate || '');
-                                  }}
-                                  className="btn btn-secondary btn-sm"
-                                  style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', height: 'auto', whiteSpace: 'nowrap' }}
-                                  title="Edit candidate details"
+                                  onClick={() => setSelectedFeedbackCandidate(candidate)}
+                                  className="candidate-name"
+                                  title="Click to view feedbacks"
                                 >
-                                  Edit
+                                  {candidate.name}
                                 </button>
-                                {(candidate as any).outcomeStatus === 'PASSED_L2' && (
-                                  <ConfirmDialog
-                                    trigger={
-                                      <button
-                                        disabled={selectingCandidateId === candidate.id}
-                                        className="btn btn-sm"
-                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', height: 'auto', whiteSpace: 'nowrap' }}
-                                        title="Mark as Selected (final outcome)"
-                                      />
-                                    }
-                                    triggerChildren={
-                                      <>
-                                        {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
-                                        Select
-                                      </>
-                                    }
-                                    title="Mark candidate as Selected?"
-                                    description="This is the final outcome and cannot be changed by panelists."
-                                    confirmLabel="Yes, Select"
-                                    destructive={false}
-                                    onConfirm={() => handleMarkAsSelected(candidate.id)}
-                                  />
+                                <span className="candidate-email">{candidate.email}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="college-drive-cell">
+                                {candidate.college && (
+                                  <div>
+                                    <span className="cell-label">Cand:</span> <span className="cell-value">{candidate.college}</span>
+                                  </div>
                                 )}
-                                <ConfirmDialog
-                                  trigger={
+                                {candidate.collegeDrive && (
+                                  <div>
+                                    <span className="cell-label">Drive:</span> <span className="cell-value">{candidate.collegeDrive}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' }}>
+                                <span>{candidate.preferredDate ? new Date(candidate.preferredDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+                                <span className="text-muted" style={{ fontSize: '11px' }}>Uploaded: {new Date(candidate.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                              </div>
+                            </td>
+                            <td>
+                              {!isMapped ? (
+                                <span className="badge badge-pending" style={{ fontSize: '0.65rem' }}>Waiting</span>
+                              ) : (
+                                <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Mapped</span>
+                              )}
+                            </td>
+                            <td>
+                              {(() => {
+                                const { l1Result, l2Result } = getCandidateRoundResults(candidate, interviews);
+                                const getStatusSpan = (result: string, name: string) => {
+                                  if (result === 'Passed') return <span><strong>{name}:</strong> <span className="result-status-success">Passed</span></span>;
+                                  if (result === 'Rejected') return <span><strong>{name}:</strong> <span className="text-danger font-semibold">Rejected</span></span>;
+                                  if (result === 'Pending Feedback') return <span><strong>{name}:</strong> <span className="result-status-warning">Pending</span></span>;
+                                  if (result === 'Scheduled') return <span><strong>{name}:</strong> <span className="text-info font-semibold">Scheduled</span></span>;
+                                  if (result === 'Cancelled') return <span><strong>{name}:</strong> <span className="text-muted">Cancelled</span></span>;
+                                  return <span><strong>{name}:</strong> <span className="text-muted">Not Started</span></span>;
+                                };
+                                return (
+                                  <div className="result-stack">
+                                    {getStatusSpan(l1Result, 'L1')}
+                                    {getStatusSpan(l2Result, 'L2')}
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                            <td>
+                              {mappedIntv ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' }}>
+                                  <span style={{ fontWeight: 600 }}>{mappedIntv.role}</span>
+                                  <span className="text-muted" style={{ fontSize: '12px' }}>
+                                    {mappedIntv.scheduledSlotStart
+                                      ? `${new Date(mappedIntv.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                                      : 'Pending Slot'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted font-italic">—</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.4rem' }}>
+                                {mappingCandidateId === candidate.id ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <Select onValueChange={async (val: any) => {
+                                      if (val && val !== '_none_placeholder') {
+                                        await handleMapCandidateToSlot(candidate, val);
+                                        setMappingCandidateId(null);
+                                      }
+                                    }}>
+                                      <SelectTrigger className="text-left" style={{ padding: '0.2rem 0.4rem', height: '28px', fontSize: '0.75rem', width: '180px', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-glass)', color: 'var(--text-main)', borderRadius: 'var(--radius-sm)' }}>
+                                        <SelectValue placeholder="Select Available Slot..." />
+                                      </SelectTrigger>
+                                      <SelectContent >
+                                        <SelectItem value="_none_placeholder">Select Available Slot...</SelectItem>
+                                        {interviews
+                                          .filter((i) => i.candidateName === 'Pending Assignment' && (i.status === 'COLLECTED' || i.status === 'SCHEDULED' || i.status === 'PENDING'))
+                                          .map((i) => (
+                                            <SelectItem key={i.id} value={i.id}>
+                                              {i.role} ({new Date(i.scheduledSlotStart || i.startDate).toLocaleDateString('en-US')} - {i.panels.map(p => p.name).join(', ')})
+                                            </SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <button onClick={() => setMappingCandidateId(null)} className="row-action-button" style={{ height: '28px' }}>
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {!isMapped && (
+                                      <button
+                                        onClick={() => { setMappingCandidateId(candidate.id); setEditingCandidateId(null); }}
+                                        className="row-action-button"
+                                        style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.2)', color: 'var(--primary)', height: '28px' }}
+                                        title="Map to an available interview slot"
+                                      >
+                                        Map
+                                      </button>
+                                    )}
                                     <button
-                                      disabled={isMapped}
-                                      style={{
-                                        border: 'none', background: 'transparent',
-                                        cursor: isMapped ? 'not-allowed' : 'pointer',
-                                        color: isMapped ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
-                                        padding: '0.2rem'
+                                      onClick={() => {
+                                        setEditingCandidateId(candidate.id);
+                                        setMappingCandidateId(null);
+                                        setEditCandidateName(candidate.name);
+                                        setEditCandidateEmail(candidate.email);
+                                        setEditCandidateCollege(candidate.college || '');
+                                        setEditCandidateCollegeDrive(candidate.collegeDrive || '');
+                                        setEditCandidateDate(candidate.preferredDate || '');
                                       }}
-                                      onMouseEnter={(e) => { if (!isMapped) e.currentTarget.style.color = '#ef4444'; }}
-                                      onMouseLeave={(e) => { if (!isMapped) e.currentTarget.style.color = ''; }}
-                                      title={isMapped ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                      className="row-action-button"
+                                      style={{ height: '28px' }}
+                                      title="Edit candidate details"
+                                    >
+                                      Edit
+                                    </button>
+                                    {(candidate as any).outcomeStatus === 'PASSED_L2' && (
+                                      <ConfirmDialog
+                                        trigger={
+                                          <button
+                                            disabled={selectingCandidateId === candidate.id}
+                                            className="row-action-button"
+                                            style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', color: 'var(--success)', height: '28px' }}
+                                            title="Mark as Selected (final outcome)"
+                                          />
+                                        }
+                                        triggerChildren={
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {selectingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle size={10} />}
+                                            <span>Select</span>
+                                          </div>
+                                        }
+                                        title="Mark candidate as Selected?"
+                                        description="This is the final outcome and cannot be changed by panelists."
+                                        confirmLabel="Yes, Select"
+                                        destructive={false}
+                                        onConfirm={() => handleMarkAsSelected(candidate.id)}
+                                      />
+                                    )}
+                                    <ConfirmDialog
+                                      trigger={
+                                        <button
+                                          disabled={isMapped}
+                                          style={{
+                                            border: 'none', background: 'transparent',
+                                            cursor: isMapped ? 'not-allowed' : 'pointer',
+                                            color: isMapped ? 'rgba(255,255,255,0.02)' : 'var(--text-muted)',
+                                            padding: '0.2rem',
+                                            display: 'flex',
+                                            alignItems: 'center'
+                                          }}
+                                          onMouseEnter={(e) => { if (!isMapped) e.currentTarget.style.color = '#ef4444'; }}
+                                          onMouseLeave={(e) => { if (!isMapped) e.currentTarget.style.color = ''; }}
+                                          title={isMapped ? 'Cannot delete mapped candidate' : 'Remove candidate'}
+                                        />
+                                      }
+                                      triggerChildren={<Trash2 size={15} />}
+                                      title="Remove this candidate?"
+                                      description="This will remove the candidate from the queue. This action cannot be undone."
+                                      confirmLabel="Yes, Remove"
+                                      onConfirm={() => handleDeleteCandidate(candidate.id)}
                                     />
-                                  }
-                                  triggerChildren={<Trash2 size={15} />}
-                                  title="Remove this candidate?"
-                                  description="This will remove the candidate from the queue. This action cannot be undone."
-                                  confirmLabel="Yes, Remove"
-                                  onConfirm={() => handleDeleteCandidate(candidate.id)}
-                                />
-                              </>
-                            )}
-                          </div>
-                        </td>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}
 
-                  {candidates.length === 0 && (
+                  {filteredCandidates.length === 0 && (
                     <tr>
-                      <td colSpan={10} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                        No candidates registered in the queue. Download the template on the left and upload candidates.
+                      <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        No candidates registered in the queue. Use the actions panel on the left to add candidates.
                       </td>
                     </tr>
                   )}
@@ -1214,7 +1206,6 @@ export default function CandidatesTab({
           )}
         </div>
       </div>
-
       {/* Candidate Feedbacks Dialog Modal */}
       {selectedFeedbackCandidate && (
         <div style={{
@@ -1350,8 +1341,9 @@ export default function CandidatesTab({
                       </p>
                     ) : (
                       roundInterviews.map((interview) => {
+                        const isBooked = interview.status === 'SCHEDULED' || interview.status === 'COLLECTED';
                         const submittedPanels = (interview.panels || []).filter(p => p.status === 'SUBMITTED');
-                        const pendingPanels = (interview.panels || []).filter(p => p.status === 'PENDING');
+                        const pendingPanels = isBooked ? [] : (interview.panels || []).filter(p => p.status === 'PENDING');
 
                         return (
                           <div key={interview.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

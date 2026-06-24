@@ -81,12 +81,12 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
   const l2Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l2')).length;
 
   const navigation = [
-    { id: 'interviews', label: 'Interviews', description: 'Schedule and track', icon: CalendarDays, count: interviews.length, subCount: l1Scheduled > 0 || l2Scheduled > 0 ? `L1:${l1Scheduled} L2:${l2Scheduled}` : undefined },
-    { id: 'panelists', label: 'Panelists', description: 'Directory and slots', icon: UsersRound, count: panelists.length, subCount: panelists.length > 0 ? `L1:${l1Count} L2:${l2Count}` : undefined },
-    { id: 'recruiters', label: 'Recruiters', description: 'Access control', icon: ShieldCheck, count: undefined, subCount: undefined },
-    { id: 'candidates', label: 'Candidates', description: 'Queue and mapping', icon: UserRoundCheck, count: candidates.length, subCount: undefined },
-    { id: 'colleges', label: 'Colleges', description: 'Drive locations', icon: Building2, count: collegesList.length, subCount: undefined },
-    { id: 'drives', label: 'Drives', description: 'Recruitment drives', icon: Compass, count: drives.length, subCount: activeDrive ? activeDrive.collegeName : 'None active' },
+    { id: 'interviews', label: 'Interviews', description: 'Schedule and track', icon: CalendarDays, count: interviews.length },
+    { id: 'panelists', label: 'Panelists', description: 'Directory and slots', icon: UsersRound, count: panelists.length },
+    { id: 'recruiters', label: 'Recruiters', description: 'Access control', icon: ShieldCheck, count: undefined },
+    { id: 'candidates', label: 'Candidates', description: 'Queue and mapping', icon: UserRoundCheck, count: candidates.length },
+    { id: 'colleges', label: 'Colleges', description: 'Drive locations', icon: Building2, count: collegesList.length },
+    { id: 'drives', label: 'Drives', description: activeDrive ? `Active: ${activeDrive.collegeName}` : 'Recruitment drives', icon: Compass, count: drives.length },
   ] as const;
 
   const activeNavigation = navigation.find((item) => item.id === activeTab) ?? navigation[0];
@@ -96,7 +96,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
       {/* Sidebar Area */}
       <aside className="workspace-sidebar">
         <nav className="workspace-nav" aria-label="Dashboard sections">
-          {navigation.map(({ id, label, description, icon: Icon, count, subCount }) => (
+          {navigation.map(({ id, label, description, icon: Icon, count }) => (
             <Button
               key={id}
               variant={activeTab === id ? 'default' : 'ghost'}
@@ -108,9 +108,6 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
               <span className="workspace-nav-copy"><strong>{label}</strong><small>{description}</small></span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginLeft: 'auto' }}>
                 {count !== undefined && <span className="workspace-nav-count">{count}</span>}
-                {subCount !== undefined && (
-                  <span style={{ fontSize: '0.55rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{subCount}</span>
-                )}
               </span>
             </Button>
           ))}

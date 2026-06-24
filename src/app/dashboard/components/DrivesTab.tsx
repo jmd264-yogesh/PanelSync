@@ -130,11 +130,11 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '1.25rem' }}>
         
         {/* Left: Schedule Drive Form */}
-        <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+        <div className="glass-card" style={{ height: 'fit-content', padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <CalendarRange size={18} className="text-primary" />
             Schedule New Drive
@@ -216,7 +216,7 @@ export default function DrivesTab({ drives, activeDrive, onDrivesChange, college
         </div>
         
         {/* Right: Scheduled Drives List */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
+        <div className="glass-card" style={{ padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Compass size={18} className="text-primary" />
             Scheduled Recruitment Drives

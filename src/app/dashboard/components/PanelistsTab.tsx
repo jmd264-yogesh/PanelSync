@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Shield, Settings, Search, Loader2, Trash2, Info, Clock, Building2, Check
+  Shield, Settings, Search, Loader2, Trash2, Info, Clock, Building2, Check, Download, Upload
 } from 'lucide-react';
 import { Panelist, Interview, College, Drive } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
@@ -50,6 +50,34 @@ export default function PanelistsTab({
   const [defaultStartDate, setDefaultStartDate] = useState(getDefaultDate);
   const [defaultEndDate, setDefaultEndDate] = useState(getDefaultDate);
 
+  // Load scheduler defaults from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedL1Start = localStorage.getItem('ps_l1TimeStart');
+      const storedL1End = localStorage.getItem('ps_l1TimeEnd');
+      const storedL2Start = localStorage.getItem('ps_l2TimeStart');
+      const storedL2End = localStorage.getItem('ps_l2TimeEnd');
+      const storedCollege = localStorage.getItem('ps_collegeName');
+
+      if (storedL1Start) setL1TimeStart(storedL1Start);
+      if (storedL1End) setL1TimeEnd(storedL1End);
+      if (storedL2Start) setL2TimeStart(storedL2Start);
+      if (storedL2End) setL2TimeEnd(storedL2End);
+      if (storedCollege) setCollegeName(storedCollege);
+    }
+  }, []);
+
+  const saveSchedulerDefaults = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ps_l1TimeStart', l1TimeStart);
+      localStorage.setItem('ps_l1TimeEnd', l1TimeEnd);
+      localStorage.setItem('ps_l2TimeStart', l2TimeStart);
+      localStorage.setItem('ps_l2TimeEnd', l2TimeEnd);
+      localStorage.setItem('ps_collegeName', collegeName);
+      toast.success('Scheduler defaults saved successfully!');
+    }
+  };
+
   // ── Admin panelist registration ──────────────────────────────────────────
   const [adminQuery, setAdminQuery] = useState('');
   const [adminSearchResults, setAdminSearchResults] = useState<GraphUser[]>([]);
@@ -76,6 +104,10 @@ export default function PanelistsTab({
   const [reqSlots, setReqSlots] = useState<{ startTime: string; endTime: string; selected: boolean }[]>([]);
   const [reqCollegeName, setReqCollegeName] = useState('');
   const [isRequestingSlot, setIsRequestingSlot] = useState(false);
+
+  // ── Interactive Stats Card Filter State ──────────────────────────────────
+  const [statFilter, setStatFilter] = useState<'all' | 'l1' | 'l1-scheduled' | 'l2' | 'l2-scheduled'>('all');
+  const [activeRoleTab, setActiveRoleTab] = useState<'L1' | 'L2'>('L1');
 
   useEffect(() => {
     if (activeDrive) {
@@ -145,14 +177,6 @@ export default function PanelistsTab({
     });
   }, [matchedPanelistIds]);
 
-  const l1Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L1')));
-  const l2Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L2')));
-
-  const allL1Selected =
-    l1Panelists.length > 0 && l1Panelists.every((p) => bulkSelectedL1Ids.includes(p.id));
-  const allL2Selected =
-    l2Panelists.length > 0 && l2Panelists.every((p) => bulkSelectedL2Ids.includes(p.id));
-
   // ── Per-panelist stats helpers ────────────────────────────────────────────
   /** Interviews where panelist has submitted availability (PENDING or COLLECTED — slot provided) */
   const panelistSubmittedCount = (panelistId: string, type?: 'L1' | 'L2') =>
@@ -178,6 +202,24 @@ export default function PanelistsTab({
         i.status === 'PENDING' &&
         i.panels.some((p) => p.userId === panelistId && p.status === 'PENDING')
     ).length;
+
+  // ── Filtered L1 & L2 lists based on active stats filter card selection ────
+  const l1Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L1'))).filter((p) => {
+    if (statFilter === 'l2' || statFilter === 'l2-scheduled') return false;
+    if (statFilter === 'l1-scheduled') return panelistScheduledCount(p.id, 'L1') > 0;
+    return true;
+  });
+
+  const l2Panelists = sortPanelists(filteredPanelists.filter((p) => p.roles.includes('L2'))).filter((p) => {
+    if (statFilter === 'l1' || statFilter === 'l1-scheduled') return false;
+    if (statFilter === 'l2-scheduled') return panelistScheduledCount(p.id, 'L2') > 0;
+    return true;
+  });
+
+  const allL1Selected =
+    l1Panelists.length > 0 && l1Panelists.every((p) => bulkSelectedL1Ids.includes(p.id));
+  const allL2Selected =
+    l2Panelists.length > 0 && l2Panelists.every((p) => bulkSelectedL2Ids.includes(p.id));
 
   // ── Column summary stats ──────────────────────────────────────────────────
   const l1ScheduledTotal = React.useMemo(() => {
@@ -411,7 +453,14 @@ export default function PanelistsTab({
         throw new Error(err.error || 'Failed to dispatch slot request.');
       }
       const result = await res.json();
-      setInterviews([result.interview, ...interviews]);
+      
+      // Update local state handles bulk-created interviews returned by endpoint (one per selected panelist)
+      if (result.interviews) {
+        setInterviews([...result.interviews, ...interviews]);
+      } else if (result.interview) {
+        setInterviews([result.interview, ...interviews]);
+      }
+
       setReqPanelists([]);
       setBulkSelectedL1Ids([]);
       setBulkSelectedL2Ids([]);
@@ -424,107 +473,177 @@ export default function PanelistsTab({
     }
   };
 
+  // Helper to extract initials for custom panelist card avatar representation
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <main className="panelists-page">
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">Panelists</h1>
+          <p className="page-subtitle">
+            Manage interview panelists, capability levels, slot requests, and scheduling availability.
+          </p>
+        </div>
 
-      {/* Interview Scheduler Defaults Card */}
-      <div className="glass-card" style={{ padding: '1.25rem 1.5rem' }}>
-        <h3 style={{ fontSize: '1.15rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Clock size={18} className="text-primary" /> Interview Scheduler Defaults
-        </h3>
-        <p className="text-muted text-xs" style={{ marginBottom: '1.25rem' }}>
-          Configure the default daily time windows, proposed date range, and college/institution name used when auto-generating interview slot proposals.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1.25rem' }}>
+        <div className="page-actions">
+          <button className="btn btn-sm btn-secondary" onClick={() => toast.info('Import panelists functionality is placeholder-only')}>
+            <Upload size={14} /> Import
+          </button>
+          <button className="btn btn-sm btn-secondary" onClick={() => toast.info('Export directory functionality is placeholder-only')}>
+            <Download size={14} /> Export
+          </button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              const el = document.getElementById('search-colleague-input');
+              if (el) {
+                el.focus();
+                el.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+          >
+            Add Panelist
+          </button>
+        </div>
+      </header>
 
-          {/* L1 timing */}
-          <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>L1 Timing Period (Technical Screening)</h4>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>Start Time</label>
-                <input type="time" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={l1TimeStart} onChange={(e) => setL1TimeStart(e.target.value)} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>End Time</label>
-                <input type="time" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={l1TimeEnd} onChange={(e) => setL1TimeEnd(e.target.value)} />
-              </div>
+      {/* Compact Settings Card for Scheduler Defaults */}
+      <section className="scheduler-card">
+        <div className="section-heading-row">
+          <div>
+            <h2 className="section-title">
+              <Clock size={16} /> Scheduler Defaults
+            </h2>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={saveSchedulerDefaults}>
+            Save
+          </button>
+        </div>
+
+        <div className="scheduler-grid neutral">
+          {/* L1 timing window settings group */}
+          <div className="scheduler-group">
+            <div className="scheduler-group-title">L1 Timing</div>
+            <div className="scheduler-field-row">
+              <label>
+                <input
+                  type="time"
+                  className="input-control"
+                  value={l1TimeStart}
+                  onChange={(e) => setL1TimeStart(e.target.value)}
+                />
+              </label>
+              <label>
+                <input
+                  type="time"
+                  className="input-control"
+                  value={l1TimeEnd}
+                  onChange={(e) => setL1TimeEnd(e.target.value)}
+                />
+              </label>
             </div>
           </div>
 
-          {/* L2 timing */}
-          <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#a78bfa', fontWeight: 600 }}>L2 Timing Period (System Design/Management)</h4>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>Start Time</label>
-                <input type="time" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={l2TimeStart} onChange={(e) => setL2TimeStart(e.target.value)} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>End Time</label>
-                <input type="time" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={l2TimeEnd} onChange={(e) => setL2TimeEnd(e.target.value)} />
-              </div>
+          {/* L2 timing window settings group */}
+          <div className="scheduler-group">
+            <div className="scheduler-group-title">L2 Timing</div>
+            <div className="scheduler-field-row">
+              <label>
+                <input
+                  type="time"
+                  className="input-control"
+                  value={l2TimeStart}
+                  onChange={(e) => setL2TimeStart(e.target.value)}
+                />
+              </label>
+              <label>
+                <input
+                  type="time"
+                  className="input-control"
+                  value={l2TimeEnd}
+                  onChange={(e) => setL2TimeEnd(e.target.value)}
+                />
+              </label>
             </div>
           </div>
 
-          {/* Date Range */}
-          <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#34d399', fontWeight: 600 }}>Default Proposed Date Range</h4>
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>Start Date</label>
-                <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={defaultStartDate} min={todayStr} onChange={(e) => setDefaultStartDate(e.target.value)} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                <label className="form-label" style={{ fontSize: '0.7rem' }}>End Date</label>
-                <input type="date" className="form-input" style={{ fontSize: '0.85rem', padding: '0.4rem' }} value={defaultEndDate} min={defaultStartDate || todayStr} onChange={(e) => setDefaultEndDate(e.target.value)} />
-              </div>
+          {/* Date range settings group */}
+          <div className="scheduler-group">
+            <div className="scheduler-group-title">Date Range</div>
+            <div className="scheduler-field-row">
+              <label>
+                <input
+                  type="date"
+                  className="input-control"
+                  value={defaultStartDate}
+                  min={todayStr}
+                  onChange={(e) => setDefaultStartDate(e.target.value)}
+                />
+              </label>
+              <label>
+                <input
+                  type="date"
+                  className="input-control"
+                  value={defaultEndDate}
+                  min={defaultStartDate || todayStr}
+                  onChange={(e) => setDefaultEndDate(e.target.value)}
+                />
+              </label>
             </div>
           </div>
 
-          {/* College Default */}
-          <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: '#fb923c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Building2 size={14} /> College / Institution
-            </h4>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ fontSize: '0.7rem' }}>College Name</label>
+          {/* Institution details settings group */}
+          <div className="scheduler-group">
+            <div className="scheduler-group-title">Institution</div>
+            <label>
               <Select value={collegeName} onValueChange={(val) => setCollegeName(val || '')}>
-                <SelectTrigger className="w-full text-left" style={{ fontSize: '0.85rem', padding: '0.4rem', height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
-                  <SelectValue placeholder="Select College..." />
+                <SelectTrigger className="select-control">
+                  <SelectValue placeholder="College..." />
                 </SelectTrigger>
-                <SelectContent >
-                  <SelectItem value="_none_placeholder">Select College...</SelectItem>
+                <SelectContent>
+                  <SelectItem value="_none_placeholder">Select...</SelectItem>
                   {collegesList.map((c) => (
                     <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <p className="text-muted" style={{ fontSize: '0.65rem', marginTop: '0.5rem', lineHeight: 1.4 }}>
-              Default institution shown in slot request messages.
-            </p>
+            </label>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2rem' }}>
+      {/* Main refactored two-column workspace */}
+      <section className="panelists-content-grid">
+        
+        {/* Left column card: Register New Panelist */}
+        <aside className="register-card">
+          <div className="section-heading-row compact">
+            <div>
+              <h2 className="section-title">
+                <Shield size={18} style={{ color: 'var(--accent)' }} /> Register New Panelist
+              </h2>
+              <p className="section-description">Add a colleague to the interview panelist pool.</p>
+            </div>
+          </div>
 
-        {/* Left: Register new panelist */}
-        <div className="glass-card" style={{ height: 'fit-content' }}>
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '1.25rem' }} className="flex-gap-2">
-            <Shield size={18} className="text-primary" /> Register New Panelist
-          </h3>
           <form onSubmit={handleAddPanelist}>
-            <div className="form-group" style={{ position: 'relative' }}>
-              <label className="form-label">Search Colleague (Directory)</label>
-              <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
-                <Search size={14} className="text-muted" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }} />
+            <div className="form-block">
+              <label className="field-label" htmlFor="search-colleague-input">Search Colleague (Directory)</label>
+              <div className="search-field">
+                <span className="search-icon"><Search size={15} /></span>
                 <input
+                  id="search-colleague-input"
                   type="text"
-                  className="form-input"
-                  style={{ paddingLeft: '2.25rem' }}
+                  className="input-control search-control"
                   value={adminQuery}
                   onChange={(e) => {
                     setAdminQuery(e.target.value);
@@ -533,44 +652,44 @@ export default function PanelistsTab({
                   placeholder="Type name or email..."
                 />
                 {isAdminSearching && (
-                  <Loader2 size={14} className="animate-spin text-muted" style={{ position: 'absolute', right: '12px' }} />
+                  <Loader2 size={15} className="animate-spin text-muted" style={{ position: 'absolute', right: '12px', top: '50%', marginTop: '-8.5px' }} />
                 )}
               </div>
+
               {adminSearchResults.length > 0 && (
                 <div style={{
-                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                  background: 'var(--bg-surface)', border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-md)', boxShadow: '0 8px 16px rgba(0,0,0,0.5)',
-                  marginTop: '4px', maxHeight: '180px', overflowY: 'auto'
+                  position: 'absolute', left: 0, right: 0, zIndex: 10,
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                  borderRadius: '12px', boxShadow: 'var(--shadow-md)',
+                  marginTop: '6px', maxHeight: '180px', overflowY: 'auto'
                 }}>
                   {adminSearchResults.map((user) => {
                     const alreadyRegistered = panelists.find((p) => p.id === user.id);
                     return (
-                    <div
-                      key={user.id}
-                      style={{ padding: '0.5rem 1rem', cursor: 'pointer', transition: 'var(--transition-fast)' }}
-                      className="search-item-hover"
-                      onClick={() => {
-                        setAdminSelectedUser(user);
-                        setAdminQuery(user.displayName);
-                        setAdminSearchResults([]);
-                        // Pre-fill existing roles if updating
-                        if (alreadyRegistered) setAdminRoles(alreadyRegistered.roles);
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user.displayName}</div>
-                        {alreadyRegistered && (
-                          <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
-                            {alreadyRegistered.roles.map((r) => (
-                              <span key={r} style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', borderRadius: '3px', background: r === 'L1' ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)', border: r === 'L1' ? '1px solid rgba(96,165,250,0.3)' : '1px solid rgba(167,139,250,0.3)', color: r === 'L1' ? '#60a5fa' : '#a78bfa', fontWeight: 700 }}>{r}</span>
-                            ))}
-                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', borderRadius: '3px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', color: '#10b981', fontWeight: 600 }}>registered</span>
-                          </div>
-                        )}
+                      <div
+                        key={user.id}
+                        style={{ padding: '0.65rem 1rem', cursor: 'pointer', transition: 'var(--transition-fast)' }}
+                        className="search-item-hover"
+                        onClick={() => {
+                          setAdminSelectedUser(user);
+                          setAdminQuery(user.displayName);
+                          setAdminSearchResults([]);
+                          if (alreadyRegistered) setAdminRoles(alreadyRegistered.roles);
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--fg)' }}>{user.displayName}</div>
+                          {alreadyRegistered && (
+                            <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                              {alreadyRegistered.roles.map((r) => (
+                                <span key={r} style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: r === 'L1' ? 'var(--l1-soft)' : 'var(--l2-soft)', border: '1px solid var(--border)', color: r === 'L1' ? 'var(--l1)' : 'var(--l2)', fontWeight: 800 }}>{r}</span>
+                              ))}
+                              <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'var(--accent-light)', border: '1px solid var(--border)', color: 'var(--accent)', fontWeight: 800 }}>registered</span>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--fg-muted)' }}>{user.mail || user.userPrincipalName}</div>
                       </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{user.mail || user.userPrincipalName}</div>
-                    </div>
                     );
                   })}
                 </div>
@@ -578,17 +697,17 @@ export default function PanelistsTab({
             </div>
 
             {adminSelectedUser && (
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-glass)', marginBottom: '1.25rem' }}>
-                <div className="text-muted text-xs">Selected Colleague</div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{adminSelectedUser.displayName}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{adminSelectedUser.mail || adminSelectedUser.userPrincipalName}</div>
+              <div style={{ background: 'var(--surface-soft)', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border)', marginBottom: '1.25rem', marginTop: '1rem' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--fg-secondary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>Selected Colleague</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--fg)', marginTop: '2px' }}>{adminSelectedUser.displayName}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--fg-muted)' }}>{adminSelectedUser.mail || adminSelectedUser.userPrincipalName}</div>
               </div>
             )}
 
-            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-              <label className="form-label">Interview Capability Levels</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+            <div className="form-block">
+              <div className="field-label">Interview Capability Levels</div>
+              <div className="capability-list">
+                <label className={`capability-option ${adminRoles.includes('L1') ? 'selected' : ''}`}>
                   <input
                     type="checkbox"
                     checked={adminRoles.includes('L1')}
@@ -598,9 +717,13 @@ export default function PanelistsTab({
                     }}
                     style={{ accentColor: 'var(--primary)' }}
                   />
-                  L1 Panelist (Technical Screening/Coding)
+                  <span>
+                    <strong>L1 Panelist</strong>
+                    <small>Technical screening / coding</small>
+                  </span>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+                
+                <label className={`capability-option ${adminRoles.includes('L2') ? 'selected' : ''}`}>
                   <input
                     type="checkbox"
                     checked={adminRoles.includes('L2')}
@@ -610,15 +733,17 @@ export default function PanelistsTab({
                     }}
                     style={{ accentColor: 'var(--primary)' }}
                   />
-                  L2 Panelist (System Design/Management)
+                  <span>
+                    <strong>L2 Panelist</strong>
+                    <small>System design / management</small>
+                  </span>
                 </label>
               </div>
             </div>
 
             <button
               type="submit"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
+              className="btn btn-primary register-submit"
               disabled={!adminSelectedUser || adminRoles.length === 0 || isAdminSaving}
             >
               {isAdminSaving ? (
@@ -628,82 +753,54 @@ export default function PanelistsTab({
               )}
             </button>
           </form>
-        </div>
+        </aside>
 
-        {/* Right: Panelists Split Directories */}
-        <div className="glass-card">
-          <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
-            <h3 style={{ fontSize: '1.2rem' }} className="flex-gap-2">
-              <Settings size={18} className="text-muted" /> Panelist Pool Directories
-            </h3>
-            <div style={{ position: 'relative', width: '200px' }}>
-              <Search size={12} className="text-muted" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input
-                type="text"
-                className="form-input"
-                style={{ paddingLeft: '2rem', paddingRight: '0.5rem', paddingTop: '0.4rem', paddingBottom: '0.4rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }}
-                value={panelistFilterText}
-                onChange={(e) => setPanelistFilterText(e.target.value)}
-                placeholder="Filter panelists..."
-              />
-            </div>
+        {/* Right column card: Panelist Pool Directory */}
+        <section className="directory-card" style={{ padding: '24px', borderRadius: '16px', background: 'var(--bg-elevated)', border: '1px solid var(--border-glass)', boxShadow: 'var(--shadow-xs)' }}>
+          <div className="directory-header" style={{ marginBottom: '20px' }}>
+            <h2 className="section-title" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Settings size={18} style={{ color: 'var(--fg-secondary)' }} /> Panelist Pool Directory
+            </h2>
+            <p className="section-description" style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--fg-secondary)' }}>
+              Search registered panelists, review scheduling availability, and request slot nominations.
+            </p>
           </div>
 
-          {/* Active Drive Matching Filter Controls */}
-          <div style={{
-            display: 'flex',
-            gap: '1rem',
-            marginBottom: '1.25rem',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            background: 'rgba(255, 255, 255, 0.01)',
-            border: '1px solid var(--border-glass)',
-            padding: '0.65rem 0.85rem',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.8rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className="text-muted font-medium">Match College:</span>
-              <select
-                value={filterCollege}
-                onChange={(e) => setFilterCollege(e.target.value)}
-                className="form-input text-xs"
-                style={{
-                  width: '160px',
-                  padding: '0.25rem 0.5rem',
-                  height: '30px',
-                  background: 'rgba(0,0,0,0.2)',
-                  color: 'inherit',
-                  border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-sm)'
-                }}
-              >
-                <option value="" style={{ background: '#0e131f' }}>All Colleges</option>
-                {collegesList.map((c) => (
-                  <option key={c.id} value={c.name} style={{ background: '#0e131f' }}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className="text-muted font-medium">Match Date:</span>
+          {/* Integrated search and filters toolbar row */}
+          <div className="directory-toolbar" style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--fg-muted)', display: 'flex' }}>
+                <Search size={15} />
+              </span>
               <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-                className="form-input text-xs"
-                style={{
-                  width: '130px',
-                  padding: '0.25rem 0.5rem',
-                  height: '30px',
-                  background: 'rgba(0,0,0,0.2)',
-                  colorScheme: 'dark',
-                  color: 'inherit',
-                  border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-sm)'
-                }}
+                type="text"
+                className="input-control"
+                style={{ paddingLeft: '38px', height: '42px', borderRadius: '10px' }}
+                value={panelistFilterText}
+                onChange={(e) => setPanelistFilterText(e.target.value)}
+                placeholder="Search panelists..."
               />
             </div>
+
+            <select
+              value={filterCollege}
+              onChange={(e) => setFilterCollege(e.target.value)}
+              className="select-control"
+              style={{ width: '180px', height: '42px', borderRadius: '10px' }}
+            >
+              <option value="">All Colleges</option>
+              {collegesList.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="input-control"
+              style={{ width: '150px', height: '42px', borderRadius: '10px', colorScheme: 'dark' }}
+            />
 
             {(filterCollege || filterDate) && (
               <button
@@ -712,244 +809,204 @@ export default function PanelistsTab({
                   setFilterCollege(activeDrive ? activeDrive.collegeName : '');
                   setFilterDate(activeDrive ? activeDrive.startDate : '');
                 }}
-                className="btn btn-secondary btn-xs"
-                style={{
-                  padding: '0.25rem 0.6rem',
-                  fontSize: '0.7rem',
-                  height: '30px',
-                  border: '1px solid var(--border-glass)',
-                  background: 'transparent',
-                  marginLeft: 'auto'
-                }}
+                className="btn btn-secondary"
+                style={{ height: '42px', padding: '0 16px', borderRadius: '10px', fontSize: '12px' }}
               >
-                Reset to Active Drive
+                Reset
               </button>
             )}
           </div>
 
+          {/* Interactive Metric Filter Stats Cards Grid */}
+          <div className="panelist-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+            <button
+              type="button"
+              className={`stat-card ${statFilter === 'l1' ? 'active' : ''}`}
+              onClick={() => setStatFilter(statFilter === 'l1' ? 'all' : 'l1')}
+            >
+              <div className="stat-value">{filteredPanelists.filter((p) => p.roles.includes('L1')).length}</div>
+              <div className="stat-label" style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '6px' }}>Total L1</div>
+            </button>
+            
+            <button
+              type="button"
+              className={`stat-card ${statFilter === 'l1-scheduled' ? 'active' : ''}`}
+              onClick={() => setStatFilter(statFilter === 'l1-scheduled' ? 'all' : 'l1-scheduled')}
+            >
+              <div className="stat-value">{l1ScheduledTotal}</div>
+              <div className="stat-label" style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '6px' }}>Scheduled</div>
+            </button>
+            
+            <button
+              type="button"
+              className={`stat-card ${statFilter === 'l2' ? 'active' : ''}`}
+              onClick={() => setStatFilter(statFilter === 'l2' ? 'all' : 'l2')}
+            >
+              <div className="stat-value">{filteredPanelists.filter((p) => p.roles.includes('L2')).length}</div>
+              <div className="stat-label" style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '6px' }}>Total L2</div>
+            </button>
+            
+            <button
+              type="button"
+              className={`stat-card ${statFilter === 'l2-scheduled' ? 'active' : ''}`}
+              onClick={() => setStatFilter(statFilter === 'l2-scheduled' ? 'all' : 'l2-scheduled')}
+            >
+              <div className="stat-value">{l2ScheduledTotal}</div>
+              <div className="stat-label" style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '6px' }}>Scheduled</div>
+            </button>
+          </div>
+
           {filteredPanelists.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '4rem 1rem', border: '1px dashed var(--border-glass)', borderRadius: 'var(--radius-md)' }}>
-              <Info size={32} className="text-muted animate-pulse" style={{ margin: '0 auto 0.75rem', opacity: 0.4 }} />
-              <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>No Panelists Registered</div>
-              <p className="text-muted text-xs">Search your tenant directory and register panelists with their L1/L2 capability levels on the left.</p>
+            <div className="empty-state" style={{ padding: '3rem 1.5rem', textAlign: 'center', background: 'var(--surface-hover)', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+              <div className="empty-icon" style={{ fontSize: '32px', marginBottom: '12px' }}>👥</div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px 0' }}>No panelists found</h3>
+              <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0 }}>Search your tenant directory and register panelists with their L1/L2 capability levels on the left.</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-
-              {/* L1 Column */}
-              <div>
-                {/* L1 Column summary stats */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <div style={{ flex: 1, background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#60a5fa', lineHeight: 1 }}>{l1Panelists.length}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total L1</div>
-                  </div>
-                  <div style={{ flex: 1, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l1ScheduledTotal}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
-                  </div>
-                </div>
-                <h4 style={{ fontSize: '0.85rem', color: '#60a5fa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(96,165,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={allL1Selected}
-                    onChange={handleToggleSelectAllL1}
-                    style={{ accentColor: '#60a5fa', cursor: 'pointer' }}
-                    title="Select All L1 Panelists"
-                  />
-                  <span style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700 }}>L1</span>
-                  Screening Panels ({l1Panelists.length})
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {l1Panelists.length === 0 ? (
-                    <div className="text-muted text-xs" style={{ padding: '1rem', textAlign: 'center' }}>No L1 panelists registered.</div>
-                  ) : (
-                    l1Panelists.map((p) => {
-                      const isSelected = bulkSelectedL1Ids.includes(p.id);
-                      const scheduled = panelistScheduledCount(p.id, 'L1');
-                      const submitted = panelistSubmittedCount(p.id, 'L1');
-                      const pending = panelistPendingCount(p.id);
-                      return (
-                        <div
-                          key={p.id}
-                          style={{
-                            display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.65rem',
-                            background: isSelected ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.01)',
-                            border: isSelected ? '1px solid rgba(96,165,250,0.35)' : '1px solid var(--border-glass)',
-                            borderRadius: 'var(--radius-md)', transition: 'var(--transition-fast)'
-                          }}
-                        >
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {
-                                if (isSelected) setBulkSelectedL1Ids(bulkSelectedL1Ids.filter((id) => id !== p.id));
-                                else setBulkSelectedL1Ids([...bulkSelectedL1Ids, p.id]);
-                              }}
-                              style={{ accentColor: '#60a5fa', marginTop: '3px', cursor: 'pointer' }}
-                            />
-                            <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                                <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
-                              </div>
-                              {matchedPanelistIds.has(p.id) && (
-                                <span style={{ fontSize: '0.55rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontWeight: 700, flexShrink: 0 }} title="Matches search/active drive filters">
-                                  Matched
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {/* Per-panelist stats row */}
-                          <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '1.5rem' }}>
-                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: scheduled > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', border: scheduled > 0 ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-glass)', color: scheduled > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 600 }}>
-                              ✓ {scheduled} scheduled
-                            </span>
-                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: submitted > 0 ? 'rgba(96,165,250,0.08)' : 'rgba(255,255,255,0.03)', border: submitted > 0 ? '1px solid rgba(96,165,250,0.2)' : '1px solid var(--border-glass)', color: submitted > 0 ? '#60a5fa' : 'var(--text-muted)', fontWeight: 600 }}>
-                              ◎ {submitted} slots given
-                            </span>
-                            {pending > 0 && (
-                              <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
-                                ⏳ {pending} pending
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
-                            <button
-                              onClick={() => handleOpenSlotRequest(p, 'L1')}
-                              className="btn btn-xs btn-slot-l1"
-                            >
-                              Request Slots
-                            </button>
-                            <ConfirmDialog
-                              trigger={
-                                <button
-                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                                />
-                              }
-                              triggerChildren={<Trash2 size={13} />}
-                              title="Remove this panelist?"
-                              description="This will remove the panelist from the pre-approved pool."
-                              confirmLabel="Yes, Remove"
-                              onConfirm={() => handleDeletePanelist(p.id)}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+            <div>
+              {/* Tab Switcher for L1 vs L2 */}
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-glass)', marginBottom: '16px', gap: '8px' }}>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeRoleTab === 'L1' ? 'active' : ''}`}
+                  onClick={() => setActiveRoleTab('L1')}
+                  style={{
+                    padding: '10px 16px',
+                    fontWeight: activeRoleTab === 'L1' ? 700 : 500,
+                    color: activeRoleTab === 'L1' ? 'var(--primary)' : 'var(--fg-secondary)',
+                    borderBottom: activeRoleTab === 'L1' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    borderTop: 'none',
+                  }}
+                >
+                  L1 Panelists ({l1Panelists.length})
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeRoleTab === 'L2' ? 'active' : ''}`}
+                  onClick={() => setActiveRoleTab('L2')}
+                  style={{
+                    padding: '10px 16px',
+                    fontWeight: activeRoleTab === 'L2' ? 700 : 500,
+                    color: activeRoleTab === 'L2' ? 'var(--primary)' : 'var(--fg-secondary)',
+                    borderBottom: activeRoleTab === 'L2' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    borderTop: 'none',
+                  }}
+                >
+                  L2 Panelists ({l2Panelists.length})
+                </button>
               </div>
 
-              {/* L2 Column */}
-              <div>
-                {/* L2 Column summary stats */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <div style={{ flex: 1, background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{l2Panelists.length}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total L2</div>
+              {/* Select All Checkbox toolbar */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', background: 'var(--surface-hover)', border: '1px solid var(--border-glass)', borderRadius: '10px', marginBottom: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={activeRoleTab === 'L1' ? allL1Selected : allL2Selected}
+                  onChange={activeRoleTab === 'L1' ? handleToggleSelectAllL1 : handleToggleSelectAllL2}
+                  style={{ accentColor: 'var(--primary)', cursor: 'pointer', marginRight: '10px' }}
+                />
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg-secondary)' }}>
+                  Select All {activeRoleTab} Panelists
+                </span>
+              </div>
+
+              {/* Panelists list */}
+              <div className="panelist-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(activeRoleTab === 'L1' ? l1Panelists : l2Panelists).length === 0 ? (
+                  <div className="empty-state" style={{ padding: '2.5rem 1rem', textAlign: 'center', background: 'var(--surface-hover)', borderRadius: '12px' }}>
+                    <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0 }}>No {activeRoleTab} panelists matching active filters.</p>
                   </div>
-                  <div style={{ flex: 1, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.4rem 0.6rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981', lineHeight: 1 }}>{l2ScheduledTotal}</div>
-                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scheduled</div>
-                  </div>
-                </div>
-                <h4 style={{ fontSize: '0.85rem', color: '#a78bfa', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(167,139,250,0.15)', paddingBottom: '0.4rem', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={allL2Selected}
-                    onChange={handleToggleSelectAllL2}
-                    style={{ accentColor: '#a78bfa', cursor: 'pointer' }}
-                    title="Select All L2 Panelists"
-                  />
-                  <span style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '4px', padding: '0.1rem 0.4rem', fontSize: '0.75rem', color: '#a78bfa', fontWeight: 700 }}>L2</span>
-                  System/Mgmt Panels ({l2Panelists.length})
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {l2Panelists.length === 0 ? (
-                    <div className="text-muted text-xs" style={{ padding: '1rem', textAlign: 'center' }}>No L2 panelists registered.</div>
-                  ) : (
-                    l2Panelists.map((p) => {
-                      const isSelected = bulkSelectedL2Ids.includes(p.id);
-                      const scheduled = panelistScheduledCount(p.id, 'L2');
-                      const submitted = panelistSubmittedCount(p.id, 'L2');
-                      const pending = panelistPendingCount(p.id);
-                      return (
-                        <div
-                          key={p.id}
-                          style={{
-                            display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.65rem',
-                            background: isSelected ? 'rgba(167,139,250,0.06)' : 'rgba(255,255,255,0.01)',
-                            border: isSelected ? '1px solid rgba(167,139,250,0.35)' : '1px solid var(--border-glass)',
-                            borderRadius: 'var(--radius-md)', transition: 'var(--transition-fast)'
+                ) : (
+                  (activeRoleTab === 'L1' ? l1Panelists : l2Panelists).map((p) => {
+                    const isSelected = activeRoleTab === 'L1' ? bulkSelectedL1Ids.includes(p.id) : bulkSelectedL2Ids.includes(p.id);
+                    const scheduled = panelistScheduledCount(p.id, activeRoleTab);
+                    const submitted = panelistSubmittedCount(p.id, activeRoleTab);
+                    const pending = panelistPendingCount(p.id);
+                    return (
+                      <article
+                        key={p.id}
+                        className={`panelist-row ${isSelected ? 'selected' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            if (activeRoleTab === 'L1') {
+                              if (isSelected) setBulkSelectedL1Ids(bulkSelectedL1Ids.filter((id) => id !== p.id));
+                              else setBulkSelectedL1Ids([...bulkSelectedL1Ids, p.id]);
+                            } else {
+                              if (isSelected) setBulkSelectedL2Ids(bulkSelectedL2Ids.filter((id) => id !== p.id));
+                              else setBulkSelectedL2Ids([...bulkSelectedL2Ids, p.id]);
+                            }
                           }}
-                        >
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {
-                                if (isSelected) setBulkSelectedL2Ids(bulkSelectedL2Ids.filter((id) => id !== p.id));
-                                else setBulkSelectedL2Ids([...bulkSelectedL2Ids, p.id]);
-                              }}
-                              style={{ accentColor: '#a78bfa', marginTop: '3px', cursor: 'pointer' }}
-                            />
-                            <div style={{ minWidth: 0, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.displayName}</div>
-                                <div className="text-muted text-xs" style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
-                              </div>
-                              {matchedPanelistIds.has(p.id) && (
-                                <span style={{ fontSize: '0.55rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontWeight: 700, flexShrink: 0 }} title="Matches search/active drive filters">
-                                  Matched
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {/* Per-panelist stats row */}
-                          <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '1.5rem' }}>
-                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: scheduled > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', border: scheduled > 0 ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-glass)', color: scheduled > 0 ? '#10b981' : 'var(--text-muted)', fontWeight: 600 }}>
-                              ✓ {scheduled} scheduled
-                            </span>
-                            <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: submitted > 0 ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.03)', border: submitted > 0 ? '1px solid rgba(167,139,250,0.2)' : '1px solid var(--border-glass)', color: submitted > 0 ? '#a78bfa' : 'var(--text-muted)', fontWeight: 600 }}>
-                              ◎ {submitted} slots given
-                            </span>
-                            {pending > 0 && (
-                              <span style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '3px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
-                                ⏳ {pending} pending
-                              </span>
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                        />
+                        <div className="panelist-avatar" style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          background: 'var(--primary-glow)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: '14px',
+                        }}>
+                          {getInitials(p.displayName)}
+                        </div>
+                        <div className="panelist-identity" style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="panelist-name" style={{ fontWeight: 600, color: 'var(--fg)', fontSize: '14px' }}>{p.displayName}</span>
+                            {matchedPanelistIds.has(p.id) && (
+                              <span style={{ fontSize: '10px', background: 'rgba(22, 163, 74, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>Matched</span>
                             )}
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.1rem' }}>
-                            <button
-                              onClick={() => handleOpenSlotRequest(p, 'L2')}
-                              className="btn btn-xs btn-slot-l2"
-                            >
-                              Request Slots
-                            </button>
-                            <ConfirmDialog
-                              trigger={
-                                <button
-                                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
-                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                                  onMouseLeave={(e) => e.currentTarget.style.color = ''}
-                                />
-                              }
-                              triggerChildren={<Trash2 size={13} />}
-                              title="Remove this panelist?"
-                              description="This will remove the panelist from the pre-approved pool."
-                              confirmLabel="Yes, Remove"
-                              onConfirm={() => handleDeletePanelist(p.id)}
-                            />
+                          <div className="panelist-email" style={{ fontSize: '12px', color: 'var(--fg-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.email}>{p.email}</div>
+                          <div className="panelist-meta">
+                            <span>{scheduled} scheduled</span>
+                            <span>•</span>
+                            <span>{submitted} slots given</span>
+                            {pending > 0 && (
+                              <>
+                                <span>•</span>
+                                <span style={{ color: 'var(--warning)', fontWeight: 500 }}>{pending} pending</span>
+                              </>
+                            )}
                           </div>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <button
+                            onClick={() => handleOpenSlotRequest(p, activeRoleTab)}
+                            className="request-slots-button"
+                          >
+                            Request Slots
+                          </button>
+                          <ConfirmDialog
+                            trigger={
+                              <button className="delete-row-btn" type="button">
+                                <Trash2 size={14} />
+                              </button>
+                            }
+                            title="Remove this panelist?"
+                            description="This will remove the panelist from the pre-approved pool."
+                            confirmLabel="Yes, Remove"
+                            onConfirm={() => handleDeletePanelist(p.id)}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
@@ -958,16 +1015,16 @@ export default function PanelistsTab({
           {(bulkSelectedL1Ids.length > 0 || bulkSelectedL2Ids.length > 0) && (
             <div style={{
               position: 'sticky', bottom: '1rem',
-              background: 'color-mix(in srgb, var(--bg-surface) 92%, transparent)',
+              background: 'color-mix(in srgb, var(--bg-elevated) 92%, transparent)',
               backdropFilter: 'blur(12px)',
-              border: '1px solid color-mix(in srgb, var(--primary) 35%, var(--border-glass))',
-              borderRadius: 'var(--radius-md)',
+              border: '1px solid color-mix(in srgb, var(--primary) 35%, var(--border))',
+              borderRadius: '16px',
               padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', boxShadow: 'var(--shadow-card)',
+              alignItems: 'center', boxShadow: 'var(--shadow-md)',
               zIndex: 90, marginTop: '1.5rem'
             }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                <span className="text-primary" style={{ marginRight: '4px' }}>{bulkSelectedL1Ids.length + bulkSelectedL2Ids.length}</span> Panelists Selected
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--fg)' }}>
+                <span style={{ color: 'var(--primary)', marginRight: '4px' }}>{bulkSelectedL1Ids.length + bulkSelectedL2Ids.length}</span> Panelists Selected
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
@@ -975,7 +1032,8 @@ export default function PanelistsTab({
                     const selectedPanelists = panelists.filter((p) => bulkSelectedL1Ids.includes(p.id));
                     handleOpenSlotRequest(selectedPanelists, 'L1');
                   }}
-                  className="btn btn-sm btn-slot-l1"
+                  className="btn btn-primary compact"
+                  style={{ height: '34px', fontSize: '12px' }}
                   disabled={bulkSelectedL1Ids.length === 0}
                 >
                   Request L1 Slots
@@ -985,23 +1043,24 @@ export default function PanelistsTab({
                     const selectedPanelists = panelists.filter((p) => bulkSelectedL2Ids.includes(p.id));
                     handleOpenSlotRequest(selectedPanelists, 'L2');
                   }}
-                  className="btn btn-sm btn-slot-l2"
+                  className="btn btn-primary compact"
+                  style={{ height: '34px', fontSize: '12px' }}
                   disabled={bulkSelectedL2Ids.length === 0}
                 >
                   Request L2 Slots
                 </button>
                 <button
                   onClick={() => { setBulkSelectedL1Ids([]); setBulkSelectedL2Ids([]); }}
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', height: 'auto', border: '1px solid var(--border-glass)', background: 'transparent' }}
+                  className="btn btn-secondary compact"
+                  style={{ border: '1px solid var(--border)', background: 'transparent', height: '34px', fontSize: '12px' }}
                 >
                   Clear Selection
                 </button>
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      </section>
 
       {/* Request Slot Overlay Modal */}
       {reqPanelists.length > 0 && (
@@ -1011,16 +1070,16 @@ export default function PanelistsTab({
           zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem'
         }}>
           <div className="glass-card animate-pulse-once" style={{ maxWidth: '520px', width: '100%', padding: '2rem', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-glass)' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.75rem' }}>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.75rem', color: 'var(--fg)', fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
               Request Slots from {reqPanelists.length === 1 ? reqPanelists[0].displayName : `${reqPanelists.length} Panelists`}
             </h3>
 
             {reqPanelists.length > 1 && (
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.6rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-glass)', marginBottom: '1rem', fontSize: '0.75rem' }}>
+              <div style={{ background: 'var(--surface-soft)', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '1rem', fontSize: '0.75rem' }}>
                 <span className="text-muted block font-semibold" style={{ marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invited Panel Members:</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
                   {reqPanelists.map((p) => (
-                    <span key={p.id} style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>
+                    <span key={p.id} style={{ background: 'var(--l1-soft)', border: '1px solid var(--l1-border)', color: 'var(--l1)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 650 }}>
                       {p.displayName}
                     </span>
                   ))}
@@ -1033,10 +1092,10 @@ export default function PanelistsTab({
                 <div className="form-group">
                   <label className="form-label">Interview Stage</label>
                   <Select value={reqInterviewType} onValueChange={(val) => setReqInterviewType(val as any)}>
-                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                    <SelectTrigger className="select-control" style={{ color: 'inherit' }}>
                       <SelectValue placeholder="Select Stage" />
                     </SelectTrigger>
-                    <SelectContent >
+                    <SelectContent>
                       <SelectItem value="L1">L1 Interview</SelectItem>
                       <SelectItem value="L2">L2 Interview</SelectItem>
                       <SelectItem value="General">General / Custom</SelectItem>
@@ -1046,10 +1105,10 @@ export default function PanelistsTab({
                 <div className="form-group">
                   <label className="form-label">Duration</label>
                   <Select value={reqDuration} onValueChange={(val) => setReqDuration(val || '')}>
-                    <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', height: '38px' }}>
+                    <SelectTrigger className="select-control" style={{ color: 'inherit' }}>
                       <SelectValue placeholder="Select Duration" />
                     </SelectTrigger>
-                    <SelectContent >
+                    <SelectContent>
                       <SelectItem value="30">30 mins</SelectItem>
                       <SelectItem value="45">45 mins</SelectItem>
                       <SelectItem value="60">60 mins</SelectItem>
@@ -1062,11 +1121,11 @@ export default function PanelistsTab({
               {activeDrive ? (
                 <div className="form-group">
                   <label className="form-label">Drive Window &amp; Location (from Active Drive)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', fontSize: '0.8rem' }}>
-                    <Building2 size={14} style={{ color: 'var(--primary)' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', background: 'var(--accent-light)', border: '1px solid rgba(13, 124, 102, 0.2)', borderRadius: '12px', padding: '0.65rem 0.85rem', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
+                    <Building2 size={14} />
                     <strong>{activeDrive.collegeName}</strong>
                     <span className="text-muted">·</span>
-                    <Clock size={13} style={{ color: 'var(--text-muted)' }} />
+                    <Clock size={13} />
                     <span>
                       {activeDrive.startDate === activeDrive.endDate
                         ? new Date(activeDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -1079,15 +1138,15 @@ export default function PanelistsTab({
                 </div>
               ) : (
                 <div className="form-group">
-                  <label className="form-label">College / Institution</label>
-                  <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', color: '#fbbf24', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
+                  <div style={{ background: 'var(--warning-light)', border: '1px solid rgba(212, 146, 11, 0.25)', borderRadius: '12px', padding: '0.65rem 0.85rem', color: 'var(--warning)', fontSize: '0.78rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
                     No active drive selected. Set an active drive in the <strong>Drives</strong> tab so the slot window and college are picked automatically. Falling back to a default date range below.
                   </div>
+                  <label className="form-label">College / Institution</label>
                   <Select value={reqCollegeName} onValueChange={(val) => setReqCollegeName(val || '')}>
-                    <SelectTrigger className="w-full text-left" style={{ height: '36px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit' }}>
+                    <SelectTrigger className="select-control" style={{ color: 'inherit' }}>
                       <SelectValue placeholder="Select College..." />
                     </SelectTrigger>
-                    <SelectContent >
+                    <SelectContent>
                       <SelectItem value="_none_placeholder">Select College...</SelectItem>
                       {collegesList.map((c) => (
                         <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
@@ -1097,19 +1156,19 @@ export default function PanelistsTab({
                   <div className="grid-2" style={{ marginTop: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">Proposed Range Start</label>
-                      <input type="date" className="form-input" value={reqStartDate} min={todayStr} onChange={(e) => setReqStartDate(e.target.value)} required />
+                      <input type="date" className="input-control" value={reqStartDate} min={todayStr} onChange={(e) => setReqStartDate(e.target.value)} required style={{ colorScheme: 'dark' }} />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">Proposed Range End</label>
-                      <input type="date" className="form-input" value={reqEndDate} min={reqStartDate || todayStr} onChange={(e) => setReqEndDate(e.target.value)} required />
+                      <input type="date" className="input-control" value={reqEndDate} min={reqStartDate || todayStr} onChange={(e) => setReqEndDate(e.target.value)} required style={{ colorScheme: 'dark' }} />
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Proposed Slots Builder */}
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem' }}>
-                <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--text-main)', fontWeight: 600 }}>Proposed Slot Options Checklist</h4>
+              {/* Proposed Slots Builder Checklist */}
+              <div style={{ background: 'var(--surface-soft)', border: '1px solid var(--border)', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
+                <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--fg)', fontWeight: 800 }}>Proposed Slot Options Checklist</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto' }}>
                   {reqSlots.length === 0 ? (
                     <span className="text-muted text-xs block text-center" style={{ padding: '0.5rem 0' }}>No proposed slot options added yet. Select range start/end.</span>
@@ -1118,7 +1177,7 @@ export default function PanelistsTab({
                       const start = new Date(s.startTime);
                       const end = new Date(s.endTime);
                       return (
-                        <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-glass)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.75rem' }}>
+                        <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '0.5rem 0.75rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--fg)' }}>
                           <input
                             type="checkbox"
                             checked={s.selected}
@@ -1127,7 +1186,7 @@ export default function PanelistsTab({
                               updated[idx].selected = e.target.checked;
                               setReqSlots(updated);
                             }}
-                            style={{ accentColor: 'var(--primary)' }}
+                            style={{ accentColor: 'var(--accent)' }}
                           />
                           <span>
                             {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
@@ -1139,43 +1198,43 @@ export default function PanelistsTab({
                 </div>
               </div>
 
-              {/* Teams Message Preview */}
-              <div style={{ background: 'var(--preview-bg)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)', marginBottom: '1.5rem' }}>
-                <span className="text-muted text-xs block font-semibold" style={{ marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
-                <div style={{ borderLeft: '4px solid #6366f1', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {/* Teams Message Preview Card */}
+              <div style={{ background: 'var(--preview-bg)', padding: '1.25rem', borderRadius: '14px', border: '1px solid var(--border)', marginBottom: '1.5rem' }}>
+                <span className="text-muted text-xs block font-bold" style={{ marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
+                <div style={{ borderLeft: '4px solid #6366f1', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--fg-secondary)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                     <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', fontSize: '0.6rem', padding: '1px 6px', textTransform: 'uppercase', fontWeight: 700 }}>REQUEST</span>
-                    <span style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.85rem' }}>Interview Slot Request</span>
+                    <span style={{ fontWeight: 850, color: 'var(--fg)', fontSize: '0.85rem' }}>Interview Slot Request</span>
                   </div>
                   
-                  <p style={{ margin: '4px 0', fontSize: '0.8rem', color: 'var(--text-main)' }}>Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,</p>
+                  <p style={{ margin: '4px 0', fontSize: '0.8rem', color: 'var(--fg)' }}>Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,</p>
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>
                     You have been requested to conduct an interview.
                   </p>
 
-                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px', margin: '10px 0' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                       <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Interview Round</div>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqInterviewType} Interview{reqCollegeName ? ` - ${reqCollegeName}` : ''}</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--fg-muted)', textTransform: 'uppercase', fontWeight: 650 }}>Interview Round</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--fg)' }}>{reqInterviewType} Interview{reqCollegeName ? ` - ${reqCollegeName}` : ''}</div>
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Proposed Dates</div>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{new Date(reqStartDate || todayStr).toLocaleDateString('en-US')} - {new Date(reqEndDate || todayStr).toLocaleDateString('en-US')}</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--fg-muted)', textTransform: 'uppercase', fontWeight: 650 }}>Proposed Dates</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--fg)' }}>{new Date(reqStartDate || todayStr).toLocaleDateString('en-US')} - {new Date(reqEndDate || todayStr).toLocaleDateString('en-US')}</div>
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Duration</div>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqDuration} minutes</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--fg-muted)', textTransform: 'uppercase', fontWeight: 650 }}>Duration</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--fg)' }}>{reqDuration} minutes</div>
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Nominated Panelist</div>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--fg-muted)', textTransform: 'uppercase', fontWeight: 650 }}>Nominated Panelist</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--fg)' }}>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</div>
                       </div>
                     </div>
                   </div>
 
                   <p style={{ margin: '4px 0', fontSize: '0.8rem' }}>Please select one of the following proposed slots to book instantly:</p>
-                  <div style={{ margin: '8px 0', paddingLeft: '1rem', color: 'var(--text-main)', fontSize: '0.75rem' }}>
+                  <div style={{ margin: '8px 0', paddingLeft: '1rem', color: 'var(--fg)', fontSize: '0.75rem' }}>
                     {reqSlots.filter((s) => s.selected).slice(0, 6).map((s, i) => {
                       const d = new Date(s.startTime);
                       return <div key={i}>• {d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)</div>;
@@ -1205,7 +1264,6 @@ export default function PanelistsTab({
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
-

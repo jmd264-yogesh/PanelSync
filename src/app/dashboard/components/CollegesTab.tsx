@@ -73,11 +73,11 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '2rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="dashboard-two-column" style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '1.25rem' }}>
         
         {/* Left: Add College Form */}
-        <div className="glass-card" style={{ height: 'fit-content', padding: '1.5rem' }}>
+        <div className="glass-card" style={{ height: 'fit-content', padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '1.25rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Building2 size={18} className="text-primary" />
             Add College / Institution
@@ -126,7 +126,7 @@ export default function CollegesTab({ collegesList, setCollegesList }: CollegesT
         </div>
         
         {/* Right: Colleges List */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
+        <div className="glass-card" style={{ padding: '1.15rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Building2 size={18} className="text-primary" />
             Registered Colleges Directory

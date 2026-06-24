@@ -105,6 +105,8 @@ export default function InterviewsTab({
   const [typeFilter, setTypeFilter] = useState<'all' | 'L1' | 'L2'>('L1');
   const [collegeFilter, setCollegeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterThisWeek, setFilterThisWeek] = useState(false);
   // Drive the dashboard scopes to. Defaults to the active drive, but the recruiter
   // can switch to any other drive here without changing the global active drive.
   const [selectedDriveId, setSelectedDriveId] = useState<string>(activeDrive?.id ?? 'all');
@@ -457,6 +459,30 @@ export default function InterviewsTab({
     }
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Candidate Name', 'Candidate Email', 'Role', 'Status', 'Start Date', 'End Date', 'Scheduled Time'];
+    const rows = interviews.map((i) => [
+      i.candidateName,
+      i.candidateEmail,
+      i.role,
+      i.status,
+      i.startDate,
+      i.endDate,
+      i.scheduledSlotStart ? `${i.scheduledSlotStart} - ${i.scheduledSlotEnd}` : 'TBD'
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(row => row.map(val => `"${val.replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `interviews_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Interviews exported successfully.');
+  };
+
   // ── Filtering Logic ───────────────────────────────────────────────────────
   const selectedDrive = selectedDriveId === 'all' ? null : (drives.find((d) => d.id === selectedDriveId) ?? null);
 
@@ -521,6 +547,33 @@ export default function InterviewsTab({
         }
         return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
       });
+    }
+
+    if (filterThisWeek) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(today.getDate() + 7);
+      nextWeek.setHours(23, 59, 59, 999);
+
+      filtered = filtered.filter((i) => {
+        if (i.status === 'SCHEDULED' && i.scheduledSlotStart) {
+          const d = new Date(i.scheduledSlotStart);
+          return d >= today && d <= nextWeek;
+        }
+        const startD = new Date(i.startDate);
+        const endD = new Date(i.endDate);
+        return startD <= nextWeek && endD >= today;
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((i) =>
+        i.candidateName.toLowerCase().includes(query) ||
+        i.candidateEmail.toLowerCase().includes(query) ||
+        i.role.toLowerCase().includes(query)
+      );
     }
 
     return filtered;
@@ -824,264 +877,244 @@ export default function InterviewsTab({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* Header with Title and Action */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Header section */}
+      <header className="dashboard-header">
         <div>
-          <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.25rem' }}>Interview Dashboard</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>Overview of all L1 & L2 interviews, panelist responses, and scheduling status</p>
+          <h1 className="page-title">Interview Dashboard</h1>
+          <p className="page-subtitle">
+            Overview of L1 and L2 interviews, panelist responses, and scheduling status.
+          </p>
         </div>
-        {/* <button className="btn btn-primary flex-gap-2" onClick={() => { setShowCreateForm(!showCreateForm); setSelectedInterview(null); }}>
-          <Plus size={16} /> New Interview
-        </button> */}
-      </div>
 
-      {/* Drive Selector — scopes the whole dashboard to one drive */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', padding: '0.85rem 1rem', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-lg)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', fontWeight: 700, fontSize: '0.85rem' }}>
+        <div className="header-actions">
+          <button type="button" className="btn btn-secondary" onClick={handleExportCSV}>Export</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setShowCreateForm(!showCreateForm);
+              setSelectedInterview(null);
+            }}
+          >
+            <Plus size={16} /> Schedule Interview
+          </button>
+        </div>
+      </header>
+
+      {/* Drive Selector Banner */}
+      <section className="drive-banner">
+        <span className="drive-banner-label">
           <Compass size={16} /> Viewing Drive
-        </div>
-        <div style={{ minWidth: '240px' }}>
-          <Select value={selectedDriveId} onValueChange={(val) => setSelectedDriveId(val || 'all')}>
-            <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
-              <SelectValue placeholder="All Drives" />
-            </SelectTrigger>
-            <SelectContent >
-              <SelectItem value="all">All Drives</SelectItem>
-              {drives.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.collegeName}{d.status === 'CLOSED' ? ' (Closed)' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        </span>
+        <select
+          className="drive-select"
+          value={selectedDriveId}
+          onChange={(e) => setSelectedDriveId(e.target.value || 'all')}
+        >
+          <option value="all">All Drives</option>
+          {drives.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.collegeName}{d.status === 'CLOSED' ? ' (Closed)' : ''}
+            </option>
+          ))}
+        </select>
         {selectedDrive ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            <Clock size={13} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <Clock size={13} style={{ color: 'var(--info)' }} />
             <span>
               {selectedDrive.startDate === selectedDrive.endDate
                 ? new Date(selectedDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                 : `${new Date(selectedDrive.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(selectedDrive.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
             </span>
-            {selectedDrive.status === 'CLOSED' && <span className="badge badge-danger" style={{ fontSize: '0.6rem' }}>Closed</span>}
-            {activeDrive?.id === selectedDrive.id && <span className="badge badge-success" style={{ fontSize: '0.6rem' }}>Active</span>}
-          </div>
+            {selectedDrive.status === 'CLOSED' && <span className="badge badge-danger" style={{ fontSize: '10px' }}>Closed</span>}
+            {activeDrive?.id === selectedDrive.id && <span className="badge badge-success" style={{ fontSize: '10px' }}>Active</span>}
+          </span>
         ) : (
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Showing interviews across all drives.</span>
+          <span style={{ fontSize: '13px' }}>Showing interviews across all drives.</span>
         )}
-      </div>
+      </section>
 
-      {/* Filter Bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)' }}>
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Status</label>
-          <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as any)}>
-            <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent >
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="PENDING">Awaiting Panels</SelectItem>
-              <SelectItem value="COLLECTED">Ready to Book</SelectItem>
-              <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-            </SelectContent>
-          </Select>
+      {/* Filter Toolbar */}
+      <section className="filter-toolbar">
+        <div className="filter-chip-group">
+          <button
+            type="button"
+            className={`filter-chip ${typeFilter === 'all' && statusFilter === 'all' && !filterThisWeek ? 'active' : ''}`}
+            onClick={() => {
+              setTypeFilter('all');
+              setStatusFilter('all');
+              setFilterThisWeek(false);
+            }}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${typeFilter === 'L1' ? 'active' : ''}`}
+            onClick={() => setTypeFilter(typeFilter === 'L1' ? 'all' : 'L1')}
+          >
+            L1 Round
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${typeFilter === 'L2' ? 'active' : ''}`}
+            onClick={() => setTypeFilter(typeFilter === 'L2' ? 'all' : 'L2')}
+          >
+            L2 Round
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${statusFilter === 'PENDING' ? 'active' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'all' : 'PENDING')}
+          >
+            Pending
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${statusFilter === 'SCHEDULED' ? 'active' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === 'SCHEDULED' ? 'all' : 'SCHEDULED')}
+          >
+            Completed
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${filterThisWeek ? 'active' : ''}`}
+            onClick={() => setFilterThisWeek(!filterThisWeek)}
+          >
+            This Week
+          </button>
         </div>
 
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Interview Type</label>
-          <Select value={typeFilter} onValueChange={(val) => setTypeFilter(val as any)}>
-            <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
-              <SelectValue placeholder="All Types" />
-            </SelectTrigger>
-            <SelectContent >
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="L1">L1 Interviews</SelectItem>
-              <SelectItem value="L2">L2 Interviews</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <div className="filter-control-group">
+          <select
+            className="filter-select"
+            value={collegeFilter}
+            onChange={(e) => setCollegeFilter(e.target.value || 'all')}
+          >
+            <option value="all">All Colleges</option>
+            {collegesList.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>Date</label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input
+            className="filter-date"
+            type="date"
+            value={dateFilter === 'all' ? '' : dateFilter}
+            onChange={(e) => setDateFilter(e.target.value || 'all')}
+            style={{ colorScheme: 'dark' }}
+          />
+
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--fg-muted)', display: 'flex', alignItems: 'center' }}>
+              <Search size={14} />
+            </span>
             <input
-              type="date"
-              value={dateFilter === 'all' ? '' : dateFilter}
-              onChange={(e) => setDateFilter(e.target.value || 'all')}
-              style={{
-                width: '100%',
-                padding: '0.5rem 0.75rem',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'inherit',
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                colorScheme: 'dark'
-              }}
+              className="search-input"
+              type="search"
+              placeholder="Search candidates..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: '32px' }}
             />
-            {dateFilter !== 'all' && (
-              <button
-                type="button"
-                onClick={() => setDateFilter('all')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '0.25rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Clear date filter"
-              >
-                <X size={16} />
-              </button>
-            )}
           </div>
         </div>
+      </section>
 
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>College</label>
-          <Select value={collegeFilter} onValueChange={(val) => setCollegeFilter(val || '')}>
-            <SelectTrigger className="w-full text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
-              <SelectValue placeholder="All Colleges" />
-            </SelectTrigger>
-            <SelectContent >
-              <SelectItem value="all">All Colleges</SelectItem>
-              {collegesList.map((c) => (
-                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '1.5rem' }}>
-        {/* Left Column: Interview List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Drive Metrics Dashboard */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-            {/* Card 1: Candidates Mapped */}
-            <div style={{
-              padding: '1rem',
-              background: 'rgba(14,165,233,0.08)',
-              border: '1px solid rgba(14,165,233,0.2)',
-              borderRadius: 'var(--radius-lg)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              minHeight: '90px'
-            }}>
-              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0, marginBottom: '0.3rem' }}>Candidates Mapped</p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.2rem' }}>
-                  <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0ea5e9', lineHeight: 1 }}>{driveMapped}</span>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>/ {driveCandidatesCount}</span>
-                </div>
-                <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  {drivePending} pending
-                </div>
-              </div>
-              <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.05)', borderRadius: '2.5px', overflow: 'hidden', marginTop: '0.4rem' }}>
-                <div style={{
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #0ea5e9, #22c55e)',
-                  width: driveCandidatesCount > 0 ? `${(driveMapped / driveCandidatesCount) * 100}%` : '0%',
-                  transition: 'width 0.3s ease-in-out'
-                }} />
-              </div>
+      {/* Metric Cards Grid */}
+      <section className="metric-grid">
+        {/* Card 1: Candidates Mapped */}
+        <article className="metric-card">
+          <div>
+            <div className="metric-card-header">
+              <div className="metric-label">Candidates Mapped</div>
+              <div className="metric-icon success">👥</div>
             </div>
-
-            {/* Card 2: Merged Panel Requests Overview (Interactive) */}
-            <div
-              onClick={() => setShowRepliedModal(true)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(167,139,250,0.12)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(167,139,250,0.08)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              style={{
-                padding: '1rem',
-                background: 'rgba(167,139,250,0.08)',
-                border: '1px solid rgba(167,139,250,0.2)',
-                borderRadius: 'var(--radius-lg)',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                minHeight: '90px'
-              }}
-              title="Click to view details"
-            >
-              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Panel Requests</span>
-                <span style={{ fontSize: '0.55rem', textTransform: 'none', color: '#a78bfa', background: 'rgba(167,139,250,0.1)', padding: '1px 4px', borderRadius: '3px' }}>View list</span>
-              </p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.2rem' }}>
-                <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{drivePanelistsRequested}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>sent</span>
-              </div>
-              <div style={{ display: 'flex', gap: '0.6rem', fontSize: '0.7rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ color: '#10b981', fontWeight: 600 }}>{drivePanelistsReplied} accepted ({totalSlotsGiven} slots)</span>
-                <span style={{ color: '#ef4444', fontWeight: 600 }}>{drivePanelistsRejected} rejected</span>
-                <span style={{ color: '#f59e0b', fontWeight: 600 }}>{drivePanelistsPending} yet to respond</span>
-              </div>
-            </div>
-
-            {/* Card 3: Interview Results (Interactive) */}
-            <div
-              onClick={() => setShowFeedbackModal(true)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(16,185,129,0.12)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(16,185,129,0.08)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              style={{
-                padding: '1rem',
-                background: 'rgba(16,185,129,0.08)',
-                border: '1px solid rgba(16,185,129,0.2)',
-                borderRadius: 'var(--radius-lg)',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                minHeight: '90px'
-              }}
-              title="Click to view candidate feedback"
-            >
-              <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>{typeFilter === 'all' ? 'Interview Results' : `${typeFilter} Results`}</span>
-                <span style={{ fontSize: '0.55rem', textTransform: 'none', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '1px 4px', borderRadius: '3px' }}>View feedback</span>
-              </p>
-              <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'baseline', marginTop: '0.25rem' }}>
-                <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 600 }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: 800, marginRight: '0.15rem' }}>{drivePassed}</span> passed
-                </span>
-                <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 600 }}>
-                  <span style={{ fontSize: '1.6rem', fontWeight: 800, marginRight: '0.15rem' }}>{driveRejected}</span> rejected
-                </span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-                {drivePanels.filter(p => p.decision === 'PASSED' || p.decision === 'REJECTED').length} feedback submitted
-              </div>
+            <div className="metric-value">{driveMapped} / {driveCandidatesCount}</div>
+            <div className="metric-subtext">
+              {drivePending === 0 ? 'All candidates assigned' : `${drivePending} pending`}
             </div>
           </div>
+          <div className="progress">
+            <div
+              className="progress-fill success"
+              style={{ width: driveCandidatesCount > 0 ? `${(driveMapped / driveCandidatesCount) * 100}%` : '0%' }}
+            />
+          </div>
+        </article>
 
-          {/* Interviews List */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {/* Card 2: Panel Requests */}
+        <article
+          className="metric-card"
+          style={{ cursor: 'pointer' }}
+          onClick={() => setShowRepliedModal(true)}
+        >
+          <div>
+            <div className="metric-card-header">
+              <div className="metric-label">Panel Requests</div>
+              <div className="metric-icon info">✉</div>
+            </div>
+            <div className="metric-value">{drivePanelistsRequested}</div>
+            <div className="metric-subtext">
+              {drivePanelistsReplied} accepted &bull; {drivePanelistsPending} pending &bull; {drivePanelistsRejected} declined
+            </div>
+          </div>
+          <div className="progress">
+            <div
+              className="progress-fill info"
+              style={{ width: drivePanelistsRequested > 0 ? `${(drivePanelistsReplied / drivePanelistsRequested) * 100}%` : '0%' }}
+            />
+          </div>
+        </article>
+
+        {/* Card 3: L1/L2 Results */}
+        <article
+          className="metric-card active"
+          style={{ cursor: 'pointer' }}
+          onClick={() => setShowFeedbackModal(true)}
+        >
+          <div>
+            <div className="metric-card-header">
+              <div className="metric-label">{typeFilter === 'all' ? 'Interview Results' : `${typeFilter} Results`}</div>
+              <div className="metric-icon success">✓</div>
+            </div>
+            <div className="metric-value">{drivePassed} Passed</div>
+            <div className="metric-subtext">
+              {driveRejected} rejected &bull; {drivePanels.filter(p => p.status === 'SUBMITTED' && !p.decision).length} pending
+            </div>
+          </div>
+          {/* Segmented progress bar */}
+          {(() => {
+            const resultsPending = drivePanels.filter(p => p.status === 'SUBMITTED' && !p.decision).length;
+            const total = drivePassed + driveRejected + resultsPending;
+            const passedPct = total > 0 ? (drivePassed / total) * 100 : 0;
+            const rejectedPct = total > 0 ? (driveRejected / total) * 100 : 0;
+            const pendingPct = total > 0 ? (resultsPending / total) * 100 : 0;
+
+            return (
+              <div className="segmented-progress">
+                <span className="segment success" style={{ width: `${passedPct}%` }} />
+                <span className="segment danger" style={{ width: `${rejectedPct}%` }} />
+                <span className="segment warning" style={{ width: `${pendingPct}%` }} />
+              </div>
+            );
+          })()}
+        </article>
+      </section>
+
+      {/* Main Content Grid Layout */}
+      <div className="dashboard-content-grid">
+        {/* Left Column: Interview Cards List */}
+        <section>
+          <div className="section-header">
+            <h2 className="section-title">Upcoming Interviews</h2>
+            <span className="count-badge">{filteredInterviewsList.length}</span>
+          </div>
+
+          <div className="interview-list">
             {(() => {
               const panelRequestsList = filteredInterviewsList.flatMap<{
                 key: string;
@@ -1089,15 +1122,12 @@ export default function InterviewsTab({
                 panel: InterviewPanel | null;
               }>((interview) => {
                 if (interview.candidateName !== 'Pending Assignment') {
-                  // Mapped interview: group panels together in a single card
                   return [{
                     key: `${interview.id}-mapped`,
                     interview,
                     panel: null
                   }];
                 }
-                
-                // Unmapped (Pending Assignment) interview: one card per panel request
                 if (interview.panels.length === 0) {
                   return [{
                     key: `${interview.id}-unassigned`,
@@ -1114,10 +1144,10 @@ export default function InterviewsTab({
 
               if (panelRequestsList.length === 0) {
                 return (
-                  <div className="glass-card text-center" style={{ padding: '3rem 2rem' }}>
-                    <CalendarCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
-                    <h4 style={{ marginBottom: '0.5rem' }}>No Interviews Found</h4>
-                    <p className="text-muted text-sm">Create a new interview or adjust your filters.</p>
+                  <div style={{ textAlign: 'center', padding: '3rem 2rem', background: 'var(--bg-elevated)', borderRadius: '18px', border: '1px solid var(--border)' }}>
+                    <CalendarCheck size={48} style={{ color: 'var(--fg-muted)', margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <h4 style={{ marginBottom: '0.5rem', color: 'var(--fg)' }}>No Interviews Found</h4>
+                    <p style={{ color: 'var(--fg-secondary)', fontSize: '0.85rem' }}>Create a new interview or adjust your filters.</p>
                   </div>
                 );
               }
@@ -1126,644 +1156,509 @@ export default function InterviewsTab({
                 const isSelected = selectedInterview?.id === interview.id;
                 const isL1 = interview.role.toLowerCase().includes('l1');
                 const isL2 = interview.role.toLowerCase().includes('l2');
-                const typeColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#10b981';
-                
-                // Color status indicator based on this specific panel request
-                const isSlotSubmitted = panel ? panel.status === 'SUBMITTED' : false;
-                const statusColor = interview.status === 'SCHEDULED' 
-                  ? '#10b981' 
-                  : (panel 
-                      ? (isSlotSubmitted ? '#0ea5e9' : '#f59e0b') 
-                      : (interview.status === 'COLLECTED' ? '#0ea5e9' : '#f59e0b'));
-                
-                const initials = interview.candidateName === 'Pending Assignment' ? '?' : interview.candidateName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                const initials = interview.candidateName === 'Pending Assignment'
+                  ? '?'
+                  : interview.candidateName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+
+                let statusClass = 'pending';
+                if (interview.status === 'SCHEDULED') {
+                  statusClass = 'confirmed';
+                } else if (interview.status === 'COLLECTED') {
+                  statusClass = 'confirmed';
+                }
+
+                let timeStr = 'TBD';
+                let dateStr = 'No range set';
+                if (interview.scheduledSlotStart) {
+                  const start = new Date(interview.scheduledSlotStart);
+                  timeStr = start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                  dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                } else {
+                  const start = new Date(interview.startDate);
+                  const end = new Date(interview.endDate);
+                  dateStr = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                }
 
                 return (
-                  <div
+                  <article
                     key={key}
-                    onClick={() => { setSelectedInterview(interview); setShowInterviewModal(true); }}
-                    style={{
-                      padding: '1.25rem',
-                      background: isSelected ? 'rgba(96,165,250,0.08)' : 'rgba(255,255,255,0.015)',
-                      borderTop: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
-                      borderRight: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
-                      borderBottom: isSelected ? '1px solid rgba(96,165,250,0.4)' : '1px solid var(--border-glass)',
-                      borderLeft: `4px solid ${typeColor}`,
-                      borderRadius: 'var(--radius-lg)',
-                      cursor: 'pointer',
-                      transition: 'all 0.25s ease',
-                      boxShadow: isSelected ? '0 4px 20px -5px rgba(96,165,250,0.15)' : 'none'
+                    className={`interview-card ${isSelected ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedInterview(interview);
+                      setShowInterviewModal(true);
                     }}
+                    style={isSelected ? { borderColor: 'var(--accent)', boxShadow: 'var(--shadow-sm)' } : {}}
                   >
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
-                      {/* Avatar */}
-                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${typeColor}12`, border: `1px solid ${typeColor}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0, color: typeColor }}>
-                        {initials}
+                    <div className="candidate-avatar">{initials}</div>
+                    
+                    <div>
+                      <div className="candidate-name">{interview.candidateName}</div>
+                      <div className="candidate-meta">
+                        {interview.role.split('-').pop()?.trim()}
+                        <span className="round-badge">{isL2 ? 'L2 Round' : 'L1 Round'}</span>
                       </div>
-
-                      {/* Content */}
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {/* Candidate Row */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {isL1 && <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.35rem', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: '4px', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>L1</span>}
-                          {isL2 && <span style={{ fontSize: '0.55rem', fontWeight: 800, padding: '0.1rem 0.35rem', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: '4px', color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>L2</span>}
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Candidate:</span>
-                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>{interview.candidateName}</h4>
-                        </div>
-
-                        {/* Role Details */}
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, opacity: 0.9 }}>{interview.role}</p>
-
-                        {/* Panelist Row & Status */}
+                      
+                      <div className="panelist-line" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
                         {interview.candidateName !== 'Pending Assignment' ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Panelists:</span>
-                            {(() => {
-                              const panelsToDisplay = interview.status === 'SCHEDULED'
-                                ? interview.panels.filter((p) => p.status === 'SUBMITTED')
-                                : interview.panels;
-                              
-                              // Fallback if none are submitted but it is scheduled
-                              const finalPanels = panelsToDisplay.length > 0 ? panelsToDisplay : interview.panels;
+                          (() => {
+                            const activePanels = (interview.status === 'SCHEDULED' || interview.status === 'COLLECTED')
+                              ? interview.panels.filter((p) => p.status === 'SUBMITTED')
+                              : interview.panels;
+                            const panelsToRender = activePanels.length > 0 ? activePanels : interview.panels;
+                            if (panelsToRender.length === 0) return <span>Awaiting assignment</span>;
+                            return panelsToRender.map((p) => {
+                              const feedbackText = p.decision ? `Feedback: ${p.decision}` : 'Feedback: Pending';
+                              const badgeStyle = p.decision === 'PASSED'
+                                  ? { background: 'var(--accent-light)', color: 'var(--accent)' }
+                                  : p.decision === 'REJECTED'
+                                    ? { background: 'var(--danger-light)', color: 'var(--danger)' }
+                                    : { background: 'var(--warning-light)', color: 'var(--warning)' };
 
-                              return finalPanels.length > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid rgba(255, 255, 255, 0.08)' }}>
-                                  {finalPanels.map((p) => (
-                                    <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                      <strong style={{ color: 'var(--text-main)', fontWeight: 600 }}>
-                                        {p.name} ({p.email})
-                                      </strong>
-                                      
-                                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                                        {/* Slots Badge */}
-                                        {p.status === 'SUBMITTED' ? (
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                            <span style={{
-                                              fontSize: '0.65rem',
-                                              fontWeight: 700,
-                                              padding: '0.15rem 0.4rem',
-                                              background: 'rgba(16, 185, 129, 0.1)',
-                                              border: '1px solid rgba(16, 185, 129, 0.2)',
-                                              borderRadius: '4px',
-                                              color: '#10b981',
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              gap: '0.25rem',
-                                              width: 'fit-content'
-                                            }}>
-                                              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                              Slots Provided
-                                            </span>
-                                            {p.availabilities && p.availabilities.length > 0 && !interview.scheduledSlotStart && (
-                                              <div style={{
-                                                fontSize: '0.7rem',
-                                                color: 'var(--text-muted)',
-                                                paddingLeft: '0.5rem',
-                                                borderLeft: '1px dashed rgba(16, 185, 129, 0.3)',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '0.1rem'
-                                              }}>
-                                                {p.availabilities.map((av) => {
-                                                  const start = new Date(av.startTime);
-                                                  const end = new Date(av.endTime);
-                                                  return (
-                                                    <div key={av.id}>
-                                                      {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
-                                                      {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <span style={{
-                                            fontSize: '0.65rem',
-                                            fontWeight: 700,
-                                            padding: '0.15rem 0.4rem',
-                                            background: 'rgba(245, 158, 11, 0.1)',
-                                            border: '1px solid rgba(245, 158, 11, 0.2)',
-                                            borderRadius: '4px',
-                                            color: '#f59e0b',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}>
-                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#f59e0b' }} />
-                                            Slots Pending
-                                          </span>
-                                        )}
-
-                                        {/* Feedback Badge */}
-                                        {p.decision === 'PASSED' ? (
-                                          <span style={{
-                                            fontSize: '0.65rem',
-                                            fontWeight: 700,
-                                            padding: '0.15rem 0.4rem',
-                                            background: 'rgba(16, 185, 129, 0.1)',
-                                            border: '1px solid rgba(16, 185, 129, 0.2)',
-                                            borderRadius: '4px',
-                                            color: '#10b981',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}>
-                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                            Feedback: Passed
-                                          </span>
-                                        ) : p.decision === 'REJECTED' ? (
-                                          <span style={{
-                                            fontSize: '0.65rem',
-                                            fontWeight: 700,
-                                            padding: '0.15rem 0.4rem',
-                                            background: 'rgba(239, 68, 68, 0.1)',
-                                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                                            borderRadius: '4px',
-                                            color: '#ef4444',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}>
-                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#ef4444' }} />
-                                            Feedback: Rejected
-                                          </span>
-                                        ) : (
-                                          <span style={{
-                                            fontSize: '0.65rem',
-                                            fontWeight: 700,
-                                            padding: '0.15rem 0.4rem',
-                                            background: 'rgba(245, 158, 11, 0.1)',
-                                            border: '1px solid rgba(245, 158, 11, 0.2)',
-                                            borderRadius: '4px',
-                                            color: '#f59e0b',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.25rem'
-                                          }}>
-                                            <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#f59e0b' }} />
-                                            Feedback: Pending
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <strong style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Awaiting assignment</strong>
-                              );
-                            })()}
-                          </div>
-                        ) : (
-                          <>
-                            {/* Panelist Row */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Panelist:</span>
-                              <strong style={{ color: panel ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: 600 }}>
-                                {panel ? `${panel.name} (${panel.email})` : 'Awaiting assignment'}
-                              </strong>
-                            </div>
-
-                            {/* Feedback / Response Status */}
-                            {panel && (
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                                {/* Slots Badge */}
-                                {panel.status === 'SUBMITTED' ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                                    <span style={{
-                                      fontSize: '0.65rem',
-                                      fontWeight: 700,
-                                      padding: '0.15rem 0.4rem',
-                                      background: 'rgba(16, 185, 129, 0.1)',
-                                      border: '1px solid rgba(16, 185, 129, 0.2)',
-                                      borderRadius: '4px',
-                                      color: '#10b981',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.25rem',
-                                      width: 'fit-content'
-                                    }}>
-                                      <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                      Slots Provided
+                              return (
+                                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 500 }}>{p.name}</span>
+                                  {interview.status === 'SCHEDULED' && (
+                                    <span className="round-badge" style={{ ...badgeStyle, fontSize: '10px', padding: '1px 6px', lineHeight: 1 }}>
+                                      {feedbackText}
                                     </span>
-                                    {panel.availabilities && panel.availabilities.length > 0 && !interview.scheduledSlotStart && (
-                                      <div style={{
-                                        fontSize: '0.7rem',
-                                        color: 'var(--text-muted)',
-                                        paddingLeft: '0.5rem',
-                                        borderLeft: '1px dashed rgba(16, 185, 129, 0.3)',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '0.1rem'
-                                      }}>
-                                        {panel.availabilities.map((av) => {
-                                          const start = new Date(av.startTime);
-                                          const end = new Date(av.endTime);
-                                          return (
-                                            <div key={av.id}>
-                                              {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
-                                              {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span style={{
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.4rem',
-                                    background: 'rgba(245, 158, 11, 0.1)',
-                                    border: '1px solid rgba(245, 158, 11, 0.2)',
-                                    borderRadius: '4px',
-                                    color: '#f59e0b',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#f59e0b' }} />
-                                    Slots Pending
-                                  </span>
-                                )}
-
-                                {/* Feedback Badge */}
-                                {panel.decision === 'PASSED' ? (
-                                  <span style={{
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.4rem',
-                                    background: 'rgba(16, 185, 129, 0.1)',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    borderRadius: '4px',
-                                    color: '#10b981',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#10b981' }} />
-                                    Feedback: Passed
-                                  </span>
-                                ) : panel.decision === 'REJECTED' ? (
-                                  <span style={{
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.4rem',
-                                    background: 'rgba(239, 68, 68, 0.1)',
-                                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                                    borderRadius: '4px',
-                                    color: '#ef4444',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#ef4444' }} />
-                                    Feedback: Rejected
-                                  </span>
-                                ) : (
-                                  <span style={{
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0.15rem 0.4rem',
-                                    background: 'rgba(245, 158, 11, 0.1)',
-                                    border: '1px solid rgba(245, 158, 11, 0.2)',
-                                    borderRadius: '4px',
-                                    color: '#f59e0b',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
-                                  }}>
-                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#f59e0b' }} />
-                                    Feedback: Pending
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {/* Timing Block */}
-                        <div style={{ fontSize: '0.75rem', color: statusColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
-                          {interview.scheduledSlotStart ? (
-                            <>
-                              <CalendarCheck size={13} style={{ color: statusColor }} />
-                              <span>
-                                {new Date(interview.scheduledSlotStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })} &bull;{' '}
-                                {new Date(interview.scheduledSlotStart).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} –{' '}
-                                {new Date(interview.scheduledSlotEnd || (new Date(interview.scheduledSlotStart).getTime() + (interview.duration || 60) * 60000)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}{' '}
-                                ({interview.duration}m)
-                              </span>
-                            </>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()
+                        ) : (
+                          panel ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 500 }}>{panel.name}</span>
+                              {interview.status === 'SCHEDULED' && (
+                                <span className="round-badge" style={{
+                                  background: panel.decision === 'PASSED' ? 'var(--accent-light)' : panel.decision === 'REJECTED' ? 'var(--danger-light)' : 'var(--warning-light)',
+                                  color: panel.decision === 'PASSED' ? 'var(--accent)' : panel.decision === 'REJECTED' ? 'var(--danger)' : 'var(--warning)',
+                                  fontSize: '10px',
+                                  padding: '1px 6px',
+                                  lineHeight: 1
+                                }}>
+                                  {panel.decision ? `Feedback: ${panel.decision}` : 'Feedback: Pending'}
+                                </span>
+                              )}
+                            </div>
                           ) : (
-                            <>
-                              <Clock size={13} style={{ color: statusColor }} />
-                              <span>
-                                Pref: {new Date(interview.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {new Date(interview.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{' '}
-                                ({interview.duration}m)
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status Badge */}
-                      <div style={{ flexShrink: 0 }}>
-                        {interview.status === 'PENDING' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', color: '#f59e0b', whiteSpace: 'nowrap' }}>Awaiting</span>}
-                        {interview.status === 'COLLECTED' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: '4px', color: '#0ea5e9', whiteSpace: 'nowrap' }}>Ready</span>}
-                        {interview.status === 'SCHEDULED' && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '4px', color: '#10b981', whiteSpace: 'nowrap' }}>Scheduled</span>}
+                            <span>Awaiting assignment</span>
+                          )
+                        )}
                       </div>
                     </div>
-                  </div>
+
+                    <div className="interview-time">
+                      <span className={`status-dot ${statusClass}`} />
+                      {timeStr}
+                      <br />
+                      <span>{dateStr}</span>
+                    </div>
+                  </article>
                 );
               });
             })()}
           </div>
-        </div>
+        </section>
 
-        {/* Right Column: Analytics */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Analytics Header */}
-          <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <TrendingUp size={18} /> Analytics Overview
-            </h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
-              {/* L1 Cohort */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderRight: '1px solid var(--border-glass)', paddingRight: '1.25rem' }}>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#60a5fa', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>L1 Cohort</h4>
-                
-                <div>
-                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.5rem 0' }}>Status Overview</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {[
-                      { label: 'Scheduled', value: l1Scheduled, color: '#10b981' },
-                      { label: 'Ready to Book', value: l1Collected, color: '#0ea5e9' },
-                      { label: 'Panelists yet to respond', value: l1Pending, color: '#f59e0b' },
-                      { label: 'Candidates Pending', value: l1CandidatesPending, color: '#94a3b8' },
-                    ].map((stat) => (
-                      <div key={stat.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-muted)' }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: stat.color }} />
-                          {stat.label}
-                        </div>
-                        <span style={{ fontWeight: 700, color: 'var(--text-normal)' }}>{stat.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
-                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.4rem 0' }}>Panelist Responses</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', background: '#60a5fa', width: l1PanelsRequested > 0 ? `${(l1PanelsReplied / l1PanelsRequested) * 100}%` : '0%', transition: 'width 0.3s' }} />
-                    </div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{l1PanelsReplied}/{l1PanelsRequested}</span>
-                  </div>
-                </div>
+        {/* Right Column: Analytics Card & Details Panel */}
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Analytics Cohort breakdown */}
+          <aside className="analytics-card">
+            <div className="analytics-header">
+              <div className="analytics-title">
+                <TrendingUp size={18} /> Analytics Overview
               </div>
-
-              {/* L2 Cohort */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#a78bfa', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>L2 Cohort</h4>
-                
-                <div>
-                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.5rem 0' }}>Status Overview</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {[
-                      { label: 'Scheduled', value: l2Scheduled, color: '#10b981' },
-                      { label: 'Ready to Book', value: l2Collected, color: '#0ea5e9' },
-                      { label: 'Panelists yet to respond', value: l2Pending, color: '#f59e0b' },
-                      { label: 'Candidates Pending', value: l2CandidatesPending, color: '#94a3b8' },
-                    ].map((stat) => (
-                      <div key={stat.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-muted)' }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: stat.color }} />
-                          {stat.label}
-                        </div>
-                        <span style={{ fontWeight: 700, color: 'var(--text-normal)' }}>{stat.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
-                  <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: '0 0 0.4rem 0' }}>Panelist Responses</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', background: '#a78bfa', width: l2PanelsRequested > 0 ? `${(l2PanelsReplied / l2PanelsRequested) * 100}%` : '0%', transition: 'width 0.3s' }} />
-                    </div>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{l2PanelsReplied}/{l2PanelsRequested}</span>
-                  </div>
-                </div>
-              </div>
+              <button type="button" className="analytics-period">Last 7 days</button>
             </div>
-          </div>
 
-          {/* Create Form or Info Box */}
+            {(() => {
+              const l1Passed = l1Filtered.filter(i => i.panels.some(p => p.decision === 'PASSED')).length;
+              const l1Rejected = l1Filtered.filter(i => i.panels.some(p => p.decision === 'REJECTED')).length;
+              const l1FeedbackPending = l1Filtered.filter(i => i.panels.some(p => p.status === 'SUBMITTED' && !p.decision)).length;
+              const l1SchedulingPending = l1Filtered.filter(i => i.status !== 'SCHEDULED').length;
+              const l1PendingTotal = l1FeedbackPending + l1SchedulingPending;
+              const l1TotalResults = l1Passed + l1Rejected + l1PendingTotal;
+
+              const l1PassedPct = l1TotalResults > 0 ? Math.round((l1Passed / l1TotalResults) * 100) : 0;
+              const l1RejectedPct = l1TotalResults > 0 ? Math.round((l1Rejected / l1TotalResults) * 100) : 0;
+              const l1PendingPct = l1TotalResults > 0 ? Math.round((l1PendingTotal / l1TotalResults) * 100) : 0;
+
+              const l2Passed = l2Filtered.filter(i => i.panels.some(p => p.decision === 'PASSED')).length;
+              const l2Rejected = l2Filtered.filter(i => i.panels.some(p => p.decision === 'REJECTED')).length;
+              const l2FeedbackPending = l2Filtered.filter(i => i.panels.some(p => p.status === 'SUBMITTED' && !p.decision)).length;
+              const l2SchedulingPending = l2Filtered.filter(i => i.status !== 'SCHEDULED').length;
+              const l2PendingTotal = l2FeedbackPending + l2SchedulingPending;
+              const l2TotalResults = l2Passed + l2Rejected + l2PendingTotal;
+
+              const l2PassedPct = l2TotalResults > 0 ? Math.round((l2Passed / l2TotalResults) * 100) : 0;
+              const l2RejectedPct = l2TotalResults > 0 ? Math.round((l2Rejected / l2TotalResults) * 100) : 0;
+              const l2PendingPct = l2TotalResults > 0 ? Math.round((l2PendingTotal / l2TotalResults) * 100) : 0;
+
+              return (
+                <>
+                  {/* L1 Cohort */}
+                  <div className="cohort-group">
+                    <div className="cohort-title" style={{ color: 'var(--info)' }}>L1 Cohort</div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Passed</span>
+                        <span className="analytics-row-value">{l1PassedPct}% &bull; {l1Passed}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill success" style={{ width: `${l1PassedPct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Rejected</span>
+                        <span className="analytics-row-value">{l1RejectedPct}% &bull; {l1Rejected}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill danger" style={{ width: `${l1RejectedPct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Pending</span>
+                        <span className="analytics-row-value">{l1PendingPct}% &bull; {l1PendingTotal}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill warning" style={{ width: `${l1PendingPct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* L2 Cohort */}
+                  <div className="cohort-group">
+                    <div className="cohort-title" style={{ color: 'var(--accent)' }}>L2 Cohort</div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Passed</span>
+                        <span className="analytics-row-value">{l2PassedPct}% &bull; {l2Passed}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill success" style={{ width: `${l2PassedPct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Rejected</span>
+                        <span className="analytics-row-value">{l2RejectedPct}% &bull; {l2Rejected}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill danger" style={{ width: `${l2RejectedPct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="analytics-row">
+                      <div className="analytics-row-header">
+                        <span className="analytics-row-label">Pending</span>
+                        <span className="analytics-row-value">{l2PendingPct}% &bull; {l2PendingTotal}</span>
+                      </div>
+                      <div className="analytics-bar">
+                        <div className="analytics-bar-fill warning" style={{ width: `${l2PendingPct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </aside>
+
+          {/* Form or Info Block details */}
           {showCreateForm ? (
-            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)', overflowY: 'auto', maxHeight: 'calc(100vh - 400px)' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem 0' }}>Create New Interview</h3>
-              <form onSubmit={handleCreateInterview} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <input type="text" placeholder="Candidate Name" value={candidateName} onChange={(e) => setCandidateName(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
-                <input type="email" placeholder="Email" value={candidateEmail} onChange={(e) => setCandidateEmail(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
-                <input type="text" placeholder="Job Title / Focus Area" value={role} onChange={(e) => setRole(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+            <div style={{ padding: '16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>Create New Interview</h3>
+                <button type="button" onClick={() => setShowCreateForm(false)} style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateInterview} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <input
+                  className="filter-select"
+                  type="text"
+                  placeholder="Candidate Name"
+                  value={candidateName}
+                  onChange={(e) => setCandidateName(e.target.value)}
+                  style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                />
+                <input
+                  className="filter-select"
+                  type="email"
+                  placeholder="Email"
+                  value={candidateEmail}
+                  onChange={(e) => setCandidateEmail(e.target.value)}
+                  style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                />
+                <input
+                  className="filter-select"
+                  type="text"
+                  placeholder="Job Title / Focus Area"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                />
                 
                 <Select value={interviewType} onValueChange={(val) => setInterviewType(val as any)}>
-                  <SelectTrigger className="w-full text-left" style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem', height: '38px' }}>
+                  <SelectTrigger className="w-full text-left" style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: '10px', color: 'inherit', fontSize: '13px', height: '40px' }}>
                     <SelectValue placeholder="Select Interview Type" />
                   </SelectTrigger>
-                  <SelectContent >
+                  <SelectContent>
                     <SelectItem value="L1">L1 Interview</SelectItem>
                     <SelectItem value="L2">L2 Interview</SelectItem>
                     <SelectItem value="General">General Interview</SelectItem>
                   </SelectContent>
                 </Select>
 
-                <input type="number" min="15" max="180" value={duration} onChange={(e) => setDuration(e.target.value)} style={{ padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} placeholder="Duration (mins)" />
+                <input
+                  className="filter-select"
+                  type="number"
+                  min="15"
+                  max="180"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                  placeholder="Duration (mins)"
+                />
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
-                  <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontSize: '0.9rem' }} />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input
+                    className="filter-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    style={{ flex: 1, height: '40px', borderRadius: '10px', width: '100%' }}
+                  />
+                  <input
+                    className="filter-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    style={{ flex: 1, height: '40px', borderRadius: '10px', width: '100%' }}
+                  />
                 </div>
 
-                {createError && <p style={{ color: '#ef4444', fontSize: '0.75rem', margin: 0 }}>{createError}</p>}
+                {createError && <p style={{ color: 'var(--danger)', fontSize: '12px', margin: 0 }}>{createError}</p>}
 
-                <button type="submit" disabled={isLoading} style={{ padding: '0.5rem 0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                <button type="submit" disabled={isLoading} className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
                   {isLoading ? 'Creating...' : 'Create Interview'}
                 </button>
               </form>
             </div>
           ) : selectedInterview ? (
-            <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)' }}>
-              <button onClick={() => setShowInterviewModal(true)} style={{ width: '100%', padding: '0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+            <div style={{ padding: '16px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', boxShadow: 'var(--shadow-sm)' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--fg)', marginBottom: '14px' }}>Selected Interview</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Candidate</strong>
+                  <span style={{ fontSize: '15px', color: 'var(--fg)', fontWeight: 600 }}>{selectedInterview.candidateName}</span>
+                </div>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Role</strong>
+                  <span style={{ fontSize: '14px', color: 'var(--fg-secondary)' }}>{selectedInterview.role}</span>
+                </div>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</strong>
+                  <span style={{ fontSize: '14px', color: 'var(--fg)' }}>{selectedInterview.status}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ width: '100%' }}
+                onClick={() => setShowInterviewModal(true)}
+              >
                 View Interview Details
               </button>
             </div>
           ) : (
-            <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
-              <Calendar size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 0.75rem', opacity: 0.5 }} />
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>Select an interview from the list to view details</p>
+            <div style={{ padding: '32px 24px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', textAlign: 'center', color: 'var(--fg-secondary)' }}>
+              <Calendar size={32} style={{ color: 'var(--fg-muted)', margin: '0 auto 12px', opacity: 0.5 }} />
+              <p style={{ fontSize: '13px', margin: 0 }}>Select an interview from the list to view details</p>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Interview Detail Modal */}
       {showInterviewModal && selectedInterview && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'var(--background)', borderRadius: 'var(--radius-xl)', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', width: '90%', maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-md)' }}>
             {/* Modal Header */}
-            <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-glass)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ fontSize: '1.3rem', fontWeight: 700, margin: 0 }}>{selectedInterview.candidateName}</h2>
-              <button onClick={() => setShowInterviewModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.5rem' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>{selectedInterview.candidateName}</h2>
+              <button type="button" onClick={() => setShowInterviewModal(false)} style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer' }}>
                 <X size={24} />
               </button>
             </div>
 
             {/* Modal Content */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
                 <div>
-                  <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: 0, marginBottom: '0.25rem' }}>Role</p>
-                  <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: 0 }}>{selectedInterview.role}</p>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--fg-secondary)', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Role</p>
+                  <p style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--fg)' }}>{selectedInterview.role}</p>
                 </div>
                 <div>
-                  <p style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', margin: 0, marginBottom: '0.25rem' }}>Status</p>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--fg-secondary)', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Status</p>
                   <div>
-                    {selectedInterview.status === 'PENDING' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '4px', color: '#f59e0b' }}>Awaiting Panels</span>}
-                    {selectedInterview.status === 'COLLECTED' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: '4px', color: '#0ea5e9' }}>Ready to Book</span>}
-                    {selectedInterview.status === 'SCHEDULED' && <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.25rem 0.5rem', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '4px', color: '#10b981' }}>Scheduled</span>}
+                    {selectedInterview.status === 'PENDING' && <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px', background: 'var(--warning-light)', border: '1px solid var(--warning)', borderRadius: '4px', color: 'var(--warning)' }}>Awaiting Panels</span>}
+                    {selectedInterview.status === 'COLLECTED' && <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px', background: 'var(--info-light)', border: '1px solid var(--info)', borderRadius: '4px', color: 'var(--info)' }}>Ready to Book</span>}
+                    {selectedInterview.status === 'SCHEDULED' && <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px', background: 'var(--accent-light)', border: '1px solid var(--accent)', borderRadius: '4px', color: 'var(--accent)' }}>Scheduled</span>}
+                  </div>
+                </div>
+                <div>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--fg-secondary)', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Feedback Outcome</p>
+                  <div>
+                    {(() => {
+                      const passedCount = selectedInterview.panels.filter(p => p.decision === 'PASSED').length;
+                      const rejectedCount = selectedInterview.panels.filter(p => p.decision === 'REJECTED').length;
+                      const pendingCount = selectedInterview.panels.filter(p => !p.decision).length;
+
+                      if (selectedInterview.status !== 'SCHEDULED') {
+                        return <span style={{ color: 'var(--fg-secondary)', fontSize: '13px' }}>Not scheduled</span>;
+                      }
+
+                      if (pendingCount === 0) {
+                        return (
+                          <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px', background: rejectedCount > 0 ? 'var(--danger-light)' : 'var(--accent-light)', border: rejectedCount > 0 ? '1px solid var(--danger)' : '1px solid var(--accent)', borderRadius: '4px', color: rejectedCount > 0 ? 'var(--danger)' : 'var(--accent)' }}>
+                            {rejectedCount > 0 ? 'REJECTED' : 'PASSED'} ({passedCount} Passed, {rejectedCount} Rejected)
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px', background: 'var(--warning-light)', border: '1px solid var(--warning)', borderRadius: '4px', color: 'var(--warning)' }}>
+                          PENDING ({passedCount} P, {rejectedCount} R, {pendingCount} Pending)
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
 
               {/* Panels Section */}
-              <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-lg)' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.75rem 0' }}>
+              <div style={{ padding: '16px', background: 'var(--surface-muted)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0', color: 'var(--fg)' }}>
                   {selectedInterview.status === 'SCHEDULED' ? 'Panelist' : 'Panel Members'}
                 </h3>
                 {(() => {
-                  const panelsToDisplay = selectedInterview.status === 'SCHEDULED'
+                  const panelsToDisplay = (selectedInterview.status === 'SCHEDULED' || selectedInterview.status === 'COLLECTED')
                     ? selectedInterview.panels.filter((p) => p.status === 'SUBMITTED')
                     : selectedInterview.panels;
                   const finalPanels = panelsToDisplay.length > 0 ? panelsToDisplay : selectedInterview.panels;
 
                   if (finalPanels.length === 0) {
-                    return <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No panels assigned</p>;
+                    return <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0 }}>No panels assigned</p>;
                   }
 
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {finalPanels.map((p) => (
-                        <div key={p.id} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div key={p.id} style={{ padding: '12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                             <div>
-                              <p style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.2rem 0' }}>{p.name}</p>
-                              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Status: {p.status === 'SUBMITTED' ? '✓ Responded' : 'Pending'}</p>
+                              <p style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 2px 0', color: 'var(--fg)' }}>{p.name}</p>
+                              <p style={{ fontSize: '12px', color: 'var(--fg-secondary)', margin: 0 }}>Status: {p.status === 'SUBMITTED' ? '✓ Responded' : 'Pending'}</p>
                             </div>
                             
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              {/* Send Reminder button if booked and feedback decision is pending */}
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               {selectedInterview.status === 'SCHEDULED' && p.status === 'SUBMITTED' && !p.decision && (
                                 <button
+                                  type="button"
                                   onClick={(e) => handleSendFeedbackReminder(selectedInterview.id, e)}
                                   disabled={sendingFeedbackReminderId === selectedInterview.id}
-                                  style={{
-                                    padding: '0.35rem 0.75rem',
-                                    background: 'rgba(99, 102, 241, 0.15)',
-                                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    color: '#a5b4fc',
-                                    cursor: 'pointer',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    transition: 'all 0.2s'
-                                  }}
+                                  className="btn btn-secondary"
+                                  style={{ height: '32px', fontSize: '12px', padding: '0 12px' }}
                                 >
                                   {sendingFeedbackReminderId === selectedInterview.id ? 'Sending...' : 'Send Reminder'}
                                 </button>
                               )}
 
                               {p.status === 'PENDING' && (
-                                <button onClick={() => handleResendInvite(selectedInterview.id, p.id)} disabled={resendingPanelId === p.id} style={{ padding: '0.35rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResendInvite(selectedInterview.id, p.id)}
+                                  disabled={resendingPanelId === p.id}
+                                  className="btn btn-secondary"
+                                  style={{ height: '32px', fontSize: '12px', padding: '0 12px' }}
+                                >
                                   {resendingPanelId === p.id ? 'Resending...' : 'Resend'}
                                 </button>
                               )}
                             </div>
                           </div>
 
-                          {/* Render Decision & Feedback Details directly for this panel if submitted */}
-                          {p.decision && (
-                            <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', width: '100%' }}>
-                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Decision:</span>
+                          {selectedInterview.status === 'SCHEDULED' && (
+                            <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border)', width: '100%' }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: p.decision ? '8px' : '0' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--fg-secondary)', fontWeight: 600 }}>Decision:</span>
                                 <span style={{
-                                  fontSize: '0.65rem',
+                                  fontSize: '11px',
                                   fontWeight: 700,
-                                  padding: '0.15rem 0.45rem',
-                                  background: p.decision === 'PASSED' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                  border: p.decision === 'PASSED' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+                                  padding: '2px 6px',
+                                  background: p.decision === 'PASSED' ? 'var(--accent-light)' : p.decision === 'REJECTED' ? 'var(--danger-light)' : 'var(--warning-light)',
+                                  border: p.decision === 'PASSED' ? '1px solid var(--accent)' : p.decision === 'REJECTED' ? '1px solid var(--danger)' : '1px solid var(--warning)',
                                   borderRadius: '4px',
-                                  color: p.decision === 'PASSED' ? '#10b981' : '#ef4444',
+                                  color: p.decision === 'PASSED' ? 'var(--accent)' : p.decision === 'REJECTED' ? 'var(--danger)' : 'var(--warning)',
                                   textTransform: 'uppercase'
                                 }}>
-                                  {p.decision}
+                                  {p.decision || 'PENDING'}
                                 </span>
                               </div>
 
-                              {/* Feedback Comments */}
                               {p.feedback && (() => {
                                 try {
                                   const parsed = JSON.parse(p.feedback);
-                                  
-                                  // Determine L1 vs L2 structure
                                   const scores = parsed.scores || {};
                                   const notes = parsed.notes || {};
                                   
                                   return (
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-normal)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                      {/* Scores Grid */}
+                                    <div style={{ fontSize: '13px', color: 'var(--fg)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                       {Object.keys(scores).length > 0 && (
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '0.5rem', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
-                                          {Object.entries(scores).map(([key, val]) => (
-                                            <div key={key} style={{ display: 'flex', flexDirection: 'column' }}>
-                                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{key}</span>
-                                              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8' }}>{String(val)} / 5</span>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', background: 'var(--surface-muted)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                          {Object.entries(scores).map(([metric, score]) => (
+                                            <div key={metric} style={{ display: 'flex', flexDirection: 'column' }}>
+                                              <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'capitalize' }}>{metric}</span>
+                                              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--info)' }}>{String(score)} / 5</span>
                                             </div>
                                           ))}
                                         </div>
                                       )}
                                       
-                                      {/* Notes / Comments */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', background: 'rgba(0,0,0,0.1)', padding: '0.5rem', borderRadius: '4px' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--surface-muted)', padding: '10px', borderRadius: '8px' }}>
                                         {Object.entries(notes).map(([key, val]) => {
                                           if (!val) return null;
-                                          // Format label nicely (e.g. codingNotes -> Coding Notes)
                                           const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                                           return (
-                                            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>{label}:</span>
-                                              <span style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{String(val)}</span>
+                                            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                              <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', fontWeight: 600 }}>{label}:</span>
+                                              <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{String(val)}</span>
                                             </div>
                                           );
                                         })}
                                         
-                                        {/* Fallback to simple comments if no notes entries match */}
                                         {Object.keys(notes).length === 0 && parsed.comments && (
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
-                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>Comments:</span>
-                                            <span style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{String(parsed.comments)}</span>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', fontWeight: 600 }}>Comments:</span>
+                                            <span style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{String(parsed.comments)}</span>
                                           </div>
                                         )}
                                       </div>
                                     </div>
                                   );
                                 } catch (e) {
-                                  // Fallback for non-JSON or plain text feedback
                                   return (
-                                    <p style={{ fontSize: '0.8rem', color: 'var(--text-normal)', margin: 0, whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                                    <p style={{ fontSize: '13px', color: 'var(--fg)', margin: 0, whiteSpace: 'pre-wrap', background: 'var(--surface-muted)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                                       {p.feedback}
                                     </p>
                                   );
@@ -1780,33 +1675,50 @@ export default function InterviewsTab({
 
               {/* Actions */}
               {selectedInterview.status === 'COLLECTED' && (
-                <button onClick={() => setDetailTab('booking')} style={{ width: '100%', padding: '0.75rem', background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setDetailTab('booking')}
+                  className="btn btn-primary"
+                  style={{ width: '100%', height: '42px' }}
+                >
                   Book Meeting
                 </button>
               )}
               
               {selectedInterview.status === 'SCHEDULED' && (
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
                   {selectedInterview.teamsMeetingUrl && (
-                    <a href={selectedInterview.teamsMeetingUrl} target="_blank" rel="noopener noreferrer" style={{ flex: 1, padding: '0.75rem', background: 'var(--success)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem', textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                    <a
+                      href={selectedInterview.teamsMeetingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{ flex: 1, textDecoration: 'none', height: '42px' }}
+                    >
                       <Video size={16} /> Join Meeting
                     </a>
                   )}
-                  <button onClick={() => setDetailTab('feedback')} style={{ flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-sm)', color: 'inherit', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDetailTab('feedback')}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, height: '42px' }}
+                  >
                     Feedback
                   </button>
                 </div>
               )}
               
-              <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.25rem' }}>
+              <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
                 <ConfirmDialog
                   trigger={
-                    <button style={{ width: '100%', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-sm)', color: '#f87171', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} />
-                  }
-                  triggerChildren={
-                    <>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '100%', color: 'var(--danger)', borderColor: 'rgba(196, 69, 60, 0.2)' }}
+                    >
                       <Trash2 size={16} /> Delete Interview
-                    </>
+                    </button>
                   }
                   title="Delete this interview?"
                   description="This will soft-delete the interview record and release any mapped candidates. If a Teams meeting was scheduled, the calendar event will also be removed."
@@ -1821,39 +1733,40 @@ export default function InterviewsTab({
           </div>
         </div>
       )}
+
       {/* Panelist Availability Status Dialog Box */}
       {showRepliedModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'var(--background)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-xl)', width: '90%', maxWidth: '550px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', width: '90%', maxWidth: '550px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-md)' }}>
             {/* Modal Header */}
-            <div style={{ padding: '1.25rem 1.5rem', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid var(--border-glass)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Panelist Availability Status</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>Detailed response status for the filtered interviews cohort</p>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>Panelist Availability Status</h3>
+                <p style={{ color: 'var(--fg-secondary)', fontSize: '12px', margin: '4px 0 0 0' }}>Detailed response status for the filtered interviews cohort</p>
               </div>
-              <button onClick={() => setShowRepliedModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="button" onClick={() => setShowRepliedModal(false)} style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* 1st Priority: Yet to Respond Section */}
               <div>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Clock size={14} /> Yet to Respond ({uniqueDrivePanels.filter(p => p.status === 'PENDING').length})
                 </h4>
                 {uniqueDrivePanels.filter(p => p.status === 'PENDING').length === 0 ? (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>All panel members have responded.</p>
+                  <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0, paddingLeft: '20px' }}>All panel members have responded.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {uniqueDrivePanels.filter(p => p.status === 'PENDING').map((panel, idx) => (
-                      <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div key={`${panel.id}-${idx}`} style={{ padding: '10px 14px', background: 'var(--warning-light)', border: '1px solid rgba(230, 169, 59, 0.2)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>{panel.name}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--fg-secondary)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                           <div>Candidate: {panel.candidateNames.join(', ')}</div>
                           <div>Role: {panel.roles.join(', ')}</div>
                         </div>
@@ -1865,25 +1778,25 @@ export default function InterviewsTab({
 
               {/* 2nd Priority: Rejected Section */}
               <div>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <XCircle size={14} /> Rejected ({uniqueDrivePanels.filter(p => p.status === 'REJECTED').length})
                 </h4>
                 {uniqueDrivePanels.filter(p => p.status === 'REJECTED').length === 0 ? (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>No rejected nominations.</p>
+                  <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0, paddingLeft: '20px' }}>No rejected nominations.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {uniqueDrivePanels.filter(p => p.status === 'REJECTED').map((panel, idx) => (
-                      <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div key={`${panel.id}-${idx}`} style={{ padding: '10px 14px', background: 'var(--danger-light)', border: '1px solid rgba(239, 106, 97, 0.2)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>{panel.name}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--fg-secondary)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                           <div>Candidate: {panel.candidateNames.join(', ')}</div>
                           <div>Role: {panel.roles.join(', ')}</div>
                         </div>
                         {panel.feedback && (
-                          <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.2rem', padding: '0.3rem 0.5rem', background: 'rgba(239,68,68,0.08)', borderRadius: '4px', borderLeft: '2px solid #ef4444' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--danger)', marginTop: '4px', padding: '6px 10px', background: 'var(--danger-light)', borderRadius: '4px', borderLeft: '2px solid var(--danger)' }}>
                             <strong>Reason:</strong> {panel.feedback}
                           </div>
                         )}
@@ -1895,37 +1808,37 @@ export default function InterviewsTab({
 
               {/* 3rd Priority: Accepted Section */}
               <div>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <CheckCircle size={14} /> Accepted ({uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').length})
                 </h4>
                 {uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').length === 0 ? (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem' }}>No responses yet.</p>
+                  <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0, paddingLeft: '20px' }}>No responses yet.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {uniqueDrivePanels.filter(p => p.status === 'SUBMITTED').map((panel, idx) => (
-                      <div key={`${panel.id}-${idx}`} style={{ padding: '0.6rem 0.8rem', background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div key={`${panel.id}-${idx}`} style={{ padding: '10px 14px', background: 'var(--accent-light)', border: '1px solid rgba(32, 185, 151, 0.2)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{panel.name}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{panel.email}</span>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>{panel.name}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>{panel.email}</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--fg-secondary)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                           <div>Candidate: {panel.candidateNames.join(', ')}</div>
                           <div>Role: {panel.roles.join(', ')}</div>
                         </div>
                         {panel.givenSlots && panel.givenSlots.length > 0 && (
-                          <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed rgba(16,185,129,0.2)' }}>
-                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#10b981', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <Clock size={11} />
                               Slots Provided ({panel.givenSlots.length}):
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', paddingLeft: '0.85rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
                               {panel.givenSlots.map((slot, sIdx) => {
                                 const start = new Date(slot.startTime);
                                 const end = new Date(slot.endTime);
                                 return (
-                                  <div key={sIdx} style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                  <div key={sIdx} style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>
                                     {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} &bull;{' '}
-                                    <span style={{ fontWeight: 600, color: 'inherit' }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--fg)' }}>
                                       {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   </div>
@@ -1942,8 +1855,8 @@ export default function InterviewsTab({
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.01)' }}>
-              <button className="btn btn-secondary" onClick={() => setShowRepliedModal(false)}>Close</button>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'var(--surface-muted)' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowRepliedModal(false)}>Close</button>
             </div>
           </div>
         </div>
@@ -1952,53 +1865,52 @@ export default function InterviewsTab({
       {/* Candidate Evaluation Feedback Dialog Box */}
       {showFeedbackModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'var(--background)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-xl)', width: '90%', maxWidth: '650px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '18px', width: '90%', maxWidth: '650px', maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-md)' }}>
             {/* Modal Header */}
-            <div style={{ padding: '1.25rem 1.5rem', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid var(--border-glass)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Candidate Evaluation Feedback</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>Detailed feedback and outcomes from panelists for this cohort</p>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>Candidate Evaluation Feedback</h3>
+                <p style={{ color: 'var(--fg-secondary)', fontSize: '12px', margin: '4px 0 0 0' }}>Detailed feedback and outcomes from panelists for this cohort</p>
               </div>
-              <button onClick={() => setShowFeedbackModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="button" onClick={() => setShowFeedbackModal(false)} style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {drivePanels.filter(p => p.decision === 'PASSED' || p.decision === 'REJECTED').length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
-                  <MessageSquare size={36} style={{ opacity: 0.3, margin: '0 auto 0.75rem' }} />
-                  <p style={{ fontSize: '0.85rem', margin: 0 }}>No panelist evaluation feedback has been submitted for this cohort yet.</p>
+                <div style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--fg-secondary)' }}>
+                  <MessageSquare size={36} style={{ opacity: 0.3, margin: '0 auto 12px' }} />
+                  <p style={{ fontSize: '13px', margin: 0 }}>No panelist evaluation feedback has been submitted for this cohort yet.</p>
                 </div>
               ) : (
                 drivePanels.filter(p => p.decision === 'PASSED' || p.decision === 'REJECTED').map((panel, idx) => {
                   const parsed = parseFeedbackSafely(panel.feedback);
                   const isPassed = panel.decision === 'PASSED';
-                  const outcomeColor = isPassed ? '#10b981' : '#ef4444';
-                  const outcomeBg = isPassed ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)';
-                  const outcomeBorder = isPassed ? '1px solid rgba(16,185,129,0.15)' : '1px solid rgba(239,68,68,0.15)';
+                  const outcomeColor = isPassed ? 'var(--accent)' : 'var(--danger)';
+                  const outcomeBg = isPassed ? 'var(--accent-light)' : 'var(--danger-light)';
+                  const outcomeBorder = isPassed ? '1px solid var(--accent)' : '1px solid var(--danger)';
 
                   return (
-                    <div key={`${panel.id}-${idx}`} style={{ padding: '1rem', background: outcomeBg, border: outcomeBorder, borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div key={`${panel.id}-${idx}`} style={{ padding: '16px', background: outcomeBg, border: outcomeBorder, borderRadius: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                         <div>
-                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-normal)' }}>{panel.candidateName}</h4>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{panel.role}</span>
+                          <h4 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>{panel.candidateName}</h4>
+                          <span style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>{panel.role}</span>
                         </div>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '0.2rem 0.5rem', background: `${outcomeColor}15`, border: `1px solid ${outcomeColor}30`, borderRadius: '4px', color: outcomeColor }}>
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 6px', background: `${outcomeColor}15`, border: `1px solid ${outcomeColor}30`, borderRadius: '4px', color: outcomeColor }}>
                           {isPassed ? 'PASSED' : 'REJECTED'}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.78rem', borderTop: '1px solid var(--border-glass)', paddingTop: '0.6rem', marginTop: '0.2rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', marginBottom: '0.4rem', fontSize: '0.72rem' }}>
+                      <div style={{ fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--fg-secondary)', marginBottom: '8px', fontSize: '12px' }}>
                           <span>Evaluated by: <strong>{panel.name}</strong> ({panel.email})</span>
                         </div>
 
-                        {/* Structured Scores if available */}
                         {parsed && parsed.scores && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.01)', padding: '0.5rem', borderRadius: '4px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: '8px 0', background: 'var(--surface-muted)', padding: '8px', borderRadius: '6px' }}>
                             {Object.entries(parsed.scores).map(([metric, score]) => {
                               const displayNames: Record<string, string> = {
                                 coding: 'Coding & Problem Solving',
@@ -2013,7 +1925,7 @@ export default function InterviewsTab({
                               };
                               return (
                                 <div key={metric} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{displayNames[metric] || metric}:</span>
+                                  <span style={{ fontSize: '12px', color: 'var(--fg-secondary)' }}>{displayNames[metric] || metric}:</span>
                                   {renderStarsStatic(score as number)}
                                 </div>
                               );
@@ -2021,10 +1933,9 @@ export default function InterviewsTab({
                           </div>
                         )}
 
-                        {/* Comments / Feedback Text */}
-                        <div style={{ marginTop: '0.4rem' }}>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '2px' }}>Evaluation Comments</span>
-                          <p style={{ margin: 0, color: 'var(--text-normal)', fontSize: '0.8rem', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                        <div style={{ marginTop: '8px' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '4px' }}>Evaluation Comments</span>
+                          <p style={{ margin: 0, color: 'var(--fg)', fontSize: '13px', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
                             {parsed ? parsed.comments : (panel.feedback || 'No comments provided.')}
                           </p>
                         </div>
@@ -2036,8 +1947,8 @@ export default function InterviewsTab({
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-glass)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.01)' }}>
-              <button className="btn btn-secondary" onClick={() => setShowFeedbackModal(false)}>Close</button>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', background: 'var(--surface-muted)' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowFeedbackModal(false)}>Close</button>
             </div>
           </div>
         </div>
