@@ -22,24 +22,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required request parameters (including College Name)' }, { status: 400 });
     }
 
-    // 1. Create interview request with "Pending Assignment" details
+    // 1. Create separate interview requests with "Pending Assignment" details for each targeted panelist
     const role = collegeName ? `${interviewType} Interview - ${collegeName}` : `${interviewType} Interview`;
-    const interview = await db.createInterview({
-      candidateName: 'Pending Assignment',
-      candidateEmail: 'pending@assign.com',
-      role,
-      duration: parseInt(duration, 10),
-      startDate,
-      endDate,
-      panels: targetPanelists.map((p: any) => ({
-        userId: p.id,
-        name: p.displayName,
-        email: p.email,
-      })),
-    });
+    const createdInterviews = [];
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-    // 2. Insert proposed slots into database availabilities for EACH panel member
-    for (const panel of interview.panels) {
+    for (const p of targetPanelists) {
+      const interview = await db.createInterview({
+        candidateName: 'Pending Assignment',
+        candidateEmail: 'pending@assign.com',
+        role,
+        duration: parseInt(duration, 10),
+        startDate,
+        endDate,
+        panels: [{
+          userId: p.id,
+          name: p.displayName,
+          email: p.email,
+        }],
+      });
+
+      // 2. Insert proposed slots into database availabilities for this panel member
+      const panel = interview.panels[0];
       for (const slot of slots) {
         const avId = crypto.randomUUID();
         await dbClient.insert(schema.panelAvailabilities).values({
@@ -49,11 +53,8 @@ export async function POST(request: NextRequest) {
           endTime: new Date(slot.endTime),
         });
       }
-    }
 
-    // 3. Send Teams notification to each panelist with custom choice link card
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    for (const panel of interview.panels) {
+      // 3. Send Teams notification to this panelist
       const availabilityLink = `${appUrl}/availability/${panel.token}`;
       try {
         const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
@@ -121,9 +122,11 @@ export async function POST(request: NextRequest) {
       } catch (chatError) {
         console.error('Failed to send Teams message to panel member:', chatError);
       }
+
+      createdInterviews.push(interview);
     }
 
-    return NextResponse.json({ success: true, interview });
+    return NextResponse.json({ success: true, interviews: createdInterviews, interview: createdInterviews[0] });
   } catch (error) {
     console.error('Failed to request panelist slot:', error);
     return NextResponse.json({ error: 'Failed to request panelist slot' }, { status: 500 });

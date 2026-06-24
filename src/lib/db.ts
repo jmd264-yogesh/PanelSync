@@ -945,6 +945,18 @@ export const db = {
   getPanelistRequests: async (panelistEmail: string): Promise<{ interview: Interview; panel: InterviewPanel }[]> => {
     const normalizedEmail = panelistEmail.trim().toLowerCase();
 
+    // Fetch closed drives to exclude requests associated with them
+    const closedDrives = await dbClient
+      .select({ collegeName: schema.drives.collegeName })
+      .from(schema.drives)
+      .where(eq(schema.drives.status, 'CLOSED'));
+    const closedCollegeNames = new Set(closedDrives.map(d => d.collegeName.trim().toLowerCase()));
+
+    const getCollegeNameFromRole = (role: string): string => {
+      const parts = role.split(' - ');
+      return parts.length > 1 ? parts[1].trim().toLowerCase() : '';
+    };
+
     const panelRows = await dbClient
       .select()
       .from(schema.interviewPanels)
@@ -959,6 +971,10 @@ export const db = {
     for (const panelRow of panelRows) {
       const interview = await db.getInterview(panelRow.interviewId);
       if (!interview || interview.status === 'CANCELLED' || interview.status === 'SCHEDULED') continue;
+
+      // Filter out requests if their drive is closed
+      const college = getCollegeNameFromRole(interview.role);
+      if (closedCollegeNames.has(college)) continue;
 
       const activePanel = interview.panels.find((p) => p.id === panelRow.id);
       if (activePanel) {

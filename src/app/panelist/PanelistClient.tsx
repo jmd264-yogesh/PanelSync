@@ -85,7 +85,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
   // Filter states
   const [filterActiveDrive, setFilterActiveDrive] = useState(!!activeDrive);
-  const [filterToday, setFilterToday] = useState(false);
+  const [filterDate, setFilterDate] = useState<string | null>(null);
 
   // Accordion state for feedback cards
   const [expandedFeedbacks, setExpandedFeedbacks] = useState<Record<string, boolean>>({});
@@ -181,11 +181,15 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       result = result.filter((i) => isFromActiveDrive(i.role));
     }
 
-    if (filterToday) {
-      const todayStr = new Date().toDateString();
+    if (filterDate) {
       result = result.filter((i) => {
         if (!i.scheduledSlotStart) return false;
-        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+        const d = new Date(i.scheduledSlotStart);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const localDateStr = `${y}-${m}-${day}`;
+        return localDateStr === filterDate;
       });
     }
 
@@ -219,7 +223,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       const bCollege = getCollegeNameFromRole(b.role);
       return aCollege.localeCompare(bCollege);
     });
-  }, [interviews, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
+  }, [interviews, activeDrive, filterActiveDrive, filterDate, activeRoundTab]);
 
   // Memoized sorted and filtered pending requests (slots):
   // 1. Active drive first
@@ -232,15 +236,16 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       result = result.filter((req) => isFromActiveDrive(req.interview.role));
     }
 
-    if (filterToday) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    if (filterDate) {
+      const [y, m, d] = filterDate.split('-').map(Number);
+      const targetDate = new Date(y, m - 1, d);
+      targetDate.setHours(0, 0, 0, 0);
       result = result.filter((req) => {
         const start = new Date(req.interview.startDate);
         start.setHours(0, 0, 0, 0);
         const end = new Date(req.interview.endDate);
         end.setHours(23, 59, 59, 999);
-        return today >= start && today <= end;
+        return targetDate >= start && targetDate <= end;
       });
     }
 
@@ -266,7 +271,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       const bCreate = b.interview.createdAt ? new Date(b.interview.createdAt).getTime() : 0;
       return bCreate - aCreate; // latest first
     });
-  }, [pendingRequests, activeDrive, filterActiveDrive, filterToday, activeRoundTab]);
+  }, [pendingRequests, activeDrive, filterActiveDrive, filterDate, activeRoundTab]);
 
   // Memoized dynamic counts for primary and secondary tabs (taking into account active drive and date filters)
   const tabCounts = React.useMemo(() => {
@@ -275,15 +280,16 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     if (filterActiveDrive && activeDrive) {
       tempReqs = tempReqs.filter((req) => isFromActiveDrive(req.interview.role));
     }
-    if (filterToday) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    if (filterDate) {
+      const [y, m, d] = filterDate.split('-').map(Number);
+      const targetDate = new Date(y, m - 1, d);
+      targetDate.setHours(0, 0, 0, 0);
       tempReqs = tempReqs.filter((req) => {
         const start = new Date(req.interview.startDate);
         start.setHours(0, 0, 0, 0);
         const end = new Date(req.interview.endDate);
         end.setHours(23, 59, 59, 999);
-        return today >= start && today <= end;
+        return targetDate >= start && targetDate <= end;
       });
     }
 
@@ -292,11 +298,15 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     if (filterActiveDrive && activeDrive) {
       tempInterviews = tempInterviews.filter((i) => isFromActiveDrive(i.role));
     }
-    if (filterToday) {
-      const todayStr = new Date().toDateString();
+    if (filterDate) {
       tempInterviews = tempInterviews.filter((i) => {
         if (!i.scheduledSlotStart) return false;
-        return new Date(i.scheduledSlotStart).toDateString() === todayStr;
+        const d = new Date(i.scheduledSlotStart);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const localDateStr = `${y}-${m}-${day}`;
+        return localDateStr === filterDate;
       });
     }
 
@@ -328,7 +338,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
         general: generalFeedback
       }
     };
-  }, [interviews, pendingRequests, filterActiveDrive, filterToday, activeDrive]);
+  }, [interviews, pendingRequests, filterActiveDrive, filterDate, activeDrive]);
 
   const refreshInterviews = async () => {
     try {
@@ -699,41 +709,35 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             </button>
           )}
 
-          {/* Today's Date Filter */}
-          <button
-            onClick={() => setFilterToday(!filterToday)}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '50px',
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'var(--transition-fast)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              border: filterToday ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
-              background: filterToday ? 'var(--primary-glow)' : 'transparent',
-              color: filterToday ? 'var(--primary)' : 'var(--text-muted)',
-              outline: 'none',
-            }}
-          >
-            <span style={{ 
-              width: 6, 
-              height: 6, 
-              borderRadius: '50%', 
-              background: filterToday ? 'var(--primary)' : 'var(--text-muted)',
-              display: 'inline-block',
-              transition: 'background-color 0.2s'
-            }} />
-            <span>Today's Date Only ({new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})</span>
-          </button>
+          {/* Calendar Date Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 550 }}>Date:</span>
+            <input
+              type="date"
+              className="form-input"
+              value={filterDate || ''}
+              onChange={(e) => setFilterDate(e.target.value || null)}
+              style={{
+                padding: '0.35rem 2.2rem 0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                borderRadius: '50px',
+                height: '32px',
+                width: '145px',
+                minHeight: 'auto',
+                border: filterDate ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
+                backgroundColor: filterDate ? 'var(--primary-glow)' : 'transparent',
+                color: filterDate ? 'var(--primary)' : 'var(--text-muted)',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            />
+          </div>
         </div>
 
         {/* Reset Filters Link */}
-        {(filterActiveDrive || filterToday) && (
+        {(filterActiveDrive || filterDate) && (
           <button
-            onClick={() => { setFilterActiveDrive(false); setFilterToday(false); }}
+            onClick={() => { setFilterActiveDrive(false); setFilterDate(null); }}
             style={{
               background: 'rgba(239, 68, 68, 0.05)',
               border: '1px solid rgba(239, 68, 68, 0.15)',

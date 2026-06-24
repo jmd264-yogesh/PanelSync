@@ -32,9 +32,9 @@ export default function FeedbackClient({ interview, panel }: FeedbackClientProps
 
   const isL1 = interview.role.toLowerCase().includes('l1');
   const isL2 = interview.role.toLowerCase().includes('l2');
-  const accentColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#6366f1';
-  const accentBg = isL1 ? 'rgba(96,165,250,0.1)' : isL2 ? 'rgba(167,139,250,0.1)' : 'rgba(99,102,241,0.1)';
-  const accentBorder = isL1 ? 'rgba(96,165,250,0.3)' : isL2 ? 'rgba(167,139,250,0.3)' : 'rgba(99,102,241,0.3)';
+  const accentColor = isL1 ? 'var(--badge-l1-text)' : isL2 ? 'var(--badge-l2-text)' : 'var(--primary)';
+  const accentBg = isL1 ? 'var(--badge-l1-bg)' : isL2 ? 'var(--badge-l2-bg)' : 'var(--primary-glow)';
+  const accentBorder = isL1 ? 'var(--badge-l1-border)' : isL2 ? 'var(--badge-l2-border)' : 'rgba(26, 43, 74, 0.2)';
   const roundLabel = isL1 ? 'L1 — Technical Screening' : isL2 ? 'L2 — System Design / Management' : interview.role;
 
   const slotStart = interview.scheduledSlotStart ? new Date(interview.scheduledSlotStart) : null;
