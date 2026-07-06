@@ -186,7 +186,7 @@ export default function CandidatesTab({
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
   const [candidateCollegeFilter, setCandidateCollegeFilter] = useState<string>('all');
-  const [candidateDateFilter, setCandidateDateFilter] = useState<string>(activeDrive ? activeDrive.startDate : 'all');
+  const [candidateDateFilter, setCandidateDateFilter] = useState<string>('all');
   const [scopeToActiveDrive, setScopeToActiveDrive] = useState<boolean>(!!activeDrive);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
   const [selectedFeedbackCandidate, setSelectedFeedbackCandidate] = useState<UploadedCandidate | null>(null);
@@ -218,10 +218,8 @@ export default function CandidatesTab({
       setSingleCandidateCollege(activeDrive.collegeName);
       setSingleCandidateCollegeDrive(activeDrive.collegeName);
       setScopeToActiveDrive(true);
-      setCandidateDateFilter(activeDrive.startDate);
     } else {
       setScopeToActiveDrive(false);
-      setCandidateDateFilter('all');
     }
   }, [activeDrive]);
 
@@ -599,8 +597,11 @@ export default function CandidatesTab({
       (c.college && c.college.toLowerCase() === candidateCollegeFilter.toLowerCase());
     const matchesDate = candidateDateFilter === 'all' || c.preferredDate === candidateDateFilter;
     const matchesActiveDrive = !scopeToActiveDrive || !activeDrive ||
-      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
-      (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase());
+      (
+        ((c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
+          (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase())) &&
+        c.preferredDate >= activeDrive.startDate && c.preferredDate <= activeDrive.endDate
+      );
     return matchesQuery && matchesStatus && matchesCollege && matchesDate && matchesActiveDrive;
   });
 
