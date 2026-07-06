@@ -588,6 +588,44 @@ export const db = {
     return true;
   },
 
+  // Unmap a candidate from its interview, reverting it to WAITING and releasing
+  // the interview slot back to "Pending Assignment" so it can be re-mapped.
+  unmapCandidate: async (id: string): Promise<boolean> => {
+    const [candidate] = await dbClient
+      .select()
+      .from(schema.uploadedCandidates)
+      .where(eq(schema.uploadedCandidates.id, id));
+    if (!candidate || candidate.status !== 'MAPPED' || !candidate.mappedInterviewId) {
+      return false;
+    }
+
+    const claimed = await dbClient
+      .update(schema.uploadedCandidates)
+      .set({ status: 'WAITING', mappedInterviewId: null })
+      .where(and(eq(schema.uploadedCandidates.id, id), eq(schema.uploadedCandidates.status, 'MAPPED')))
+      .returning({ id: schema.uploadedCandidates.id });
+    if (claimed.length === 0) return false;
+
+    const [interview] = await dbClient
+      .select()
+      .from(schema.interviews)
+      .where(eq(schema.interviews.id, candidate.mappedInterviewId));
+
+    if (interview) {
+      await dbClient
+        .update(schema.interviews)
+        .set({
+          candidateName: 'Pending Assignment',
+          candidateEmail: '',
+          status: interview.status === 'SCHEDULED' ? 'COLLECTED' : interview.status,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.interviews.id, interview.id));
+    }
+
+    return true;
+  },
+
   // Delete uploaded candidate
   deleteUploadedCandidate: async (id: string): Promise<boolean> => {
     const now = new Date();
@@ -656,9 +694,19 @@ export const db = {
       
       const mapOne = async (candidate: typeof waitingCandidates[0], interview: typeof allInterviews[0]) => {
         const now = new Date();
-        
-        // 1. Update database interview record
-        await dbClient
+
+        // Atomically claim the candidate — only succeeds if no other in-flight
+        // mapping (upload, panelist self-booking, L2 requeue, manual map) already took it.
+        const claimedCandidate = await dbClient
+          .update(schema.uploadedCandidates)
+          .set({ status: 'MAPPED', mappedInterviewId: interview.id })
+          .where(and(eq(schema.uploadedCandidates.id, candidate.id), eq(schema.uploadedCandidates.status, 'WAITING')))
+          .returning({ id: schema.uploadedCandidates.id });
+        if (claimedCandidate.length === 0) return;
+
+        // Atomically claim the interview slot — only succeeds if it's still an
+        // open "Pending Assignment" slot (not already booked by a concurrent mapping).
+        const claimedInterview = await dbClient
           .update(schema.interviews)
           .set({
             candidateName: candidate.name,
@@ -666,17 +714,22 @@ export const db = {
             status: 'SCHEDULED',
             updatedAt: now,
           })
-          .where(eq(schema.interviews.id, interview.id));
-          
-        // 2. Update candidate record in queue
-        await dbClient
-          .update(schema.uploadedCandidates)
-          .set({
-            status: 'MAPPED',
-            mappedInterviewId: interview.id,
-          })
-          .where(eq(schema.uploadedCandidates.id, candidate.id));
-          
+          .where(and(
+            eq(schema.interviews.id, interview.id),
+            eq(schema.interviews.status, 'COLLECTED'),
+            eq(schema.interviews.candidateName, 'Pending Assignment')
+          ))
+          .returning({ id: schema.interviews.id });
+
+        if (claimedInterview.length === 0) {
+          // Someone else claimed this interview first — release the candidate back to the queue.
+          await dbClient
+            .update(schema.uploadedCandidates)
+            .set({ status: 'WAITING', mappedInterviewId: null })
+            .where(eq(schema.uploadedCandidates.id, candidate.id));
+          return;
+        }
+
         // 3. Update Microsoft Graph calendar event
         if (activeToken && interview.calendarEventId) {
           try {

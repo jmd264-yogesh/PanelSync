@@ -573,14 +573,22 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     disabled = false
   ) => {
     return (
-      <div style={{ display: 'flex', gap: '6px' }}>
+      <div role="radiogroup" aria-label="Rating out of 5" style={{ display: 'flex', gap: '6px' }}>
         {[1, 2, 3, 4, 5].map((star) => {
           const active = star <= currentRating;
           return (
-            <span
+            <button
               key={star}
-              onClick={() => { if (!disabled) onChange(star); }}
+              type="button"
+              role="radio"
+              aria-checked={star === currentRating}
+              aria-label={`${star} of 5 stars`}
+              disabled={disabled}
+              onClick={() => onChange(star)}
               style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
                 cursor: disabled ? 'default' : 'pointer',
                 color: active ? '#fbbf24' : 'var(--star-empty)',
                 fontSize: '1.4rem',
@@ -592,7 +600,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
               onMouseLeave={(e) => { if (!disabled) e.currentTarget.style.transform = 'scale(1)'; }}
             >
               ★
-            </span>
+            </button>
           );
         })}
       </div>

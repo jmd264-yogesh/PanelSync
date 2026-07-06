@@ -1447,6 +1447,86 @@ export default function InterviewsTab({
                   />
                 </div>
 
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--fg-secondary)' }}>Panel Members</label>
+
+                  {selectedPanels.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {selectedPanels.map((p) => (
+                        <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--surface-muted)', border: '1px solid var(--border)', borderRadius: '999px', padding: '4px 10px', fontSize: '12px', color: 'var(--fg)' }}>
+                          {p.displayName}
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePanel(p.id)}
+                            aria-label={`Remove ${p.displayName}`}
+                            style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer', display: 'flex', padding: 0 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      className="filter-select"
+                      type="text"
+                      placeholder="Search directory by name or email..."
+                      value={panelSearchQuery}
+                      onChange={(e) => setPanelSearchQuery(e.target.value)}
+                      style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                    />
+                    {panelSearchQuery.trim().length >= 2 && (
+                      <div style={{ position: 'absolute', top: '44px', left: 0, right: 0, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '10px', maxHeight: '160px', overflowY: 'auto', zIndex: 10, boxShadow: 'var(--shadow-sm)' }}>
+                        {isSearchingPanels ? (
+                          <div style={{ padding: '10px', fontSize: '12px', color: 'var(--fg-secondary)' }}>Searching...</div>
+                        ) : searchResults.length === 0 ? (
+                          <div style={{ padding: '10px', fontSize: '12px', color: 'var(--fg-secondary)' }}>No matches found.</div>
+                        ) : (
+                          searchResults.map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => handleAddPanel(u)}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--fg)' }}
+                            >
+                              {u.displayName} <span style={{ color: 'var(--fg-secondary)', fontSize: '11px' }}>({u.mail || u.userPrincipalName})</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {recommendedPanelists.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {recommendedPanelists.map((p) => {
+                        const isChosen = selectedPanels.some((sp) => sp.id === p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => handleToggleRecommendedPanelist(p)}
+                            aria-pressed={isChosen}
+                            style={{
+                              fontSize: '11px',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              border: isChosen ? '1px solid var(--accent)' : '1px solid var(--border)',
+                              background: isChosen ? 'var(--accent-light)' : 'var(--surface-muted)',
+                              color: isChosen ? 'var(--accent)' : 'var(--fg-secondary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {p.displayName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {createError && <p style={{ color: 'var(--danger)', fontSize: '12px', margin: 0 }}>{createError}</p>}
 
                 <button type="submit" disabled={isLoading} className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
@@ -1674,38 +1754,160 @@ export default function InterviewsTab({
               </div>
 
               {/* Actions */}
-              {selectedInterview.status === 'COLLECTED' && (
+              {selectedInterview.status === 'COLLECTED' && detailTab !== 'booking' && (
                 <button
                   type="button"
-                  onClick={() => setDetailTab('booking')}
+                  onClick={() => { setSelectedSlot(null); setBookingDescription(''); setDetailTab('booking'); }}
                   className="btn btn-primary"
                   style={{ width: '100%', height: '42px' }}
                 >
                   Book Meeting
                 </button>
               )}
-              
-              {selectedInterview.status === 'SCHEDULED' && (
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {selectedInterview.teamsMeetingUrl && (
-                    <a
-                      href={selectedInterview.teamsMeetingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+
+              {selectedInterview.status === 'COLLECTED' && detailTab === 'booking' && (() => {
+                const overlaps = getOverlappingSlots(selectedInterview);
+                return (
+                  <div style={{ padding: '16px', background: 'var(--surface-muted)', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: 'var(--fg)' }}>Pick a Slot to Book</h3>
+                      <button
+                        type="button"
+                        onClick={() => { setDetailTab('overview'); setSelectedSlot(null); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--fg-secondary)', cursor: 'pointer', fontSize: '12px' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    {overlaps.length === 0 ? (
+                      <p style={{ fontSize: '13px', color: 'var(--fg-secondary)', margin: 0 }}>
+                        No overlapping availability found across the submitted panels for this interview&apos;s date window.
+                      </p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+                        {overlaps.map((slot, idx) => {
+                          const isSelected = selectedSlot?.start === slot.start && selectedSlot?.end === slot.end;
+                          const start = new Date(slot.start);
+                          const end = new Date(slot.end);
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setSelectedSlot(slot)}
+                              aria-pressed={isSelected}
+                              style={{
+                                textAlign: 'left',
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                                background: isSelected ? 'var(--accent-light)' : 'var(--bg-elevated)',
+                                color: 'var(--fg)',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                              }}
+                            >
+                              {start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ {start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} (IST)
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <input
+                      className="filter-select"
+                      type="text"
+                      placeholder="Meeting description (optional)"
+                      value={bookingDescription}
+                      onChange={(e) => setBookingDescription(e.target.value)}
+                      style={{ borderRadius: '10px', height: '40px', width: '100%' }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleBookSlot}
+                      disabled={!selectedSlot || isBooking}
                       className="btn btn-primary"
-                      style={{ flex: 1, textDecoration: 'none', height: '42px' }}
+                      style={{ width: '100%', height: '42px' }}
                     >
-                      <Video size={16} /> Join Meeting
-                    </a>
+                      {isBooking ? 'Booking...' : 'Confirm Booking'}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {selectedInterview.status === 'SCHEDULED' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    {selectedInterview.teamsMeetingUrl && (
+                      <a
+                        href={selectedInterview.teamsMeetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-primary"
+                        style={{ flex: 1, textDecoration: 'none', height: '42px' }}
+                      >
+                        <Video size={16} /> Join Meeting
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditStartDate(selectedInterview.startDate.split('T')[0]);
+                        setEditEndDate(selectedInterview.endDate.split('T')[0]);
+                        setIsEditingDates(!isEditingDates);
+                      }}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, height: '42px' }}
+                    >
+                      {isEditingDates ? 'Close Edit' : 'Edit Dates'}
+                    </button>
+                  </div>
+
+                  {isEditingDates && (
+                    <form onSubmit={handleUpdateDates} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: 'var(--surface-muted)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                      <p style={{ fontSize: '12px', color: 'var(--fg-secondary)', margin: 0 }}>
+                        Changing the date range resets all proposed availability slots — panels will need to resubmit.
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <input
+                          className="filter-date"
+                          type="date"
+                          value={editStartDate}
+                          min={todayStr}
+                          onChange={(e) => setEditStartDate(e.target.value)}
+                          style={{ flex: 1, height: '40px', borderRadius: '10px' }}
+                        />
+                        <input
+                          className="filter-date"
+                          type="date"
+                          value={editEndDate}
+                          min={editStartDate || todayStr}
+                          onChange={(e) => setEditEndDate(e.target.value)}
+                          style={{ flex: 1, height: '40px', borderRadius: '10px' }}
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary" disabled={isUpdatingDates} style={{ height: '40px' }}>
+                        {isUpdatingDates ? 'Updating...' : 'Update Dates & Reset Availability'}
+                      </button>
+                    </form>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setDetailTab('feedback')}
-                    className="btn btn-secondary"
-                    style={{ flex: 1, height: '42px' }}
-                  >
-                    Feedback
-                  </button>
+
+                  <ConfirmDialog
+                    trigger={
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ width: '100%', height: '42px', color: 'var(--danger)', borderColor: 'rgba(196, 69, 60, 0.2)' }}
+                      >
+                        Cancel Booking
+                      </button>
+                    }
+                    title="Cancel this booking?"
+                    description="This removes the scheduled Teams meeting and calendar event, and reverts the interview back to Collected so it can be rebooked."
+                    confirmLabel="Yes, Cancel Booking"
+                    onConfirm={handleCancelBooking}
+                  />
                 </div>
               )}
               

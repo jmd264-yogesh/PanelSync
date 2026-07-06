@@ -397,7 +397,18 @@ export default function AvailabilityClient({ interview, panel }: AvailabilityCli
               return (
                 <div
                   key={slot.id}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-disabled={isPast}
+                  aria-label={`${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}, ${start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} to ${end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}${isPast ? ' (expired)' : ''}`}
+                  tabIndex={isPast ? -1 : 0}
                   onClick={handleSelect}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !isPast) {
+                      e.preventDefault();
+                      handleSelect();
+                    }
+                  }}
                   onMouseEnter={() => !isPast && setHoveredSlotId(slot.id)}
                   onMouseLeave={() => setHoveredSlotId(null)}
                   style={{
