@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, dbClient } from '@/lib/db';
-import { getAnyValidAccessToken } from '@/lib/session';
+import { getAnyValidAccessToken, getSession } from '@/lib/session';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
 import { eq, and, lt, isNull } from 'drizzle-orm';
@@ -8,6 +8,11 @@ import { eq, and, lt, isNull } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const now = new Date();
 

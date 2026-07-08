@@ -12,9 +12,8 @@ import { eq } from 'drizzle-orm';
  */
 export async function POST(request: NextRequest) {
   const session = await getSession();
-  const isAutomated = request.headers.get('x-automated-trigger') === 'true';
 
-  if (!session && !isAutomated) {
+  if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

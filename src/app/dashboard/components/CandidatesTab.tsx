@@ -181,12 +181,13 @@ export default function CandidatesTab({
   const [editCandidateDate, setEditCandidateDate] = useState('');
   const [mappingCandidateId, setMappingCandidateId] = useState<string | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
+  const [unmappingCandidateId, setUnmappingCandidateId] = useState<string | null>(null);
 
   // ── Queue filters ─────────────────────────────────────────────────────────
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<'all' | 'WAITING' | 'MAPPED'>('all');
   const [candidateCollegeFilter, setCandidateCollegeFilter] = useState<string>('all');
-  const [candidateDateFilter, setCandidateDateFilter] = useState<string>(activeDrive ? activeDrive.startDate : 'all');
+  const [candidateDateFilter, setCandidateDateFilter] = useState<string>('all');
   const [scopeToActiveDrive, setScopeToActiveDrive] = useState<boolean>(!!activeDrive);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
   const [selectedFeedbackCandidate, setSelectedFeedbackCandidate] = useState<UploadedCandidate | null>(null);
@@ -218,10 +219,8 @@ export default function CandidatesTab({
       setSingleCandidateCollege(activeDrive.collegeName);
       setSingleCandidateCollegeDrive(activeDrive.collegeName);
       setScopeToActiveDrive(true);
-      setCandidateDateFilter(activeDrive.startDate);
     } else {
       setScopeToActiveDrive(false);
-      setCandidateDateFilter('all');
     }
   }, [activeDrive]);
 
@@ -507,6 +506,23 @@ export default function CandidatesTab({
     }
   };
 
+  const handleUnmapCandidate = async (id: string) => {
+    setUnmappingCandidateId(id);
+    try {
+      const res = await fetch(`/api/candidates/${id}/unmap`, { method: 'POST' });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to unmap candidate.');
+      setCandidates(result.candidates);
+      setInterviews(result.interviews);
+      toast.success('Candidate unmapped and returned to the waiting queue.');
+    } catch (err: any) {
+      console.error('Error unmapping candidate:', err);
+      toast.error(err.message || 'Failed to unmap candidate.');
+    } finally {
+      setUnmappingCandidateId(null);
+    }
+  };
+
   const handleDeleteCandidate = async (id: string) => {
     try {
       const res = await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
@@ -599,8 +615,11 @@ export default function CandidatesTab({
       (c.college && c.college.toLowerCase() === candidateCollegeFilter.toLowerCase());
     const matchesDate = candidateDateFilter === 'all' || c.preferredDate === candidateDateFilter;
     const matchesActiveDrive = !scopeToActiveDrive || !activeDrive ||
-      (c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
-      (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase());
+      (
+        ((c.collegeDrive && c.collegeDrive.toLowerCase() === activeDrive.collegeName.toLowerCase()) ||
+          (c.college && c.college.toLowerCase() === activeDrive.collegeName.toLowerCase())) &&
+        c.preferredDate >= activeDrive.startDate && c.preferredDate <= activeDrive.endDate
+      );
     return matchesQuery && matchesStatus && matchesCollege && matchesDate && matchesActiveDrive;
   });
 
@@ -1120,6 +1139,28 @@ export default function CandidatesTab({
                                       >
                                         Map
                                       </button>
+                                    )}
+                                    {isMapped && (
+                                      <ConfirmDialog
+                                        trigger={
+                                          <button
+                                            disabled={unmappingCandidateId === candidate.id}
+                                            className="row-action-button"
+                                            style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--warning)', height: '28px' }}
+                                            title="Unmap and return this candidate to the waiting queue"
+                                          />
+                                        }
+                                        triggerChildren={
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {unmappingCandidateId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : null}
+                                            <span>Unmap</span>
+                                          </div>
+                                        }
+                                        title="Unmap this candidate?"
+                                        description="This returns the candidate to the waiting queue and reverts their mapped interview slot back to Pending Assignment so it can be re-mapped."
+                                        confirmLabel="Yes, Unmap"
+                                        onConfirm={() => handleUnmapCandidate(candidate.id)}
+                                      />
                                     )}
                                     <button
                                       onClick={() => {

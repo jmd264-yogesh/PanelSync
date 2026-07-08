@@ -67,23 +67,36 @@ export async function POST(request: NextRequest) {
       const slotDate = new Date(slotStart);
       const startOfDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate()));
       const startOfNextDay = new Date(Date.UTC(slotDate.getUTCFullYear(), slotDate.getUTCMonth(), slotDate.getUTCDate() + 1));
+      const targetInterviewId = i === 0 ? interview.id : crypto.randomUUID();
 
-      // Find a matching candidate
-      let matchedCandidate = null;
+      // Find and atomically claim a matching candidate
+      let matchedCandidate: typeof waitingCandidates[number] | null = null;
       if (interview.candidateName === 'Pending Assignment') {
         const candidateIndex = waitingCandidates.findIndex(c => {
           const matchesCollege = collegeNameFromRole ? c.collegeDrive?.toLowerCase() === collegeNameFromRole : true;
           const cDate = c.preferredDate ? new Date(c.preferredDate) : null;
           if (!cDate) return false;
-          
+
           const matchesDate = cDate.getTime() >= startOfDay.getTime() && cDate.getTime() < startOfNextDay.getTime();
           return matchesCollege && matchesDate;
         });
 
         if (candidateIndex !== -1) {
-          matchedCandidate = waitingCandidates[candidateIndex];
-          // Remove from list so it won't be mapped again in subsequent iterations
+          const candidate = waitingCandidates[candidateIndex];
+          // Remove from list so it won't be matched again in subsequent iterations
           waitingCandidates.splice(candidateIndex, 1);
+
+          // Atomically claim it — no-op if another concurrent mapping (bulk upload,
+          // another panelist self-booking, L2 requeue) already took this candidate
+          // between our SELECT above and now.
+          const claimed = await dbClient
+            .update(schema.uploadedCandidates)
+            .set({ status: 'MAPPED', mappedInterviewId: targetInterviewId })
+            .where(and(eq(schema.uploadedCandidates.id, candidate.id), eq(schema.uploadedCandidates.status, 'WAITING')))
+            .returning({ id: schema.uploadedCandidates.id });
+          if (claimed.length > 0) {
+            matchedCandidate = candidate;
+          }
         }
       }
 
@@ -118,11 +131,6 @@ export async function POST(request: NextRequest) {
       if (i === 0) {
         // First slot: update original interview
         if (matchedCandidate) {
-          await dbClient
-            .update(schema.uploadedCandidates)
-            .set({ status: 'MAPPED', mappedInterviewId: interview.id })
-            .where(eq(schema.uploadedCandidates.id, matchedCandidate.id));
-
           await dbClient
             .update(schema.interviews)
             .set({
@@ -166,7 +174,7 @@ export async function POST(request: NextRequest) {
         });
       } else {
         // Subsequent slots: create new interview and panelist record
-        const newInterviewId = crypto.randomUUID();
+        const newInterviewId = targetInterviewId;
         const now = new Date();
 
         const newStatus = matchedCandidate ? 'SCHEDULED' : (interview.candidateName === 'Pending Assignment' ? 'COLLECTED' : 'SCHEDULED');
@@ -188,13 +196,6 @@ export async function POST(request: NextRequest) {
           createdAt: now,
           updatedAt: now,
         });
-
-        if (matchedCandidate) {
-          await dbClient
-            .update(schema.uploadedCandidates)
-            .set({ status: 'MAPPED', mappedInterviewId: newInterviewId })
-            .where(eq(schema.uploadedCandidates.id, matchedCandidate.id));
-        }
 
         // Insert new panel row
         const newPanelId = crypto.randomUUID();

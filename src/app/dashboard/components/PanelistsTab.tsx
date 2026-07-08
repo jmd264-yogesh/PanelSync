@@ -1133,8 +1133,18 @@ export default function PanelistsTab({
                     </span>
                   </div>
                   <p className="text-xs text-muted" style={{ marginTop: '0.4rem' }}>
-                    Slots are generated across the active drive window. Change it in the <strong>Drives</strong> tab.
+                    Slots are generated across the selected window below, defaulted to the active drive. Change the drive itself in the <strong>Drives</strong> tab.
                   </p>
+                  <div className="grid-2" style={{ marginTop: '0.75rem' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Slot Range Start</label>
+                      <input type="date" className="input-control" value={reqStartDate} min={activeDrive.startDate} max={activeDrive.endDate} onChange={(e) => setReqStartDate(e.target.value)} required style={{ colorScheme: 'dark' }} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Slot Range End</label>
+                      <input type="date" className="input-control" value={reqEndDate} min={reqStartDate || activeDrive.startDate} max={activeDrive.endDate} onChange={(e) => setReqEndDate(e.target.value)} required style={{ colorScheme: 'dark' }} />
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="form-group">
