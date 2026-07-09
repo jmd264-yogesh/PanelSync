@@ -1,6 +1,10 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidAccessToken, getSession } from '@/lib/session';
 import { db } from '@/lib/db';
+import { blob } from '@/lib/blob';
+import { validateResumeFile } from '@/lib/file-validate';
+import { fetchExternalResume } from '@/lib/fetch-external-resume';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,12 +64,36 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Add candidates to database
-    await db.addUploadedCandidates(candidates);
+    const created = await db.addUploadedCandidates(candidates);
 
-    // 2. Trigger auto-mapping immediately
+    // 2. Attach any resume links supplied via the "Resume Link" spreadsheet column —
+    // downloaded, magic-byte validated, and re-hosted in our own blob storage,
+    // same as a manually attached resume (see /api/candidates/[id]/resume).
+    const resumeLinkFailures: { name: string; email: string; error: string }[] = [];
+    for (const c of candidates) {
+      if (!c.resumeLink || !c.resumeLink.trim()) continue;
+      const match = created.find((row) => row.email.toLowerCase() === c.email.toLowerCase());
+      if (!match) continue;
+      try {
+        const buffer = await fetchExternalResume(c.resumeLink.trim());
+        const { contentType } = validateResumeFile(buffer);
+        const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+        const { fileKey } = await blob.uploadResume(match.id, buffer, 'resume', contentType);
+        await db.setCandidateResume(match.id, { fileKey, sha256 });
+        await db.addAuditLog(session.user.email, 'RESUME_UPLOADED', 'UploadedCandidate', match.id, { sha256, source: 'bulk_link' });
+      } catch (err) {
+        resumeLinkFailures.push({
+          name: c.name,
+          email: c.email,
+          error: err instanceof Error ? err.message : 'Failed to attach resume link.',
+        });
+      }
+    }
+
+    // 3. Trigger auto-mapping immediately
     const mapRes = await db.autoMapPendingCandidates({ token, email: session.user.email });
 
-    // 3. Fetch updated states
+    // 4. Fetch updated states
     const updatedCandidates = await db.getUploadedCandidates();
     const updatedInterviews = await db.getInterviews();
 
@@ -74,6 +102,7 @@ export async function POST(request: NextRequest) {
       candidates: updatedCandidates,
       interviews: updatedInterviews,
       mappedCount: mapRes.mappedCount,
+      resumeLinkFailures,
     });
   } catch (error) {
     console.error('Failed to upload candidates:', error);

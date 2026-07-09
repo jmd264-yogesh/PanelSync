@@ -182,6 +182,7 @@ export default function CandidatesTab({
   const [mappingCandidateId, setMappingCandidateId] = useState<string | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
   const [unmappingCandidateId, setUnmappingCandidateId] = useState<string | null>(null);
+  const [uploadingResumeId, setUploadingResumeId] = useState<string | null>(null);
 
   // ── Queue filters ─────────────────────────────────────────────────────────
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
@@ -251,12 +252,15 @@ export default function CandidatesTab({
     }
 
     const text = String(value).trim();
-    const isoMatch = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    const isoMatch = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (isoMatch) {
       return formatDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
     }
 
-    const dayFirstMatch = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    // Sheets are authored day-first (DD/MM/YYYY). Match on the leading triplet only
+    // (no trailing `$` anchor) so a trailing time component doesn't fall through to
+    // the native Date parser below, which assumes the US MM/DD/YYYY convention.
+    const dayFirstMatch = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
     if (dayFirstMatch) {
       return formatDateParts(Number(dayFirstMatch[3]), Number(dayFirstMatch[2]), Number(dayFirstMatch[1]));
     }
@@ -272,20 +276,48 @@ export default function CandidatesTab({
   const normalizeHeader = (value: string) =>
     value
       .replace(/^\uFEFF/, '')
+      .replace(/\([^)]*\)/g, '') // strip a trailing format hint, e.g. "Drive Date (YYYY-MM-DD)"
       .trim()
       .toLowerCase()
       .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
 
   const handleDownloadTemplate = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,Name,Email,College Name of Candidate,College Name of Drive,Drive Date\nJohn Doe,john.doe@example.com,IIT Madras,IIT Bombay,2026-06-15\nJane Smith,jane.smith@example.com,NIT Trichy,NIT Trichy,2026-06-16';
+    const headers = ['Name', 'Email', 'College Name of Candidate', 'College Name of Drive', 'Drive Date (YYYY-MM-DD)', 'Resume Link'];
+    const rows = [
+      ['John Doe', 'john.doe@example.com', 'IIT Madras', 'IIT Bombay', '2026-06-15', 'https://example.com/resumes/john-doe.pdf'],
+      ['Jane Smith', 'jane.smith@example.com', 'NIT Trichy', 'NIT Trichy', '2026-06-16', ''],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // Lock the Drive Date column to Text format (including blank buffer rows below
+    // the examples) so Excel never auto-converts typed dates into its own native
+    // date type — that auto-conversion is what silently swaps day/month on ambiguous
+    // input like "09-07-2026" depending on the machine's locale.
+    const DRIVE_DATE_COL = headers.indexOf('Drive Date (YYYY-MM-DD)');
+    const TOTAL_ROWS = 200; // header + examples + generous blank buffer for new rows
+    for (let r = 0; r < TOTAL_ROWS; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: DRIVE_DATE_COL });
+      const existing = worksheet[addr];
+      worksheet[addr] = { t: 's', v: existing ? existing.v : '', z: '@' };
+    }
+    worksheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: TOTAL_ROWS - 1, c: headers.length - 1 } });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Candidates');
+    const arrayBuffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+
+    const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', 'candidate_template.csv');
+    link.href = url;
+    link.download = 'candidate_template.xlsx';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -308,7 +340,12 @@ export default function CandidatesTab({
       try {
         const data = evt.target?.result;
         if (!data) throw new Error('Could not read file data');
-        const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+        // cellDates is intentionally omitted: it lets SheetJS auto-convert date-looking
+        // cells to JS Date objects using its own heuristics, which can resolve an
+        // ambiguous "09-07-2026" as Sep 7 instead of the day-first Jul 9 our recruiters
+        // enter. Reading raw values instead and parsing them ourselves in parseExcelDate
+        // (day-first-first) keeps that interpretation consistent and under our control.
+        const workbook = XLSX.read(data, { type: 'binary' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<any>(sheet);
         if (json.length === 0) throw new Error('The spreadsheet is empty.');
@@ -331,7 +368,12 @@ export default function CandidatesTab({
             const rawDate = dateKey ? row[dateKey] : undefined;
             const preferredDate = parseExcelDate(rawDate) || (uploadDefaultDate ? uploadDefaultDate : undefined);
 
-            const collegeDrive = uploadDefaultCollege;
+            const driveCollegeKey = keys.find((k) => {
+              const val = normalizeHeader(k);
+              return val === 'college name of drive' || val === 'drive college' || val === 'college of drive';
+            });
+            const rawDriveCollege = driveCollegeKey && row[driveCollegeKey] !== undefined ? String(row[driveCollegeKey]).trim() : undefined;
+            const collegeDrive = rawDriveCollege || uploadDefaultCollege;
 
             const candidateCollegeKey = keys.find((k) => {
               const val = normalizeHeader(k);
@@ -340,13 +382,19 @@ export default function CandidatesTab({
             const rawCandidateCollege = candidateCollegeKey && row[candidateCollegeKey] !== undefined ? String(row[candidateCollegeKey]).trim() : undefined;
             const college = rawCandidateCollege || collegeDrive;
 
+            const resumeLinkKey = keys.find((k) => {
+              const val = normalizeHeader(k);
+              return val === 'resume link' || val === 'resume url' || val === 'resume' || val === 'cv link' || val === 'cv url';
+            });
+            const resumeLink = resumeLinkKey && row[resumeLinkKey] !== undefined ? String(row[resumeLinkKey]).trim() : undefined;
+
             if (!preferredDate) {
               throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Drive Date. Please specify a date in the sheet or set a default Drive Date above.`);
             }
             if (!college) {
               throw new Error(`Row ${i + 2}: Candidate "${name}" is missing a Candidate College Name. Please specify a candidate college name in the sheet or select a default College Name of Drive above.`);
             }
-            parsedCandidates.push({ name, email, preferredDate, college, collegeDrive });
+            parsedCandidates.push({ name, email, preferredDate, college, collegeDrive, resumeLink });
           }
         }
         if (parsedCandidates.length === 0) {
@@ -368,6 +416,13 @@ export default function CandidatesTab({
         setUploadSuccessMessage(
           `Successfully uploaded ${parsedCandidates.length} candidate(s). ${result.mappedCount} candidate(s) were automatically mapped to L1 panels.`
         );
+        if (result.resumeLinkFailures?.length) {
+          toast.error(
+            `${result.resumeLinkFailures.length} resume link(s) could not be attached: ${result.resumeLinkFailures
+              .map((f: { name: string; error: string }) => `${f.name} (${f.error})`)
+              .join('; ')}`
+          );
+        }
       } catch (err: any) {
         console.error(err);
         setUploadError(err.message || 'An error occurred during file parsing or upload.');
@@ -523,6 +578,24 @@ export default function CandidatesTab({
     }
   };
 
+  const handleResumeUpload = async (candidateId: string, file: File) => {
+    setUploadingResumeId(candidateId);
+    try {
+      const formData = new FormData();
+      formData.append('resume', file);
+      const res = await fetch(`/api/candidates/${candidateId}/resume`, { method: 'POST', body: formData });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to upload resume.');
+      setCandidates(result.candidates);
+      toast.success('Resume attached. Panelists on this candidate\'s interview can now use the AI Copilot.');
+    } catch (err: any) {
+      console.error('Error uploading resume:', err);
+      toast.error(err.message || 'Failed to upload resume.');
+    } finally {
+      setUploadingResumeId(null);
+    }
+  };
+
   const handleDeleteCandidate = async (id: string) => {
     try {
       const res = await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
@@ -549,8 +622,12 @@ export default function CandidatesTab({
         let mappedIntv = candidate.mappedInterviewId
           ? interviews.find((i) => i.id === candidate.mappedInterviewId)
           : null;
-        if (!mappedIntv && candidate.email) {
-          mappedIntv = interviews.find((i) => 
+        // Fallback by email only applies to candidates the DB already considers
+        // MAPPED (a legacy safety net for rows missing mappedInterviewId) — never
+        // for WAITING candidates, since email addresses get reused across
+        // unrelated drives/uploads and would otherwise falsely match someone else's interview.
+        if (!mappedIntv && candidate.email && candidate.status === 'MAPPED') {
+          mappedIntv = interviews.find((i) =>
             i.candidateEmail.toLowerCase() === candidate.email.toLowerCase() &&
             i.candidateName !== 'Pending Assignment' &&
             i.candidateEmail !== 'pending@assign.com'
@@ -933,8 +1010,11 @@ export default function CandidatesTab({
                     let mappedIntv = candidate.mappedInterviewId
                       ? interviews.find((i) => i.id === candidate.mappedInterviewId)
                       : null;
-                    if (!mappedIntv && candidate.email) {
-                      mappedIntv = interviews.find((i) => 
+                    // See the export handler above for why this fallback is gated
+                    // on status === 'MAPPED' — reused candidate emails across
+                    // unrelated drives would otherwise falsely match someone else's interview.
+                    if (!mappedIntv && candidate.email && candidate.status === 'MAPPED') {
+                      mappedIntv = interviews.find((i) =>
                         i.candidateEmail.toLowerCase() === candidate.email.toLowerCase() &&
                         i.candidateName !== 'Pending Assignment' &&
                         i.candidateEmail !== 'pending@assign.com'
@@ -1177,6 +1257,33 @@ export default function CandidatesTab({
                                       title="Edit candidate details"
                                     >
                                       Edit
+                                    </button>
+                                    <input
+                                      type="file"
+                                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                      style={{ display: 'none' }}
+                                      id={`resume-input-${candidate.id}`}
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleResumeUpload(candidate.id, file);
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                    <button
+                                      onClick={() => document.getElementById(`resume-input-${candidate.id}`)?.click()}
+                                      disabled={uploadingResumeId === candidate.id}
+                                      className="row-action-button"
+                                      style={{
+                                        height: '28px',
+                                        background: candidate.resumeFileKey ? 'rgba(16,185,129,0.06)' : undefined,
+                                        border: candidate.resumeFileKey ? '1px solid rgba(16,185,129,0.2)' : undefined,
+                                        color: candidate.resumeFileKey ? 'var(--success)' : undefined,
+                                      }}
+                                      title={candidate.resumeFileKey ? 'Replace attached resume' : 'Attach a resume (PDF/DOCX) for the AI Copilot'}
+                                    >
+                                      {uploadingResumeId === candidate.id ? (
+                                        <Loader2 size={10} className="animate-spin" />
+                                      ) : candidate.resumeFileKey ? 'Resume ✓' : 'Attach Resume'}
                                     </button>
                                     {(candidate as any).outcomeStatus === 'PASSED_L2' && (
                                       <ConfirmDialog

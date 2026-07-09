@@ -1,4 +1,4 @@
-import { pgTable, varchar, text, integer, timestamp, unique, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, integer, timestamp, unique, boolean, jsonb } from 'drizzle-orm/pg-core';
 
 // 1. Sessions Table
 export const sessions = pgTable('sessions', {
@@ -88,6 +88,9 @@ export const uploadedCandidates = pgTable('uploaded_candidates', {
   outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
   college: varchar('college', { length: 255 }),
   collegeDrive: varchar('college_drive', { length: 255 }),
+  resumeFileKey: text('resume_file_key'),
+  resumeSha256: varchar('resume_sha256', { length: 64 }),
+  resumeUploadedAt: timestamp('resume_uploaded_at'),
   createdAt: timestamp('created_at').defaultNow(),
   deletedAt: timestamp('deleted_at'),
 });
@@ -107,6 +110,38 @@ export const drives = pgTable('drives', {
   endDate: varchar('end_date', { length: 255 }).notNull(),
   status: varchar('status', { length: 50 }).default('OPEN').notNull(), // OPEN | CLOSED
   isActive: boolean('is_active').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 10. AI Interview Copilot Runs (one immutable row per "Generate" click)
+export const aiRuns = pgTable('ai_runs', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  interviewId: varchar('interview_id', { length: 255 })
+    .references(() => interviews.id, { onDelete: 'cascade' })
+    .notNull(),
+  candidateId: varchar('candidate_id', { length: 255 })
+    .references(() => uploadedCandidates.id, { onDelete: 'set null' }),
+  triggeredByEmail: varchar('triggered_by_email', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).notNull(), // QUEUED|PARSING|EXTRACTING|GENERATING|COMPLETED|FAILED
+  criteria: jsonb('criteria'),
+  resumeDigest: jsonb('resume_digest'),
+  questions: jsonb('questions'),
+  model: varchar('model', { length: 100 }),
+  promptVersion: varchar('prompt_version', { length: 20 }),
+  tokenUsage: jsonb('token_usage'),
+  error: text('error'),
+  createdAt: timestamp('created_at').defaultNow(),
+  completedAt: timestamp('completed_at'),
+});
+
+// 11. Audit Log
+export const auditLogs = pgTable('audit_logs', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  userEmail: varchar('user_email', { length: 255 }).notNull(),
+  action: varchar('action', { length: 100 }).notNull(),
+  entity: varchar('entity', { length: 100 }).notNull(),
+  entityId: varchar('entity_id', { length: 255 }).notNull(),
+  metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
