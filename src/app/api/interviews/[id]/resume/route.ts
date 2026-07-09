@@ -28,7 +28,9 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const candidate = await db.getCandidateForInterview(id);
+    // Check the campus pipeline first, then the lateral hiring pipeline — an
+    // interview belongs to exactly one of the two.
+    const candidate = await db.getCandidateForInterview(id) || await db.getLateralCandidateForInterview(id);
     if (!candidate || !candidate.resumeFileKey) {
       return NextResponse.json({ error: 'No resume on file for this interview.' }, { status: 404 });
     }

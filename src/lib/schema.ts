@@ -145,3 +145,26 @@ export const auditLogs = pgTable('audit_logs', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// 12. Lateral Hiring Candidates (independent of the campus college/drive model)
+export const lateralCandidates = pgTable('lateral_candidates', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  email: varchar('email', { length: 255 }).notNull(),
+  phone: varchar('phone', { length: 50 }),
+  positionTitle: varchar('position_title', { length: 255 }).notNull(),
+  experienceYears: integer('experience_years'),
+  currentCompany: varchar('current_company', { length: 255 }),
+  currentCtc: varchar('current_ctc', { length: 100 }),
+  expectedCtc: varchar('expected_ctc', { length: 100 }),
+  noticePeriodDays: integer('notice_period_days'),
+  source: varchar('source', { length: 100 }), // Referral | LinkedIn | Naukri | Other
+  status: varchar('status', { length: 50 }).default('NEW').notNull(), // NEW|SCREENING|INTERVIEWING|OFFERED|HIRED|REJECTED|WITHDRAWN
+  resumeFileKey: text('resume_file_key'),
+  resumeSha256: varchar('resume_sha256', { length: 64 }),
+  resumeUploadedAt: timestamp('resume_uploaded_at'),
+  mappedInterviewId: varchar('mapped_interview_id', { length: 255 })
+    .references(() => interviews.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+  deletedAt: timestamp('deleted_at'),
+});
+

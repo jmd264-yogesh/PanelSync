@@ -377,7 +377,38 @@ class GraphService {
       method: 'DELETE',
     });
   }
+
+  // Resolve a OneDrive/SharePoint sharing URL to its underlying file, using the
+  // signed-in user's own delegated access (Files.Read) — works for anything
+  // shared with them, without needing app-only/tenant-wide file permissions.
+  async resolveSharedFile(shareUrl: string, accessToken: string): Promise<{ downloadUrl: string; name: string; size: number }> {
+    const encodedShareId = 'u!' + Buffer.from(shareUrl, 'utf-8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    const endpoint = `/shares/${encodedShareId}/driveItem`;
+    const item = await this.fetchGraph(endpoint, accessToken);
+
+    const downloadUrl = item?.['@microsoft.graph.downloadUrl'];
+    if (!downloadUrl) {
+      throw new Error('Could not resolve a downloadable file from this OneDrive/SharePoint link.');
+    }
+
+    return { downloadUrl, name: item.name || 'resume', size: item.size || 0 };
+  }
 }
 
 export const graph = new GraphService();
+
+const ONEDRIVE_HOST_PATTERN = /(^|\.)sharepoint\.com$|^1drv\.ms$|^onedrive\.live\.com$/i;
+
+export function isOneDriveOrSharePointUrl(url: string): boolean {
+  try {
+    return ONEDRIVE_HOST_PATTERN.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
 

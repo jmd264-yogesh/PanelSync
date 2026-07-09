@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
     'Chat.Create',
     'ChatMessage.Send',
     'Calendars.ReadWrite',
+    // Files.Read intentionally omitted: requesting it before the Azure AD app
+    // registration has that permission admin-consented blocks login entirely
+    // with a "Need admin approval" screen. Re-add once that's confirmed granted.
   ].join(' ');
 
   const state = `panelsync-auth|role=${role}`;

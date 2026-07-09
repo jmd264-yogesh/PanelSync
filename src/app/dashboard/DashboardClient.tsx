@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Building2, CalendarDays, ShieldCheck, UserRoundCheck, UsersRound, Compass } from 'lucide-react';
+import { Building2, CalendarDays, ShieldCheck, UserRoundCheck, UsersRound, Compass, Briefcase } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { College, Interview, Panelist, UploadedCandidate, Drive } from '@/lib/db';
+import { College, Interview, Panelist, UploadedCandidate, Drive, LateralCandidate } from '@/lib/db';
 
 import CandidatesTab from './components/CandidatesTab';
 import CollegesTab from './components/CollegesTab';
@@ -13,6 +13,7 @@ import InterviewsTab from './components/InterviewsTab';
 import PanelistsTab from './components/PanelistsTab';
 import RecruitersTab from './components/RecruitersTab';
 import DrivesTab from './components/DrivesTab';
+import LateralHiringTab from './components/LateralHiringTab';
 
 interface DashboardClientProps {
   initialInterviews: Interview[];
@@ -20,7 +21,7 @@ interface DashboardClientProps {
   initialColleges: College[];
 }
 
-type DashboardTab = 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges' | 'drives';
+type DashboardTab = 'interviews' | 'panelists' | 'recruiters' | 'candidates' | 'colleges' | 'drives' | 'lateral';
 
 export default function DashboardClient({ initialInterviews, initialPanelists, initialColleges }: DashboardClientProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>('interviews');
@@ -30,6 +31,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
   const [candidates, setCandidates] = useState<UploadedCandidate[]>([]);
   const [drives, setDrives] = useState<Drive[]>([]);
   const [activeDrive, setActiveDrive] = useState<Drive | null>(null);
+  const [lateralCandidates, setLateralCandidates] = useState<LateralCandidate[]>([]);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -39,6 +41,15 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
       if (res.ok) setCandidates(await res.json());
     } catch (err) {
       console.error('Failed to fetch candidates:', err);
+    }
+  };
+
+  const fetchLateralCandidates = async () => {
+    try {
+      const res = await fetch('/api/lateral-candidates');
+      if (res.ok) setLateralCandidates(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch lateral candidates:', err);
     }
   };
 
@@ -66,12 +77,14 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
   useEffect(() => {
     void fetchCandidates();
     void fetchDrives();
+    void fetchLateralCandidates();
     void triggerAutoReminders();
   }, []);
 
   const handleTabChange = (tab: DashboardTab) => {
     setActiveTab(tab);
     if (tab === 'candidates' || tab === 'interviews') void fetchCandidates();
+    if (tab === 'lateral' || tab === 'interviews') void fetchLateralCandidates();
     void fetchDrives();
   };
 
@@ -87,6 +100,7 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
     { id: 'candidates', label: 'Candidates', description: 'Queue and mapping', icon: UserRoundCheck, count: candidates.length },
     { id: 'colleges', label: 'Colleges', description: 'Drive locations', icon: Building2, count: collegesList.length },
     { id: 'drives', label: 'Drives', description: activeDrive ? `Active: ${activeDrive.collegeName}` : 'Recruitment drives', icon: Compass, count: drives.length },
+    { id: 'lateral', label: 'Lateral Hiring', description: 'Experienced candidates', icon: Briefcase, count: lateralCandidates.length },
   ] as const;
 
   const activeNavigation = navigation.find((item) => item.id === activeTab) ?? navigation[0];
@@ -130,6 +144,9 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
           {activeTab === 'colleges' && <CollegesTab collegesList={collegesList} setCollegesList={setCollegesList} />}
           {activeTab === 'drives' && (
             <DrivesTab drives={drives} activeDrive={activeDrive} onDrivesChange={fetchDrives} collegesList={collegesList} />
+          )}
+          {activeTab === 'lateral' && (
+            <LateralHiringTab candidates={lateralCandidates} setCandidates={setLateralCandidates} interviews={interviews} setInterviews={setInterviews} panelists={panelists} todayStr={todayStr} />
           )}
         </section>
       </main>
