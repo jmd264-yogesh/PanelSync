@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { candidateName, candidateEmail, role, duration, startDate, endDate, panels } = body;
+    const { candidateName, candidateEmail, role, duration, startDate, endDate, panels, lateralCandidateId } = body;
 
     // 1. Validation
     if (!candidateName || !candidateEmail || !role || !duration || !startDate || !endDate || !panels || !panels.length) {
@@ -51,6 +51,15 @@ export async function POST(request: NextRequest) {
           );
       } catch (dbErr) {
         console.error('Failed to update uploaded candidate status to MAPPED:', dbErr);
+      }
+    }
+
+    // Link the interview back to the lateral candidate row and advance their pipeline status
+    if (lateralCandidateId) {
+      try {
+        await db.setLateralCandidateInterview(lateralCandidateId, interview.id);
+      } catch (dbErr) {
+        console.error('Failed to link interview to lateral candidate:', dbErr);
       }
     }
 

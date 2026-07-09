@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { blob } from '@/lib/blob';
 import { validateResumeFile } from '@/lib/file-validate';
 import { fetchExternalResume } from '@/lib/fetch-external-resume';
+import { graph, isOneDriveOrSharePointUrl } from '@/lib/graph';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +76,20 @@ export async function POST(request: NextRequest) {
       const match = created.find((row) => row.email.toLowerCase() === c.email.toLowerCase());
       if (!match) continue;
       try {
-        const buffer = await fetchExternalResume(c.resumeLink.trim());
+        const link = c.resumeLink.trim();
+        let buffer: Buffer;
+        if (isOneDriveOrSharePointUrl(link)) {
+          // Resolve via Graph using the recruiter's own delegated access — works for
+          // anything shared with them, without needing broad tenant file permissions.
+          const { downloadUrl } = await graph.resolveSharedFile(link, token);
+          // downloadUrl is a short-lived, Microsoft-signed URL we derived ourselves
+          // (not the raw recruiter-supplied link), so following its redirect is safe.
+          const res = await fetch(downloadUrl);
+          if (!res.ok) throw new Error(`Failed to download OneDrive file (status ${res.status}).`);
+          buffer = Buffer.from(await res.arrayBuffer());
+        } else {
+          buffer = await fetchExternalResume(link);
+        }
         const { contentType } = validateResumeFile(buffer);
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
         const { fileKey } = await blob.uploadResume(match.id, buffer, 'resume', contentType);

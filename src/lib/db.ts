@@ -66,6 +66,26 @@ export interface UploadedCandidate {
   createdAt: string;
 }
 
+export interface LateralCandidate {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  positionTitle: string;
+  experienceYears?: number;
+  currentCompany?: string;
+  currentCtc?: string;
+  expectedCtc?: string;
+  noticePeriodDays?: number;
+  source?: string;
+  status: 'NEW' | 'SCREENING' | 'INTERVIEWING' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  resumeFileKey?: string;
+  resumeSha256?: string;
+  resumeUploadedAt?: string;
+  mappedInterviewId?: string;
+  createdAt: string;
+}
+
 export interface AiRun {
   id: string;
   interviewId: string;
@@ -1024,12 +1044,18 @@ export const db = {
   getPanelistRequests: async (panelistEmail: string): Promise<{ interview: Interview; panel: InterviewPanel }[]> => {
     const normalizedEmail = panelistEmail.trim().toLowerCase();
 
-    // Fetch closed drives to exclude requests associated with them
-    const closedDrives = await dbClient
-      .select({ collegeName: schema.drives.collegeName })
-      .from(schema.drives)
-      .where(eq(schema.drives.status, 'CLOSED'));
-    const closedCollegeNames = new Set(closedDrives.map(d => d.collegeName.trim().toLowerCase()));
+    // A college can have several drives over time (e.g. an old closed round and a
+    // brand-new open one). Only treat a college as closed if NONE of its drives are
+    // open — matching purely by "has this college ever had a closed drive" would
+    // wrongly hide requests tied to that college's current open drive.
+    const allDrives = await dbClient
+      .select({ collegeName: schema.drives.collegeName, status: schema.drives.status })
+      .from(schema.drives);
+    const hasOpenDriveByCollege = new Map<string, boolean>();
+    for (const d of allDrives) {
+      const key = d.collegeName.trim().toLowerCase();
+      hasOpenDriveByCollege.set(key, hasOpenDriveByCollege.get(key) || d.status === 'OPEN');
+    }
 
     const getCollegeNameFromRole = (role: string): string => {
       const parts = role.split(' - ');
@@ -1051,9 +1077,9 @@ export const db = {
       const interview = await db.getInterview(panelRow.interviewId);
       if (!interview || interview.status === 'CANCELLED' || interview.status === 'SCHEDULED') continue;
 
-      // Filter out requests if their drive is closed
+      // Filter out requests only if this college has drives on record and every one is closed.
       const college = getCollegeNameFromRole(interview.role);
-      if (closedCollegeNames.has(college)) continue;
+      if (hasOpenDriveByCollege.has(college) && !hasOpenDriveByCollege.get(college)) continue;
 
       const activePanel = interview.panels.find((p) => p.id === panelRow.id);
       if (activePanel) {
@@ -1355,6 +1381,17 @@ export const db = {
     };
   },
 
+  // Same lookup as getCandidateForInterview, but for the lateral hiring pipeline
+  // (a lateral interview has no row in uploadedCandidates at all).
+  getLateralCandidateForInterview: async (interviewId: string): Promise<LateralCandidate | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.lateralCandidates)
+      .where(and(eq(schema.lateralCandidates.mappedInterviewId, interviewId), isNull(schema.lateralCandidates.deletedAt)))
+      .limit(1);
+    return row ? db.mapLateralCandidateRow(row) : null;
+  },
+
   mapAiRunRow: (row: typeof schema.aiRuns.$inferSelect): AiRun => ({
     id: row.id,
     interviewId: row.interviewId,
@@ -1444,5 +1481,130 @@ export const db = {
       metadata: metadata ?? null,
       createdAt: new Date(),
     });
+  },
+
+  // --- Lateral Hiring helpers ---
+
+  mapLateralCandidateRow: (row: typeof schema.lateralCandidates.$inferSelect): LateralCandidate => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone || undefined,
+    positionTitle: row.positionTitle,
+    experienceYears: row.experienceYears ?? undefined,
+    currentCompany: row.currentCompany || undefined,
+    currentCtc: row.currentCtc || undefined,
+    expectedCtc: row.expectedCtc || undefined,
+    noticePeriodDays: row.noticePeriodDays ?? undefined,
+    source: row.source || undefined,
+    status: row.status as LateralCandidate['status'],
+    resumeFileKey: row.resumeFileKey || undefined,
+    resumeSha256: row.resumeSha256 || undefined,
+    resumeUploadedAt: row.resumeUploadedAt ? row.resumeUploadedAt.toISOString() : undefined,
+    mappedInterviewId: row.mappedInterviewId || undefined,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+  }),
+
+  getLateralCandidates: async (): Promise<LateralCandidate[]> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.lateralCandidates)
+      .where(isNull(schema.lateralCandidates.deletedAt))
+      .orderBy(desc(schema.lateralCandidates.createdAt));
+    return rows.map(db.mapLateralCandidateRow);
+  },
+
+  getLateralCandidate: async (id: string): Promise<LateralCandidate | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.lateralCandidates)
+      .where(and(eq(schema.lateralCandidates.id, id), isNull(schema.lateralCandidates.deletedAt)))
+      .limit(1);
+    return row ? db.mapLateralCandidateRow(row) : null;
+  },
+
+  addLateralCandidate: async (params: {
+    name: string;
+    email: string;
+    phone?: string;
+    positionTitle: string;
+    experienceYears?: number;
+    currentCompany?: string;
+    currentCtc?: string;
+    expectedCtc?: string;
+    noticePeriodDays?: number;
+    source?: string;
+  }): Promise<LateralCandidate> => {
+    const id = crypto.randomUUID();
+    await dbClient.insert(schema.lateralCandidates).values({
+      id,
+      name: params.name,
+      email: params.email,
+      phone: params.phone,
+      positionTitle: params.positionTitle,
+      experienceYears: params.experienceYears,
+      currentCompany: params.currentCompany,
+      currentCtc: params.currentCtc,
+      expectedCtc: params.expectedCtc,
+      noticePeriodDays: params.noticePeriodDays,
+      source: params.source,
+      status: 'NEW',
+      createdAt: new Date(),
+    });
+    const created = await db.getLateralCandidate(id);
+    if (!created) throw new Error('Failed to retrieve created lateral candidate');
+    return created;
+  },
+
+  updateLateralCandidate: async (id: string, params: Partial<{
+    name: string;
+    email: string;
+    phone: string;
+    positionTitle: string;
+    experienceYears: number;
+    currentCompany: string;
+    currentCtc: string;
+    expectedCtc: string;
+    noticePeriodDays: number;
+    source: string;
+    status: LateralCandidate['status'];
+  }>): Promise<boolean> => {
+    await dbClient.update(schema.lateralCandidates).set(params as any).where(eq(schema.lateralCandidates.id, id));
+    return true;
+  },
+
+  deleteLateralCandidate: async (id: string): Promise<boolean> => {
+    await dbClient.update(schema.lateralCandidates).set({ deletedAt: new Date() }).where(eq(schema.lateralCandidates.id, id));
+    return true;
+  },
+
+  setLateralCandidateResume: async (id: string, params: { fileKey: string; sha256: string }): Promise<boolean> => {
+    await dbClient
+      .update(schema.lateralCandidates)
+      .set({ resumeFileKey: params.fileKey, resumeSha256: params.sha256, resumeUploadedAt: new Date() })
+      .where(eq(schema.lateralCandidates.id, id));
+    return true;
+  },
+
+  // Links a newly scheduled interview to the lateral candidate and advances their
+  // pipeline status out of NEW/SCREENING, without clobbering a status the
+  // recruiter already moved forward manually (e.g. OFFERED).
+  setLateralCandidateInterview: async (id: string, interviewId: string): Promise<boolean> => {
+    const candidate = await db.getLateralCandidate(id);
+    if (!candidate) return false;
+    const nextStatus = (candidate.status === 'NEW' || candidate.status === 'SCREENING') ? 'INTERVIEWING' : candidate.status;
+    await dbClient
+      .update(schema.lateralCandidates)
+      .set({ mappedInterviewId: interviewId, status: nextStatus })
+      .where(eq(schema.lateralCandidates.id, id));
+    return true;
+  },
+
+  // All interview rounds tied to a lateral candidate by email (same denormalized-email
+  // matching pattern already used for campus candidates in CandidatesTab).
+  getInterviewsForEmail: async (email: string): Promise<Interview[]> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const all = await db.getInterviews();
+    return all.filter((i) => i.candidateEmail.toLowerCase() === normalizedEmail);
   },
 };

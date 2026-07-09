@@ -16,7 +16,8 @@ import {
   Calendar,
   AlertCircle,
   SlidersHorizontal,
-  X
+  X,
+  FileText
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -96,8 +97,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
   // Primary tab state (Panels vs Interviews & Feedback)
   const [activePrimaryTab, setActivePrimaryTab] = useState<'PANELS' | 'FEEDBACK'>('PANELS');
 
-  // Round Tab state for filtering L1 vs L2 candidates
-  const [activeRoundTab, setActiveRoundTab] = useState<'ALL' | 'L1' | 'L2'>('ALL');
+  // Round Tab state for filtering L1 vs L2 vs Lateral candidates
+  const [activeRoundTab, setActiveRoundTab] = useState<'ALL' | 'L1' | 'L2' | 'LATERAL'>('ALL');
 
   const fetchL1FeedbackForCandidate = async (candidateEmail: string, panelId: string) => {
     if (l1FeedbacksForCandidate[panelId]) return;
@@ -129,6 +130,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
   const [l1Ratings, setL1Ratings] = useState<Record<string, { coding: number; communication: number; fundamentals: number; codingNotes: string; commNotes: string; fundNotes: string; comments: string }>>({});
   const [l2Ratings, setL2Ratings] = useState<Record<string, { design: number; depth: number; leadership: number; fit: number; designNotes: string; depthNotes: string; leadNotes: string; fitNotes: string; comments: string }>>({});
   const [genRatings, setGenRatings] = useState<Record<string, { technical: number; communication: number; collaboration: number; techNotes: string; commNotes: string; collabNotes: string; comments: string }>>({});
+  const [lateralRatings, setLateralRatings] = useState<Record<string, { technical: number; communication: number; collaboration: number; techNotes: string; commNotes: string; collabNotes: string; comments: string }>>({});
 
   const isL1 = panelistRoles.includes('L1');
   const isL2 = panelistRoles.includes('L2');
@@ -147,7 +149,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
   const getRoleBadgeStyle = (role: string) => {
     const isL1Role = role.toLowerCase().includes('l1');
     const isL2Role = role.toLowerCase().includes('l2');
-    
+    const isLateralRole = role.toLowerCase().includes('lateral');
+
     if (isL1Role) {
       return {
         background: 'var(--badge-l1-bg)',
@@ -161,6 +164,13 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
         border: '1px solid var(--badge-l2-border)',
         color: 'var(--badge-l2-text)',
         label: 'L2 Round'
+      };
+    } else if (isLateralRole) {
+      return {
+        background: 'rgba(245, 158, 11, 0.08)',
+        border: '1px solid rgba(245, 158, 11, 0.25)',
+        color: '#f59e0b',
+        label: 'Lateral Hiring'
       };
     }
     return {
@@ -198,6 +208,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       result = result.filter((i) => i.role.toLowerCase().includes('l1'));
     } else if (activeRoundTab === 'L2') {
       result = result.filter((i) => i.role.toLowerCase().includes('l2'));
+    } else if (activeRoundTab === 'LATERAL') {
+      result = result.filter((i) => i.role.toLowerCase().includes('lateral'));
     }
 
     return result.sort((a, b) => {
@@ -254,6 +266,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       result = result.filter((req) => req.interview.role.toLowerCase().includes('l1'));
     } else if (activeRoundTab === 'L2') {
       result = result.filter((req) => req.interview.role.toLowerCase().includes('l2'));
+    } else if (activeRoundTab === 'LATERAL') {
+      result = result.filter((req) => req.interview.role.toLowerCase().includes('lateral'));
     }
 
     return result.sort((a, b) => {
@@ -318,24 +332,28 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     // Split by round for requests
     const l1Requests = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l1')).length;
     const l2Requests = tempReqs.filter(r => r.interview.role.toLowerCase().includes('l2')).length;
-    const generalRequests = totalRequests - l1Requests - l2Requests;
+    const lateralRequests = tempReqs.filter(r => r.interview.role.toLowerCase().includes('lateral')).length;
+    const generalRequests = totalRequests - l1Requests - l2Requests - lateralRequests;
 
     // Split by round for interviews (feedback)
     const l1Feedback = tempInterviews.filter(i => i.role.toLowerCase().includes('l1')).length;
     const l2Feedback = tempInterviews.filter(i => i.role.toLowerCase().includes('l2')).length;
-    const generalFeedback = totalFeedback - l1Feedback - l2Feedback;
+    const lateralFeedback = tempInterviews.filter(i => i.role.toLowerCase().includes('lateral')).length;
+    const generalFeedback = totalFeedback - l1Feedback - l2Feedback - lateralFeedback;
 
     return {
       requests: {
         total: totalRequests,
         l1: l1Requests,
         l2: l2Requests,
+        lateral: lateralRequests,
         general: generalRequests
       },
       feedback: {
         total: totalFeedback,
         l1: l1Feedback,
         l2: l2Feedback,
+        lateral: lateralFeedback,
         general: generalFeedback
       }
     };
@@ -365,6 +383,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     const roleLower = interview.role.toLowerCase();
     const isL1Role = roleLower.includes('l1');
     const isL2Role = roleLower.includes('l2');
+    const isLateralRole = roleLower.includes('lateral');
 
     if (isL1Role && parsed && parsed.scores) {
       setL1Ratings((prev) => ({
@@ -391,6 +410,19 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
           depthNotes: parsed.notes?.technicalDepthNotes || '',
           leadNotes: parsed.notes?.leadershipNotes || '',
           fitNotes: parsed.notes?.culturalFitNotes || '',
+          comments: parsed.comments || '',
+        },
+      }));
+    } else if (isLateralRole && parsed && parsed.scores) {
+      setLateralRatings((prev) => ({
+        ...prev,
+        [interview.panelId]: {
+          technical: parsed.scores.technical || 0,
+          communication: parsed.scores.communication || 0,
+          collaboration: parsed.scores.collaboration || 0,
+          techNotes: parsed.notes?.technicalNotes || '',
+          commNotes: parsed.notes?.communicationNotes || '',
+          collabNotes: parsed.notes?.collaborationNotes || '',
           comments: parsed.comments || '',
         },
       }));
@@ -448,6 +480,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
     const roleLower = interview.role.toLowerCase();
     const isL1Role = roleLower.includes('l1');
     const isL2Role = roleLower.includes('l2');
+    const isLateralRole = roleLower.includes('lateral');
 
     setSubmittingFeedback((prev) => ({ ...prev, [interview.panelId]: true }));
     setFeedbackError((prev) => ({ ...prev, [interview.panelId]: null }));
@@ -514,6 +547,35 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             technicalDepthNotes: current.depthNotes,
             leadershipNotes: current.leadNotes,
             culturalFitNotes: current.fitNotes,
+          },
+          comments: current.comments,
+        });
+      } else if (isLateralRole) {
+        const current = lateralRatings[interview.panelId] || {
+          technical: 0,
+          communication: 0,
+          collaboration: 0,
+          techNotes: '',
+          commNotes: '',
+          collabNotes: '',
+          comments: '',
+        };
+
+        if (current.technical === 0 || current.communication === 0 || current.collaboration === 0) {
+          throw new Error('Please provide ratings for all evaluation metrics.');
+        }
+
+        feedbackString = JSON.stringify({
+          type: 'LATERAL',
+          scores: {
+            technical: current.technical,
+            communication: current.communication,
+            collaboration: current.collaboration,
+          },
+          notes: {
+            technicalNotes: current.techNotes,
+            communicationNotes: current.commNotes,
+            collaborationNotes: current.collabNotes,
           },
           comments: current.comments,
         });
@@ -945,6 +1007,36 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                 {tabCounts.requests.l2}
               </span>
             </button>
+
+            <button
+              onClick={() => setActiveRoundTab('LATERAL')}
+              style={{
+                padding: '0.45rem 1rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: activeRoundTab === 'LATERAL' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                color: activeRoundTab === 'LATERAL' ? '#f59e0b' : 'var(--text-muted)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'var(--transition-fast)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <span>Lateral Hiring</span>
+              <span style={{
+                fontSize: '0.72rem',
+                background: activeRoundTab === 'LATERAL' ? '#f59e0b' : 'var(--border-glass)',
+                color: activeRoundTab === 'LATERAL' ? '#ffffff' : 'var(--text-muted)',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                fontWeight: 700
+              }}>
+                {tabCounts.requests.lateral}
+              </span>
+            </button>
           </div>
 
           {/* Pending Action / Slot Requests Section */}
@@ -1171,6 +1263,36 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                 {tabCounts.feedback.l2}
               </span>
             </button>
+
+            <button
+              onClick={() => setActiveRoundTab('LATERAL')}
+              style={{
+                padding: '0.45rem 1rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: activeRoundTab === 'LATERAL' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                color: activeRoundTab === 'LATERAL' ? '#f59e0b' : 'var(--text-muted)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'var(--transition-fast)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <span>Lateral Hiring</span>
+              <span style={{
+                fontSize: '0.72rem',
+                background: activeRoundTab === 'LATERAL' ? '#f59e0b' : 'var(--border-glass)',
+                color: activeRoundTab === 'LATERAL' ? '#ffffff' : 'var(--text-muted)',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                fontWeight: 700
+              }}>
+                {tabCounts.feedback.lateral}
+              </span>
+            </button>
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
@@ -1308,6 +1430,28 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
 
                     {interview.candidateId && (
                       <AiCopilotPanel interviewId={interview.interviewId} defaultRoleTitle={interview.role} />
+                    )}
+
+                    {interview.role.toLowerCase().includes('lateral') && (
+                      <div style={{ margin: '0.5rem 0' }}>
+                        <a
+                          href={`/api/interviews/${interview.interviewId}/resume`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            color: '#f59e0b',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <FileText size={13} />
+                          <span>View Resume</span>
+                        </a>
+                      </div>
                     )}
 
                     {/* Feedback section */}
@@ -1609,6 +1753,32 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                                   </div>
                                 )}
 
+                                {parsed.type === 'LATERAL' && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 600 }}>Technical Depth:</span>
+                                        {renderStarsStatic(parsed.scores?.technical || 0)}
+                                      </div>
+                                      {parsed.notes?.technicalNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.technicalNotes}</p>}
+                                    </div>
+                                    <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.25rem' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 600 }}>Communication:</span>
+                                        {renderStarsStatic(parsed.scores?.communication || 0)}
+                                      </div>
+                                      {parsed.notes?.communicationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.communicationNotes}</p>}
+                                    </div>
+                                    <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.25rem' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 600 }}>Collaboration &amp; Fit:</span>
+                                        {renderStarsStatic(parsed.scores?.collaboration || 0)}
+                                      </div>
+                                      {parsed.notes?.collaborationNotes && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0', fontSize: '0.72rem', lineHeight: 1.35 }}>{parsed.notes.collaborationNotes}</p>}
+                                    </div>
+                                  </div>
+                                )}
+
                                 {/* Overall summary notes */}
                                 {parsed.comments && (
                                   <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
@@ -1637,6 +1807,133 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                           const roleLower = interview.role.toLowerCase();
                           const isL1Role = roleLower.includes('l1');
                           const isL2Role = roleLower.includes('l2');
+                          const isLateralRole = roleLower.includes('lateral');
+
+                          if (isLateralRole) {
+                            const current = lateralRatings[interview.panelId] || {
+                              technical: 0,
+                              communication: 0,
+                              collaboration: 0,
+                              techNotes: '',
+                              commNotes: '',
+                              collabNotes: '',
+                              comments: '',
+                            };
+
+                            const updateLateral = (field: keyof typeof current, val: any) => {
+                              setLateralRatings((prev) => ({
+                                ...prev,
+                                [interview.panelId]: { ...(prev[interview.panelId] || current), [field]: val },
+                              }));
+                            };
+
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: '0.25rem' }}>
+                                  Evaluating Lateral Hiring Interview Metrics:
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                  <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-glass)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                      <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Technical Depth *</span>
+                                      {renderStarRating(current.technical, (r) => updateLateral('technical', r), isSubmitting)}
+                                    </div>
+                                    <textarea
+                                      className="form-input"
+                                      rows={2}
+                                      placeholder="Technical skill assessment, technical expertise, depth for the role..."
+                                      style={{ fontSize: '0.78rem', resize: 'vertical' }}
+                                      value={current.techNotes}
+                                      onChange={(update) => updateLateral('techNotes', update.target.value)}
+                                      disabled={isSubmitting}
+                                    />
+                                  </div>
+
+                                  <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-glass)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                      <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Communication *</span>
+                                      {renderStarRating(current.communication, (r) => updateLateral('communication', r), isSubmitting)}
+                                    </div>
+                                    <textarea
+                                      className="form-input"
+                                      rows={2}
+                                      placeholder="Communication skills, explanations structure, discussion..."
+                                      style={{ fontSize: '0.78rem', resize: 'vertical' }}
+                                      value={current.commNotes}
+                                      onChange={(update) => updateLateral('commNotes', update.target.value)}
+                                      disabled={isSubmitting}
+                                    />
+                                  </div>
+
+                                  <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-glass)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                      <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Collaboration &amp; Fit *</span>
+                                      {renderStarRating(current.collaboration, (r) => updateLateral('collaboration', r), isSubmitting)}
+                                    </div>
+                                    <textarea
+                                      className="form-input"
+                                      rows={2}
+                                      placeholder="Team fit, ownership, stakeholder collaboration..."
+                                      style={{ fontSize: '0.78rem', resize: 'vertical' }}
+                                      value={current.collabNotes}
+                                      onChange={(update) => updateLateral('collabNotes', update.target.value)}
+                                      disabled={isSubmitting}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                  <label style={{ fontSize: '0.8rem', fontWeight: 600 }}>Overall Comments / Summary Recommendation</label>
+                                  <textarea
+                                    className="form-input"
+                                    rows={2}
+                                    placeholder="Summary comments of performance..."
+                                    style={{ fontSize: '0.8rem', resize: 'vertical' }}
+                                    value={current.comments}
+                                    onChange={(update) => updateLateral('comments', update.target.value)}
+                                    disabled={isSubmitting}
+                                  />
+                                </div>
+
+                                {feedbackError[interview.panelId] && (
+                                  <p style={{ color: '#ef4444', fontSize: '0.78rem' }}>
+                                    {feedbackError[interview.panelId]}
+                                  </p>
+                                )}
+
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                  <button
+                                    onClick={() => handleFeedbackSubmit(interview, 'PASSED')}
+                                    disabled={isSubmitting}
+                                    className="btn btn-sm"
+                                    style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}
+                                  >
+                                    {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                                    Submit &amp; Pass
+                                  </button>
+                                  <button
+                                    onClick={() => handleFeedbackSubmit(interview, 'REJECTED')}
+                                    disabled={isSubmitting}
+                                    className="btn btn-sm"
+                                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}
+                                  >
+                                    {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
+                                    Submit &amp; Reject
+                                  </button>
+                                  {isEditing[interview.panelId] && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsEditing((prev) => ({ ...prev, [interview.panelId]: false }))}
+                                      className="btn btn-secondary btn-sm"
+                                    >
+                                      Cancel Edit
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
 
                           if (isL1Role) {
                             const current = l1Ratings[interview.panelId] || {
