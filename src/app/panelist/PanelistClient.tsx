@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { PanelistInterview, Interview, InterviewPanel, Drive } from '@/lib/db';
 import AvailabilityClient from '../availability/[token]/AvailabilityClient';
+import AiCopilotPanel from './components/AiCopilotPanel';
 import {
   Video,
   CheckCircle,
@@ -1304,6 +1305,10 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
                         </a>
                       )}
                     </div>
+
+                    {interview.candidateId && (
+                      <AiCopilotPanel interviewId={interview.interviewId} defaultRoleTitle={interview.role} />
+                    )}
 
                     {/* Feedback section */}
                     <div>

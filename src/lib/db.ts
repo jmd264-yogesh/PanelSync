@@ -60,7 +60,27 @@ export interface UploadedCandidate {
   outcomeStatus?: string;
   college: string;        // Required field
   collegeDrive: string;   // Required field
+  resumeFileKey?: string;
+  resumeSha256?: string;
+  resumeUploadedAt?: string;
   createdAt: string;
+}
+
+export interface AiRun {
+  id: string;
+  interviewId: string;
+  candidateId: string | null;
+  triggeredByEmail: string;
+  status: 'QUEUED' | 'PARSING' | 'EXTRACTING' | 'GENERATING' | 'COMPLETED' | 'FAILED';
+  criteria: Record<string, any> | null;
+  resumeDigest: Record<string, any> | null;
+  questions: Record<string, any> | null;
+  model: string | null;
+  promptVersion: string | null;
+  tokenUsage: Record<string, any> | null;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
 }
 
 export interface College {
@@ -531,12 +551,17 @@ export const db = {
       outcomeStatus: row.outcomeStatus || undefined,
       college: row.college || '',
       collegeDrive: row.collegeDrive || '',
+      resumeFileKey: row.resumeFileKey || undefined,
+      resumeSha256: row.resumeSha256 || undefined,
+      resumeUploadedAt: row.resumeUploadedAt ? row.resumeUploadedAt.toISOString() : undefined,
       createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     }));
   },
 
-  // Add uploaded candidates
-  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string; collegeDrive: string }[]): Promise<boolean> => {
+  // Add uploaded candidates. Returns the created rows' id/email so callers can
+  // attach follow-up data (e.g. a bulk-uploaded resume link) to the right candidate.
+  addUploadedCandidates: async (candidates: { name: string; email: string; preferredDate: string; college: string; collegeDrive: string }[]): Promise<{ id: string; email: string }[]> => {
+    const created: { id: string; email: string }[] = [];
     for (const c of candidates) {
       const id = crypto.randomUUID();
       await dbClient.insert(schema.uploadedCandidates).values({
@@ -548,8 +573,9 @@ export const db = {
         college: c.college,
         collegeDrive: c.collegeDrive,
       });
+      created.push({ id, email: c.email });
     }
-    return true;
+    return created;
   },
 
   // Update candidate date
@@ -1275,5 +1301,148 @@ export const db = {
 
   deleteDrive: async (id: string): Promise<void> => {
     await dbClient.delete(schema.drives).where(eq(schema.drives.id, id));
+  },
+
+  // Authorization check reused by every AI-copilot route to prevent an IDOR
+  // where a panelist could view/generate against an interview they aren't on.
+  isPanelistAssignedToInterview: async (email: string, interviewId: string): Promise<boolean> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.interviewPanels)
+      .where(and(eq(schema.interviewPanels.interviewId, interviewId), eq(schema.interviewPanels.email, email.trim().toLowerCase())))
+      .limit(1);
+    return !!row;
+  },
+
+  // --- AI Interview Copilot helpers ---
+
+  setCandidateResume: async (candidateId: string, params: { fileKey: string; sha256: string }): Promise<boolean> => {
+    await dbClient
+      .update(schema.uploadedCandidates)
+      .set({
+        resumeFileKey: params.fileKey,
+        resumeSha256: params.sha256,
+        resumeUploadedAt: new Date(),
+      })
+      .where(eq(schema.uploadedCandidates.id, candidateId));
+    return true;
+  },
+
+  // Resolve the candidate mapped to an interview (the closest thing to a Candidate FK this schema has)
+  getCandidateForInterview: async (interviewId: string): Promise<UploadedCandidate | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.uploadedCandidates)
+      .where(and(eq(schema.uploadedCandidates.mappedInterviewId, interviewId), isNull(schema.uploadedCandidates.deletedAt)))
+      .limit(1);
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      status: row.status as 'WAITING' | 'MAPPED',
+      mappedInterviewId: row.mappedInterviewId || undefined,
+      preferredDate: row.preferredDate
+        ? `${row.preferredDate.getFullYear()}-${String(row.preferredDate.getMonth() + 1).padStart(2, '0')}-${String(row.preferredDate.getDate()).padStart(2, '0')}`
+        : '',
+      outcomeStatus: row.outcomeStatus || undefined,
+      college: row.college || '',
+      collegeDrive: row.collegeDrive || '',
+      resumeFileKey: row.resumeFileKey || undefined,
+      resumeSha256: row.resumeSha256 || undefined,
+      resumeUploadedAt: row.resumeUploadedAt ? row.resumeUploadedAt.toISOString() : undefined,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    };
+  },
+
+  mapAiRunRow: (row: typeof schema.aiRuns.$inferSelect): AiRun => ({
+    id: row.id,
+    interviewId: row.interviewId,
+    candidateId: row.candidateId,
+    triggeredByEmail: row.triggeredByEmail,
+    status: row.status as AiRun['status'],
+    criteria: (row.criteria as Record<string, any>) ?? null,
+    resumeDigest: (row.resumeDigest as Record<string, any>) ?? null,
+    questions: (row.questions as Record<string, any>) ?? null,
+    model: row.model,
+    promptVersion: row.promptVersion,
+    tokenUsage: (row.tokenUsage as Record<string, any>) ?? null,
+    error: row.error,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+  }),
+
+  createAiRun: async (params: {
+    interviewId: string;
+    candidateId: string | null;
+    triggeredByEmail: string;
+  }): Promise<AiRun> => {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await dbClient.insert(schema.aiRuns).values({
+      id,
+      interviewId: params.interviewId,
+      candidateId: params.candidateId,
+      triggeredByEmail: params.triggeredByEmail,
+      status: 'QUEUED',
+      createdAt: now,
+    });
+    const [row] = await dbClient.select().from(schema.aiRuns).where(eq(schema.aiRuns.id, id)).limit(1);
+    return db.mapAiRunRow(row);
+  },
+
+  updateAiRun: async (id: string, patch: {
+    status?: AiRun['status'];
+    criteria?: Record<string, any>;
+    resumeDigest?: Record<string, any>;
+    questions?: Record<string, any>;
+    model?: string;
+    promptVersion?: string;
+    tokenUsage?: Record<string, any>;
+    error?: string | null;
+    completedAt?: Date;
+  }): Promise<AiRun> => {
+    await dbClient.update(schema.aiRuns).set(patch as any).where(eq(schema.aiRuns.id, id));
+    const [row] = await dbClient.select().from(schema.aiRuns).where(eq(schema.aiRuns.id, id)).limit(1);
+    return db.mapAiRunRow(row);
+  },
+
+  getAiRun: async (id: string): Promise<AiRun | null> => {
+    const [row] = await dbClient.select().from(schema.aiRuns).where(eq(schema.aiRuns.id, id)).limit(1);
+    return row ? db.mapAiRunRow(row) : null;
+  },
+
+  getAiRunsForInterview: async (interviewId: string): Promise<AiRun[]> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.aiRuns)
+      .where(eq(schema.aiRuns.interviewId, interviewId))
+      .orderBy(desc(schema.aiRuns.createdAt));
+    return rows.map(db.mapAiRunRow);
+  },
+
+  // Find the most recent completed digest for this candidate whose source resume
+  // hash still matches, so a criteria-only regenerate can skip re-parsing/re-extraction.
+  // The digest JSON carries a `_sourceSha256` tag (set by our own code, not the LLM) for this comparison.
+  getLatestCompletedDigest: async (candidateId: string, resumeSha256: string): Promise<Record<string, any> | null> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.aiRuns)
+      .where(and(eq(schema.aiRuns.candidateId, candidateId), eq(schema.aiRuns.status, 'COMPLETED')))
+      .orderBy(desc(schema.aiRuns.createdAt));
+    const match = rows.find((r) => r.resumeDigest && (r.resumeDigest as any)._sourceSha256 === resumeSha256);
+    return match ? (match.resumeDigest as Record<string, any>) : null;
+  },
+
+  addAuditLog: async (userEmail: string, action: string, entity: string, entityId: string, metadata?: Record<string, any>): Promise<void> => {
+    await dbClient.insert(schema.auditLogs).values({
+      id: crypto.randomUUID(),
+      userEmail: userEmail.trim().toLowerCase(),
+      action,
+      entity,
+      entityId,
+      metadata: metadata ?? null,
+      createdAt: new Date(),
+    });
   },
 };
