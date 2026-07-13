@@ -78,7 +78,7 @@ export interface LateralCandidate {
   expectedCtc?: string;
   noticePeriodDays?: number;
   source?: string;
-  status: 'NEW' | 'SCREENING' | 'INTERVIEWING' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  status: 'NEW' | 'SCREENING' | 'WAITING_FOR_INTERVIEW' | 'INTERVIEW_SCHEDULED' | 'INTERVIEW_COMPLETED' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
   resumeFileKey?: string;
   resumeSha256?: string;
   resumeUploadedAt?: string;

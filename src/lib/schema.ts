@@ -1,170 +1,197 @@
-import { pgTable, varchar, text, integer, timestamp, unique, boolean, jsonb } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  varchar,
+  text,
+  integer,
+  timestamp,
+  unique,
+  boolean,
+  jsonb,
+} from "drizzle-orm/pg-core";
 
 // 1. Sessions Table
-export const sessions = pgTable('sessions', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  accessToken: text('access_token').notNull(),
-  refreshToken: text('refresh_token'),
-  expiresAt: timestamp('expires_at').notNull(),
-  userId: varchar('user_id', { length: 255 }).notNull(),
-  userDisplayName: varchar('user_display_name', { length: 255 }).notNull(),
-  userEmail: varchar('user_email', { length: 255 }).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+export const sessions = pgTable("sessions", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at").notNull(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  userDisplayName: varchar("user_display_name", { length: 255 }).notNull(),
+  userEmail: varchar("user_email", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 2. Interviews Table
-export const interviews = pgTable('interviews', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  candidateName: varchar('candidate_name', { length: 255 }).notNull(),
-  candidateEmail: varchar('candidate_email', { length: 255 }).notNull(),
-  role: varchar('role', { length: 255 }).notNull(),
-  duration: integer('duration').notNull(),
-  startDate: timestamp('start_date').notNull(),
-  endDate: timestamp('end_date').notNull(),
-  status: varchar('status', { length: 50 }).notNull(), // PENDING, COLLECTED, SCHEDULED, CANCELLED
-  teamsMeetingUrl: text('teams_meeting_url'),
-  calendarEventId: varchar('calendar_event_id', { length: 255 }),
-  scheduledSlotStart: timestamp('scheduled_slot_start'),
-  scheduledSlotEnd: timestamp('scheduled_slot_end'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-  deletedAt: timestamp('deleted_at'),
+export const interviews = pgTable("interviews", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  candidateName: varchar("candidate_name", { length: 255 }).notNull(),
+  candidateEmail: varchar("candidate_email", { length: 255 }).notNull(),
+  role: varchar("role", { length: 255 }).notNull(),
+  duration: integer("duration").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  status: varchar("status", { length: 50 }).notNull(), // PENDING, COLLECTED, SCHEDULED, CANCELLED
+  teamsMeetingUrl: text("teams_meeting_url"),
+  calendarEventId: varchar("calendar_event_id", { length: 255 }),
+  scheduledSlotStart: timestamp("scheduled_slot_start"),
+  scheduledSlotEnd: timestamp("scheduled_slot_end"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // 3. Interview Nominated Panels Table
-export const interviewPanels = pgTable('interview_panels', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  interviewId: varchar('interview_id', { length: 255 })
-    .references(() => interviews.id, { onDelete: 'cascade' })
-    .notNull(),
-  userId: varchar('user_id', { length: 255 }).notNull(), // Graph user ID
-  name: varchar('name', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull(),
-  token: varchar('token', { length: 255 }).unique().notNull(), // Link token
-  status: varchar('status', { length: 50 }).notNull(), // PENDING, SUBMITTED
-  submittedAt: timestamp('submitted_at'),
-  feedback: text('feedback'),
-  decision: varchar('decision', { length: 50 }), // PASSED | REJECTED
-  feedbackReminderSent: boolean('feedback_reminder_sent').default(false).notNull(),
-}, (t) => [
-  unique('unique_interview_email').on(t.interviewId, t.email)
-]);
+export const interviewPanels = pgTable(
+  "interview_panels",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    interviewId: varchar("interview_id", { length: 255 })
+      .references(() => interviews.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: varchar("user_id", { length: 255 }).notNull(), // Graph user ID
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    token: varchar("token", { length: 255 }).unique().notNull(), // Link token
+    status: varchar("status", { length: 50 }).notNull(), // PENDING, SUBMITTED
+    submittedAt: timestamp("submitted_at"),
+    feedback: text("feedback"),
+    decision: varchar("decision", { length: 50 }), // PASSED | REJECTED
+    feedbackReminderSent: boolean("feedback_reminder_sent")
+      .default(false)
+      .notNull(),
+  },
+  (t) => [unique("unique_interview_email").on(t.interviewId, t.email)],
+);
 
 // 4. Panel Available Slots Table
-export const panelAvailabilities = pgTable('panel_availabilities', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  panelId: varchar('panel_id', { length: 255 })
-    .references(() => interviewPanels.id, { onDelete: 'cascade' })
+export const panelAvailabilities = pgTable("panel_availabilities", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  panelId: varchar("panel_id", { length: 255 })
+    .references(() => interviewPanels.id, { onDelete: "cascade" })
     .notNull(),
-  startTime: timestamp('start_time').notNull(),
-  endTime: timestamp('end_time').notNull(),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
 });
 
 // 5. Pre-Approved Panelists Directory
-export const panelists = pgTable('panelists', {
-  id: varchar('id', { length: 255 }).primaryKey(), // Graph User ID
-  displayName: varchar('display_name', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull(),
-  roles: text('roles').array().notNull(), // text[] role designations (e.g. L1, L2)
-  createdAt: timestamp('created_at').defaultNow(),
+export const panelists = pgTable("panelists", {
+  id: varchar("id", { length: 255 }).primaryKey(), // Graph User ID
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  roles: text("roles").array().notNull(), // text[] role designations (e.g. L1, L2)
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 6. Pre-Approved Recruiters
-export const allowedRecruiters = pgTable('allowed_recruiters', {
-  email: varchar('email', { length: 255 }).primaryKey(), // email serves as the unique primary key
-  addedBy: varchar('added_by', { length: 255 }), // email of recruiter who added this recruiter
-  createdAt: timestamp('created_at').defaultNow(),
+export const allowedRecruiters = pgTable("allowed_recruiters", {
+  email: varchar("email", { length: 255 }).primaryKey(), // email serves as the unique primary key
+  addedBy: varchar("added_by", { length: 255 }), // email of recruiter who added this recruiter
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 7. Bulk Uploaded Candidates
-export const uploadedCandidates = pgTable('uploaded_candidates', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  name: varchar('name', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull(),
-  status: varchar('status', { length: 50 }).notNull(), // WAITING, MAPPED
-  mappedInterviewId: varchar('mapped_interview_id', { length: 255 })
-    .references(() => interviews.id, { onDelete: 'cascade' }),
-  preferredDate: timestamp('preferred_date'),
-  outcomeStatus: varchar('outcome_status', { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
-  college: varchar('college', { length: 255 }),
-  collegeDrive: varchar('college_drive', { length: 255 }),
-  resumeFileKey: text('resume_file_key'),
-  resumeSha256: varchar('resume_sha256', { length: 64 }),
-  resumeUploadedAt: timestamp('resume_uploaded_at'),
-  createdAt: timestamp('created_at').defaultNow(),
-  deletedAt: timestamp('deleted_at'),
+export const uploadedCandidates = pgTable("uploaded_candidates", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull(), // WAITING, MAPPED
+  mappedInterviewId: varchar("mapped_interview_id", { length: 255 }).references(
+    () => interviews.id,
+    { onDelete: "cascade" },
+  ),
+  preferredDate: timestamp("preferred_date"),
+  outcomeStatus: varchar("outcome_status", { length: 50 }), // PENDING | PASSED_L1 | PASSED_L2 | SELECTED | REJECTED
+  college: varchar("college", { length: 255 }),
+  collegeDrive: varchar("college_drive", { length: 255 }),
+  resumeFileKey: text("resume_file_key"),
+  resumeSha256: varchar("resume_sha256", { length: 64 }),
+  resumeUploadedAt: timestamp("resume_uploaded_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // 8. Colleges Table
-export const colleges = pgTable('colleges', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  name: varchar('name', { length: 255 }).notNull().unique(),
-  createdAt: timestamp('created_at').defaultNow(),
+export const colleges = pgTable("colleges", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 9. Drives Table
-export const drives = pgTable('drives', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  collegeName: varchar('college_name', { length: 255 }).notNull(),
-  startDate: varchar('start_date', { length: 255 }).notNull(),
-  endDate: varchar('end_date', { length: 255 }).notNull(),
-  status: varchar('status', { length: 50 }).default('OPEN').notNull(), // OPEN | CLOSED
-  isActive: boolean('is_active').default(false).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+export const drives = pgTable("drives", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  collegeName: varchar("college_name", { length: 255 }).notNull(),
+  startDate: varchar("start_date", { length: 255 }).notNull(),
+  endDate: varchar("end_date", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }).default("OPEN").notNull(), // OPEN | CLOSED
+  isActive: boolean("is_active").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 10. AI Interview Copilot Runs (one immutable row per "Generate" click)
-export const aiRuns = pgTable('ai_runs', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  interviewId: varchar('interview_id', { length: 255 })
-    .references(() => interviews.id, { onDelete: 'cascade' })
+export const aiRuns = pgTable("ai_runs", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  interviewId: varchar("interview_id", { length: 255 })
+    .references(() => interviews.id, { onDelete: "cascade" })
     .notNull(),
-  candidateId: varchar('candidate_id', { length: 255 })
-    .references(() => uploadedCandidates.id, { onDelete: 'set null' }),
-  triggeredByEmail: varchar('triggered_by_email', { length: 255 }).notNull(),
-  status: varchar('status', { length: 50 }).notNull(), // QUEUED|PARSING|EXTRACTING|GENERATING|COMPLETED|FAILED
-  criteria: jsonb('criteria'),
-  resumeDigest: jsonb('resume_digest'),
-  questions: jsonb('questions'),
-  model: varchar('model', { length: 100 }),
-  promptVersion: varchar('prompt_version', { length: 20 }),
-  tokenUsage: jsonb('token_usage'),
-  error: text('error'),
-  createdAt: timestamp('created_at').defaultNow(),
-  completedAt: timestamp('completed_at'),
+  candidateId: varchar("candidate_id", { length: 255 }).references(
+    () => uploadedCandidates.id,
+    { onDelete: "set null" },
+  ),
+  triggeredByEmail: varchar("triggered_by_email", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull(), // QUEUED|PARSING|EXTRACTING|GENERATING|COMPLETED|FAILED
+  criteria: jsonb("criteria"),
+  resumeDigest: jsonb("resume_digest"),
+  questions: jsonb("questions"),
+  model: varchar("model", { length: 100 }),
+  promptVersion: varchar("prompt_version", { length: 20 }),
+  tokenUsage: jsonb("token_usage"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
 });
 
 // 11. Audit Log
-export const auditLogs = pgTable('audit_logs', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  userEmail: varchar('user_email', { length: 255 }).notNull(),
-  action: varchar('action', { length: 100 }).notNull(),
-  entity: varchar('entity', { length: 100 }).notNull(),
-  entityId: varchar('entity_id', { length: 255 }).notNull(),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at').defaultNow(),
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  userEmail: varchar("user_email", { length: 255 }).notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  entity: varchar("entity", { length: 100 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 12. Lateral Hiring Candidates (independent of the campus college/drive model)
-export const lateralCandidates = pgTable('lateral_candidates', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  name: varchar('name', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull(),
-  phone: varchar('phone', { length: 50 }),
-  positionTitle: varchar('position_title', { length: 255 }).notNull(),
-  experienceYears: integer('experience_years'),
-  currentCompany: varchar('current_company', { length: 255 }),
-  currentCtc: varchar('current_ctc', { length: 100 }),
-  expectedCtc: varchar('expected_ctc', { length: 100 }),
-  noticePeriodDays: integer('notice_period_days'),
-  source: varchar('source', { length: 100 }), // Referral | LinkedIn | Naukri | Other
-  status: varchar('status', { length: 50 }).default('NEW').notNull(), // NEW|SCREENING|INTERVIEWING|OFFERED|HIRED|REJECTED|WITHDRAWN
-  resumeFileKey: text('resume_file_key'),
-  resumeSha256: varchar('resume_sha256', { length: 64 }),
-  resumeUploadedAt: timestamp('resume_uploaded_at'),
-  mappedInterviewId: varchar('mapped_interview_id', { length: 255 })
-    .references(() => interviews.id, { onDelete: 'set null' }),
-  createdAt: timestamp('created_at').defaultNow(),
-  deletedAt: timestamp('deleted_at'),
-});
+export const lateralCandidates = pgTable("lateral_candidates", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  positionTitle: varchar("position_title", { length: 255 }).notNull(),
+  experienceYears: integer("experience_years"),
+  currentCompany: varchar("current_company", { length: 255 }),
+  currentCtc: varchar("current_ctc", { length: 100 }),
+  expectedCtc: varchar("expected_ctc", { length: 100 }),
+  noticePeriodDays: integer("notice_period_days"),
+  source: varchar("source", { length: 100 }), // Referral | LinkedIn | Naukri | Other
+  status: varchar("status", { length: 50 }).default("NEW").notNull(), 
 
+  // NEW
+  // WAITING_FOR_INTERVIEW
+  // INTERVIEW_SCHEDULED
+  // INTERVIEW_COMPLETED
+  // OFFERED
+  // HIRED
+  // REJECTED
+  // WITHDRAWN
+  resumeFileKey: text("resume_file_key"),
+  resumeSha256: varchar("resume_sha256", { length: 64 }),
+  resumeUploadedAt: timestamp("resume_uploaded_at"),
+  mappedInterviewId: varchar("mapped_interview_id", { length: 255 }).references(
+    () => interviews.id,
+    { onDelete: "set null" },
+  ),
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});

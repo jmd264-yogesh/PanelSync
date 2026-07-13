@@ -829,7 +829,8 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             <span>Clear Filters</span>
           </button>
         )}
-      </div>      {/* Primary Tab Switcher */}
+      </div>
+      {/* Primary Tab Switcher */}
       <div style={{
         display: 'flex',
         borderBottom: '1px solid var(--border-glass)',
