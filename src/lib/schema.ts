@@ -212,6 +212,8 @@ export const recalibrateSessions = pgTable('recalibrate_sessions', {
   notes: text('notes'),
   timerStartedAt: timestamp('timer_started_at'),
   timerEndedAt: timestamp('timer_ended_at'),
+  submittedAt: timestamp('submitted_at'), // set once the panelist submits — recruiters can only see submitted reports
+  submittedBy: varchar('submitted_by', { length: 255 }), // panelist email
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

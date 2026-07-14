@@ -9,12 +9,14 @@ import {
   X,
   CalendarPlus,
   Search,
+  ClipboardCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LateralCandidate, Interview, Panelist } from "@/lib/db";
 import { GraphUser } from "@/lib/graph";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
+import RecalibrateReportModal from './RecalibrateReportModal';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -97,6 +99,7 @@ export default function LateralHiringTab({
   todayStr,
 }: LateralHiringTabProps) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [viewingRecalibrateFor, setViewingRecalibrateFor] = useState<LateralCandidate | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -676,7 +679,27 @@ export default function LateralHiringTab({
                   <CalendarPlus size={13} />
                   Schedule
                 </button>
-                
+
+                {candidate.mappedInterviewId && (
+                  <button
+                    onClick={() => setViewingRecalibrateFor(candidate)}
+                    className="row-action-button"
+                    style={{
+                      height: "30px",
+                      background: "rgba(168,85,247,0.08)",
+                      border: "1px solid rgba(168,85,247,0.3)",
+                      color: "#a855f7",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                    title="View the panelist's Recalibrate assessment"
+                  >
+                    <ClipboardCheck size={13} />
+                    Recalibrate
+                  </button>
+                )}
+
                 <ConfirmDialog
                   trigger={
                     <button
@@ -1074,6 +1097,13 @@ export default function LateralHiringTab({
             </form>
           </div>
         </div>
+      )}
+
+      {viewingRecalibrateFor && (
+        <RecalibrateReportModal
+          candidateId={viewingRecalibrateFor.id}
+          onClose={() => setViewingRecalibrateFor(null)}
+        />
       )}
     </div>
   );

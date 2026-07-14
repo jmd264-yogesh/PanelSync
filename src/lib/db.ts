@@ -96,6 +96,8 @@ export interface RecalibrateSession {
   notes: string | null;
   timerStartedAt: string | null;
   timerEndedAt: string | null;
+  submittedAt: string | null;
+  submittedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1640,9 +1642,22 @@ export const db = {
     notes: row.notes,
     timerStartedAt: row.timerStartedAt ? row.timerStartedAt.toISOString() : null,
     timerEndedAt: row.timerEndedAt ? row.timerEndedAt.toISOString() : null,
+    submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+    submittedBy: row.submittedBy ?? null,
     createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: row.updatedAt ? row.updatedAt.toISOString() : new Date().toISOString(),
   }),
+
+  // Read-only lookup (no auto-create) — used by the recruiter-facing report view so an
+  // unopened Recalibrate tab doesn't spuriously create a session row.
+  getRecalibrateSession: async (interviewId: string): Promise<RecalibrateSession | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.recalibrateSessions)
+      .where(eq(schema.recalibrateSessions.interviewId, interviewId))
+      .limit(1);
+    return row ? db.mapRecalibrateSessionRow(row) : null;
+  },
 
   getOrCreateRecalibrateSession: async (interviewId: string): Promise<RecalibrateSession> => {
     const [existing] = await dbClient
@@ -1677,6 +1692,8 @@ export const db = {
     notes: string | null;
     timerStartedAt: Date | null;
     timerEndedAt: Date | null;
+    submittedAt: Date | null;
+    submittedBy: string | null;
   }>): Promise<RecalibrateSession> => {
     await db.getOrCreateRecalibrateSession(interviewId); // ensure a row exists first
     await dbClient
