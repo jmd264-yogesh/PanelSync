@@ -166,21 +166,21 @@ export const db = {
   // Get all interviews sorted by newest
   getInterviews: async (): Promise<Interview[]> => {
     const interviewsRes = await dbClient.select().from(schema.interviews).where(isNull(schema.interviews.deletedAt));
-    
+
     const result: Interview[] = [];
     for (const intv of interviewsRes) {
       const panelsRes = await dbClient
         .select()
         .from(schema.interviewPanels)
         .where(eq(schema.interviewPanels.interviewId, intv.id));
-        
+
       const panels: InterviewPanel[] = [];
       for (const p of panelsRes) {
         const avRes = await dbClient
           .select()
           .from(schema.panelAvailabilities)
           .where(eq(schema.panelAvailabilities.panelId, p.id));
-          
+
         panels.push({
           id: p.id,
           interviewId: p.interviewId,
@@ -200,7 +200,7 @@ export const db = {
           })),
         });
       }
-      
+
       result.push({
         id: intv.id,
         candidateName: intv.candidateName,
@@ -219,7 +219,7 @@ export const db = {
         panels,
       });
     }
-    
+
     return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
@@ -227,19 +227,19 @@ export const db = {
   getInterview: async (id: string): Promise<Interview | null> => {
     const [intv] = await dbClient.select().from(schema.interviews).where(and(eq(schema.interviews.id, id), isNull(schema.interviews.deletedAt))).limit(1);
     if (!intv) return null;
-    
+
     const panelsRes = await dbClient
       .select()
       .from(schema.interviewPanels)
       .where(eq(schema.interviewPanels.interviewId, intv.id));
-      
+
     const panels: InterviewPanel[] = [];
     for (const p of panelsRes) {
       const avRes = await dbClient
         .select()
         .from(schema.panelAvailabilities)
         .where(eq(schema.panelAvailabilities.panelId, p.id));
-        
+
       panels.push({
         id: p.id,
         interviewId: p.interviewId,
@@ -259,7 +259,7 @@ export const db = {
         })),
       });
     }
-    
+
     return {
       id: intv.id,
       candidateName: intv.candidateName,
@@ -283,13 +283,13 @@ export const db = {
   getInterviewByPanelToken: async (token: string): Promise<{ interview: Interview; panel: InterviewPanel } | null> => {
     const [panelRow] = await dbClient.select().from(schema.interviewPanels).where(eq(schema.interviewPanels.token, token)).limit(1);
     if (!panelRow) return null;
-    
+
     const interview = await db.getInterview(panelRow.interviewId);
     if (!interview) return null;
-    
+
     const activePanel = interview.panels.find((p) => p.id === panelRow.id);
     if (!activePanel) return null;
-    
+
     return { interview, panel: activePanel };
   },
 
@@ -305,7 +305,7 @@ export const db = {
   }): Promise<Interview> => {
     const interviewId = crypto.randomUUID();
     const now = new Date();
-    
+
     await dbClient.insert(schema.interviews).values({
       id: interviewId,
       candidateName: params.candidateName,
@@ -318,7 +318,7 @@ export const db = {
       createdAt: now,
       updatedAt: now,
     });
-    
+
     for (const p of params.panels) {
       const panelId = crypto.randomUUID();
       const token = crypto.randomUUID().replace(/-/g, '');
@@ -332,7 +332,7 @@ export const db = {
         status: 'PENDING',
       });
     }
-    
+
     const created = await db.getInterview(interviewId);
     if (!created) throw new Error('Failed to retrieve created interview');
     return created;
@@ -342,10 +342,10 @@ export const db = {
   submitAvailability: async (panelToken: string, slots: { startTime: string; endTime: string }[]): Promise<boolean> => {
     const [panelRow] = await dbClient.select().from(schema.interviewPanels).where(eq(schema.interviewPanels.token, panelToken)).limit(1);
     if (!panelRow) return false;
-    
+
     // 1. Wipe previous availability slots
     await dbClient.delete(schema.panelAvailabilities).where(eq(schema.panelAvailabilities.panelId, panelRow.id));
-    
+
     // 2. Insert new slots
     for (const slot of slots) {
       const avId = crypto.randomUUID();
@@ -356,14 +356,14 @@ export const db = {
         endTime: new Date(slot.endTime),
       });
     }
-    
+
     // 3. Update panel status to SUBMITTED
     const now = new Date();
     await dbClient
       .update(schema.interviewPanels)
       .set({ status: 'SUBMITTED', submittedAt: now })
       .where(eq(schema.interviewPanels.id, panelRow.id));
-      
+
     // 4. Check if all panels submitted and transition status
     const interview = await db.getInterview(panelRow.interviewId);
     if (interview) {
@@ -408,7 +408,7 @@ export const db = {
         updatedAt: now,
       })
       .where(eq(schema.interviews.id, interviewId));
-      
+
     return true;
   },
 
@@ -472,7 +472,7 @@ export const db = {
   ): Promise<Panelist> => {
     const [existing] = await dbClient.select().from(schema.panelists).where(eq(schema.panelists.id, user.id)).limit(1);
     const now = new Date();
-    
+
     if (existing) {
       await dbClient.update(schema.panelists).set({ roles }).where(eq(schema.panelists.id, user.id));
     } else {
@@ -484,7 +484,7 @@ export const db = {
         createdAt: now,
       });
     }
-    
+
     return {
       id: user.id,
       displayName: user.displayName,
@@ -565,8 +565,8 @@ export const db = {
       email: row.email,
       status: row.status as 'WAITING' | 'MAPPED',
       mappedInterviewId: row.mappedInterviewId || undefined,
-      preferredDate: row.preferredDate 
-        ? `${row.preferredDate.getFullYear()}-${String(row.preferredDate.getMonth() + 1).padStart(2, '0')}-${String(row.preferredDate.getDate()).padStart(2, '0')}` 
+      preferredDate: row.preferredDate
+        ? `${row.preferredDate.getFullYear()}-${String(row.preferredDate.getMonth() + 1).padStart(2, '0')}-${String(row.preferredDate.getDate()).padStart(2, '0')}`
         : '',
       outcomeStatus: row.outcomeStatus || undefined,
       college: row.college || '',
@@ -691,18 +691,18 @@ export const db = {
         .from(schema.uploadedCandidates)
         .where(and(eq(schema.uploadedCandidates.status, 'WAITING'), isNull(schema.uploadedCandidates.deletedAt)))
         .orderBy(schema.uploadedCandidates.createdAt);
-        
+
       if (waitingCandidates.length === 0) {
         return { mappedCount };
       }
-      
+
       // Separate waiting candidates: fresh vs passed L1 (ready for L2)
       const waitingForL1 = waitingCandidates.filter((c) => !c.outcomeStatus || c.outcomeStatus === 'PENDING');
       const waitingForL2 = waitingCandidates.filter((c) => c.outcomeStatus === 'PASSED_L1');
 
       // b. Fetch all ready L1 and L2 interviews
       const allInterviews = await db.getInterviews();
-      
+
       const readyL1Interviews = allInterviews.filter((i) => {
         const isL1 = i.role.toLowerCase().includes('l1');
         const isPending = i.candidateName === 'Pending Assignment';
@@ -722,11 +722,11 @@ export const db = {
       // Avoid circular dependency by importing session and graph dynamically
       const { getAnyValidAccessToken } = await import('./session');
       const { graph } = await import('./graph');
-      
+
       let activeToken = tokenInfo?.token;
       let recruiterEmail = tokenInfo?.email;
       let recruiterUserId = '';
-      
+
       const anyToken = await getAnyValidAccessToken();
       if (anyToken) {
         if (!activeToken) {
@@ -735,9 +735,9 @@ export const db = {
         }
         recruiterUserId = anyToken.userId;
       }
-      
+
       const ccEmails = recruiterEmail ? await db.getRecruiterCCEmails(recruiterEmail) : [];
-      
+
       const mapOne = async (candidate: typeof waitingCandidates[0], interview: typeof allInterviews[0]) => {
         const now = new Date();
 
@@ -781,7 +781,7 @@ export const db = {
           try {
             const panelEmails = interview.panels.map((p) => p.email);
             const description = `Interview scheduled via Microsoft Teams Scheduler. Candidate automatically mapped from bulk upload queue.`;
-            
+
             await graph.updateTeamsMeeting(
               interview.calendarEventId,
               {
@@ -798,7 +798,7 @@ export const db = {
             );
           } catch (graphError: any) {
             console.error(`Failed to update MS Graph event ${interview.calendarEventId} for auto-mapped candidate ${candidate.email}:`, graphError);
-            
+
             const errMsg = graphError instanceof Error ? graphError.message : String(graphError);
             if (errMsg.includes('404') || errMsg.includes('ErrorItemNotFound')) {
               console.log('Calendar event not found in Outlook store during auto-mapping. Re-creating calendar event on the fly...');
@@ -806,7 +806,7 @@ export const db = {
                 if (interview.scheduledSlotStart && interview.scheduledSlotEnd && recruiterEmail) {
                   const panelEmails = interview.panels.map((p) => p.email);
                   const description = `Interview scheduled via Microsoft Teams Scheduler. Re-created after original event was not found during auto-mapping.`;
-                  
+
                   const meeting = await graph.createTeamsMeeting(
                     recruiterEmail,
                     {
@@ -821,7 +821,7 @@ export const db = {
                     },
                     activeToken
                   );
-                  
+
                   // Update database record with new calendar details
                   await dbClient
                     .update(schema.interviews)
@@ -831,7 +831,7 @@ export const db = {
                       updatedAt: new Date(),
                     })
                     .where(eq(schema.interviews.id, interview.id));
-                    
+
                   console.log('Successfully re-created calendar event:', meeting.id);
                 }
               } catch (recreateError) {
@@ -848,15 +848,15 @@ export const db = {
               weekday: 'short', month: 'short', day: 'numeric',
               hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
             });
-            
+
             const freshInterview = await db.getInterview(interview.id);
             if (freshInterview) {
               const finalJoinUrl = freshInterview.teamsMeetingUrl || '';
-              
+
               for (const panel of freshInterview.panels) {
                 try {
                   const chat = await graph.createOneOnOneChat(recruiterUserId, panel.userId, activeToken);
-                  
+
                   const htmlMessage = `
                     <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #10b981; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
                       <h3 style="margin-top: 0; color: #10b981; font-size: 16px; font-weight: 600;">Candidate Assigned to Interview (Auto-Mapped)</h3>
@@ -884,7 +884,7 @@ export const db = {
                       ` : ''}
                     </div>
                   `;
-                  
+
                   await graph.sendTeamsMessage(chat.id, htmlMessage, activeToken);
                 } catch (chatErr) {
                   console.error(`Failed to send auto-mapping Teams notification to panelist ${panel.email}:`, chatErr);
@@ -915,7 +915,7 @@ export const db = {
       for (const interview of readyL1Interviews) {
         const collegeName = getCollegeNameFromRole(interview.role);
         const dateStr = getInterviewDate(interview);
-        
+
         const candidateIdx = waitingForL1.findIndex((c) => {
           const matchesCollege = collegeName ? c.collegeDrive?.toLowerCase() === collegeName : true;
           const matchesDate = (() => {
@@ -928,7 +928,7 @@ export const db = {
           })();
           return matchesCollege && matchesDate;
         });
-        
+
         if (candidateIdx !== -1) {
           const candidate = waitingForL1[candidateIdx];
           waitingForL1.splice(candidateIdx, 1);
@@ -940,7 +940,7 @@ export const db = {
       for (const interview of readyL2Interviews) {
         const collegeName = getCollegeNameFromRole(interview.role);
         const dateStr = getInterviewDate(interview);
-        
+
         const candidateIdx = waitingForL2.findIndex((c) => {
           const matchesCollege = collegeName ? c.collegeDrive?.toLowerCase() === collegeName : true;
           const matchesDate = (() => {
@@ -953,7 +953,7 @@ export const db = {
           })();
           return matchesCollege && matchesDate;
         });
-        
+
         if (candidateIdx !== -1) {
           const candidate = waitingForL2[candidateIdx];
           waitingForL2.splice(candidateIdx, 1);
@@ -1114,18 +1114,18 @@ export const db = {
   getRecruiterCCEmails: async (organizerEmail?: string): Promise<string[]> => {
     const dbRecruiters = await db.getAllowedRecruiters();
     const allEmails = new Set<string>();
-    
+
     // Add initial recruiters
     INITIAL_RECRUITERS.forEach(email => allEmails.add(email.trim().toLowerCase()));
-    
+
     // Add DB allowed recruiters
     dbRecruiters.forEach(r => allEmails.add(r.email.trim().toLowerCase()));
-    
+
     // Exclude organizer email
     if (organizerEmail) {
       allEmails.delete(organizerEmail.trim().toLowerCase());
     }
-    
+
     return Array.from(allEmails);
   },
 
@@ -1157,7 +1157,7 @@ export const db = {
       .from(schema.colleges)
       .where(eq(schema.colleges.name, normalizedName))
       .limit(1);
-    
+
     if (existing) {
       throw new Error('College name already exists');
     }

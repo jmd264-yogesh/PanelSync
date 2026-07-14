@@ -175,7 +175,7 @@ export const lateralCandidates = pgTable("lateral_candidates", {
   expectedCtc: varchar("expected_ctc", { length: 100 }),
   noticePeriodDays: integer("notice_period_days"),
   source: varchar("source", { length: 100 }), // Referral | LinkedIn | Naukri | Other
-  status: varchar("status", { length: 50 }).default("NEW").notNull(), 
+  status: varchar("status", { length: 50 }).default("NEW").notNull(),
 
   // NEW
   // WAITING_FOR_INTERVIEW

@@ -2377,48 +2377,39 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
       </AlertDialog>
 
       {selectedRequest && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.65)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '1.5rem',
-        }}>
-          <div className="glass-card" style={{
-            width: '100%',
-            maxWidth: '680px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            position: 'relative',
-            padding: '2rem',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
-          }}>
-            <button
-              onClick={() => {
-                setSelectedRequest(null);
-                refreshInterviews();
-              }}
-              style={{
-                position: 'absolute',
-                top: '1.25rem',
-                right: '1.25rem',
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: '1.5rem',
-                lineHeight: 1,
-              }}
-            >
-              &times;
-            </button>
+        <div 
+          onClick={() => {
+            setSelectedRequest(null);
+            refreshInterviews();
+          }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+          }}
+        >
+          <div 
+            className="glass-card" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '680px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              position: 'relative',
+              padding: '2rem',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+            }}
+          >
             <AvailabilityClient
               interview={selectedRequest.interview}
               panel={selectedRequest.panel}

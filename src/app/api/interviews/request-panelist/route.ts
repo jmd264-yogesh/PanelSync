@@ -191,95 +191,412 @@ export async function POST(request: NextRequest) {
           : "Interview Slot Request";
 
         const greeting = isLateral
-          ? `
-          You have been nominated by
-          <strong>${session.user.displayName}</strong>
-          to interview
-          <strong>${candidateName}</strong>.
-        `
-          : `
-          You have been requested by
-          <strong>${session.user.displayName}</strong>
-          to conduct an interview.
-        `;
+          ? `You have been nominated by <strong>${session.user.displayName}</strong> to interview <strong>${candidateName}</strong>.`
+          : `You have been requested by <strong>${session.user.displayName}</strong> to conduct an interview.`;
 
+        // const htmlMessage = `
+        //   <div style="
+        //     font-family: 'Segoe UI', Arial, sans-serif;
+        //     max-width:560px;
+        //     background:#ffffff;
+        //     border:1px solid #e5e7eb;
+        //     border-radius:12px;
+        //     overflow:hidden;
+        //   ">
+
+        //     <!-- Header -->
+        //     <div style="
+        //       background:#4f46e5;
+        //       padding:18px 24px;
+        //       color:#ffffff;
+        //     ">
+        //       <div style="font-size:13px;opacity:.9;">
+        //         Interview Management System
+        //       </div>
+
+        //       <div style="
+        //         font-size:22px;
+        //         font-weight:600;
+        //         margin-top:6px;
+        //       ">
+        //         📅 ${requestTitle}
+        //       </div>
+        //     </div>
+
+        //     <!-- Body -->
+        //     <div style="padding:24px;">
+
+        //       <p style="margin:0;font-size:15px;">
+        //         Hi <strong>${panel.name}</strong>,
+        //       </p>
+
+        //       <p style="
+        //         margin-top:14px;
+        //         color:#374151;
+        //         line-height:1.6;
+        //         font-size:14px;
+        //       ">
+        //         ${
+        //           isLateral
+        //             ? `
+        //         <strong>${session.user.displayName}</strong> has nominated you to interview
+        //         <strong>${candidateName}</strong>.
+        //         `
+        //             : `
+        //         <strong>${session.user.displayName}</strong> has requested you to conduct an interview.
+        //         `
+        //         }
+        //       </p>
+
+        //       <!-- Candidate -->
+        //       ${
+        //         isLateral
+        //           ? `
+        //       <div style="
+        //         margin-top:18px;
+        //         background:#f8fafc;
+        //         border-left:4px solid #4f46e5;
+        //         padding:14px;
+        //         border-radius:8px;
+        //       ">
+        //         <div style="font-size:12px;color:#6b7280;">
+        //           Candidate
+        //         </div>
+
+        //         <div style="
+        //           font-size:18px;
+        //           font-weight:600;
+        //           color:#111827;
+        //           margin-top:2px;
+        //         ">
+        //           ${candidateName}
+        //         </div>
+
+        //         <div style="
+        //           color:#6b7280;
+        //           margin-top:4px;
+        //           font-size:13px;
+        //         ">
+        //           ${candidateEmail}
+        //         </div>
+        //       </div>
+        //       `
+        //           : ""
+        //       }
+
+        //       <!-- Details -->
+        //       <table
+        //         style="
+        //           width:100%;
+        //           margin-top:22px;
+        //           border-collapse:separate;
+        //           border-spacing:0 10px;
+        //         "
+        //       >
+
+        //         <tr>
+        //           <td style="
+        //             width:40%;
+        //             color:#6b7280;
+        //             font-size:13px;
+        //           ">
+        //             Interview Round
+        //           </td>
+
+        //           <td style="
+        //             font-weight:600;
+        //             color:#111827;
+        //             font-size:14px;
+        //           ">
+        //             ${interviewRole}
+        //           </td>
+        //         </tr>
+
+        //         <tr>
+        //           <td style="color:#6b7280;font-size:13px;">
+        //             Proposed Window
+        //           </td>
+
+        //           <td style="font-weight:600;color:#111827;font-size:14px;">
+        //             ${
+        //               isLateral
+        //                 ? `${new Date(interviewStart).toLocaleDateString("en-US")} •
+        //                   ${new Date(interviewStart).toLocaleTimeString(
+        //                     "en-US",
+        //                     {
+        //                       hour: "numeric",
+        //                       minute: "2-digit",
+        //                     },
+        //                   )}
+        //                   -
+        //                   ${new Date(interviewEnd).toLocaleTimeString("en-US", {
+        //                     hour: "numeric",
+        //                     minute: "2-digit",
+        //                   })}`
+        //                 : `${new Date(startDate).toLocaleDateString("en-US")}
+        //                   -
+        //                   ${new Date(endDate).toLocaleDateString("en-US")}`
+        //             }
+        //           </td>
+        //         </tr>
+
+        //         <tr>
+        //           <td style="color:#6b7280;font-size:13px;">
+        //             Duration
+        //           </td>
+
+        //           <td style="font-weight:600;color:#111827;font-size:14px;">
+        //             ${duration} Minutes
+        //           </td>
+        //         </tr>
+
+        //         <tr>
+        //           <td style="color:#6b7280;font-size:13px;">
+        //             Assigned Panelist
+        //           </td>
+
+        //           <td style="font-weight:600;color:#111827;font-size:14px;">
+        //             ${panel.name}
+        //           </td>
+        //         </tr>
+
+        //       </table>
+
+        //       <!-- Action Required -->
+        //       <div style="
+        //         margin-top:24px;
+        //         padding:16px;
+        //         background:#eef2ff;
+        //         border-radius:8px;
+        //         border:1px solid #c7d2fe;
+        //       ">
+
+        //         <div style="
+        //           font-weight:600;
+        //           color:#3730a3;
+        //           margin-bottom:8px;
+        //         ">
+        //           Action Required
+        //         </div>
+
+        //         <div style="
+        //           color:#4b5563;
+        //           font-size:13px;
+        //           line-height:1.6;
+        //         ">
+        //           Please review the proposed interview schedule and select your available slot.
+        //           Once you confirm your availability, the interview can be finalized.
+        //         </div>
+
+        //       </div>
+
+        //       <!-- Button -->
+        //       <div style="
+        //         text-align:center;
+        //         margin-top:26px;
+        //       ">
+
+        //         <a
+        //           href="${availabilityLink}"
+        //           target="_blank"
+        //           style="
+        //             background:#4f46e5;
+        //             color:white;
+        //             text-decoration:none;
+        //             padding:12px 28px;
+        //             border-radius:8px;
+        //             display:inline-block;
+        //             font-weight:600;
+        //             font-size:14px;
+        //           "
+        //         >
+        //           Review Availability
+        //         </a>
+
+        //       </div>
+
+        //       <!-- Footer -->
+        //       <div style="
+        //         margin-top:28px;
+        //         padding-top:16px;
+        //         border-top:1px solid #e5e7eb;
+        //         color:#9ca3af;
+        //         font-size:12px;
+        //         line-height:1.5;
+        //       ">
+        //         If the button doesn't work, copy and paste the link below into your browser:
+        //         <br><br>
+
+        //         <a
+        //           href="${availabilityLink}"
+        //           style="
+        //             color:#4f46e5;
+        //             word-break:break-all;
+        //           "
+        //         >
+        //           ${availabilityLink}
+        //         </a>
+
+        //       </div>
+
+        //     </div>
+
+        //   </div>
+        // `;
         const htmlMessage = `
-          <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #6366f1; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 520px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
-            <div style="margin-bottom: 12px; font-size: 14px;">
-              <div style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: #818cf8; display: inline-block;">REQUEST</div>
-              <h3 style="margin: 0 0 0 8px; color: #f8fafc; font-size: 15px; font-weight: 600; display: inline-block; vertical-align: middle;">${requestTitle}</h3>
-            </div>
+  <div style="
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    max-width: 500px;
+    margin: 4px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(128, 128, 128, 0.15);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  ">
 
-            <p style="margin: 0 0 8px; font-size: 14px; color: #cbd5e1;">
-              Hello <strong style="color: #f8fafc;">${panel.name}</strong>,
-            </p>
-            <p style="margin: 0 0 14px; font-size: 14px; color: #94a3b8;">
-              ${greeting}
-            </p>
+    <!-- Accent Top Bar (Standard Teams Brand Indigo) -->
+    <div style="
+      background-color: #5b5fc7;
+      height: 4px;
+      width: 100%;
+    "></div>
 
-            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="width: 50%; padding-right: 10px; vertical-align: top; padding-bottom: 10px;">
-                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Interview Round</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${interviewRole}</div>
-                  </td>
-                  <td style="width: 50%; vertical-align: top; padding-bottom: 10px;">
-                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Proposed Dates</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${
-                      isLateral
-                        ? `${new Date(interviewStart).toLocaleDateString("en-US")}
-                          ${new Date(interviewStart).toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            },
-                          )}
-                          - ${new Date(interviewEnd).toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            },
-                          )}`
-                        : `${new Date(startDate).toLocaleDateString("en-US")} - ${new Date(endDate).toLocaleDateString("en-US")}`
-                    }</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="width: 50%; padding-right: 10px; vertical-align: top;">
-                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Duration</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${duration} minutes</div>
-                  </td>
-                  <td style="width: 50%; vertical-align: top;">
-                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Nominated Panelist</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${panel.name}</div>
-                  </td>
-                </tr>
-              </table>
-            </div>
+    <!-- Inner Content Wrapper -->
+    <div style="padding: 20px;">
+      
+      <!-- App Context Label -->
+      <div style="
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #5b5fc7;
+        margin-bottom: 6px;
+      ">
+        Interview Management System
+      </div>
 
-            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 12px;">
-              Please click the button below to view the proposed slots and select slots to book instantly:
-            </p>
+      <!-- Header Title -->
+      <div style="
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        line-height: 1.3;
+      ">
+        📅 ${requestTitle}
+      </div>
 
-            <table border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 14px;">
-              <tr>
-                <td align="center" style="border-radius: 6px;" bgcolor="#6366f1">
-                  <a href="${availabilityLink}" target="_blank" style="font-size: 14px; font-family: 'Segoe UI', sans-serif; color: #ffffff; text-decoration: none; padding: 10px 22px; border-radius: 6px; border: 1px solid #6366f1; display: inline-block; font-weight: 700;">
-                    Select Slots / Provide Availability
-                  </a>
-                </td>
-              </tr>
-            </table>
+      <!-- Greeting Summary -->
+      <div style="font-size: 14px; margin-bottom: 10px;">
+        Hi <strong>${panel.name}</strong>,
+      </div>
 
-            <div style="font-size: 11px; color: #475569; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
-              Access link: <a href="${availabilityLink}" style="color: #6366f1; text-decoration: underline;">${availabilityLink}</a>
-            </div>
-          </div>
-        `;
+      <!-- Dynamic Greeting String -->
+      <div style="
+        font-size: 14px;
+        line-height: 1.5;
+        margin-bottom: 16px;
+        opacity: 0.9;
+      ">
+        ${greeting}
+      </div>
 
+      <!-- Candidate Box (Adapts to Light/Dark backgrounds) -->
+      ${isLateral
+            ? `
+      <div style="
+        background-color: rgba(128, 128, 128, 0.08);
+        border-left: 3px solid #5b5fc7;
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+      ">
+        <div style="font-size: 11px; font-weight: 600; opacity: 0.6; text-transform: uppercase;">
+          Candidate Details
+        </div>
+        <div style="font-size: 15px; font-weight: 600; margin-top: 4px;">
+          ${candidateName}
+        </div>
+        <div style="font-size: 13px; opacity: 0.7; margin-top: 2px;">
+          ${candidateEmail}
+        </div>
+      </div>
+      `
+            : ""
+          }
+
+      <!-- Clean Meta Matrix -->
+      <div style="
+        background-color: rgba(128, 128, 128, 0.04);
+        border: 1px solid rgba(128, 128, 128, 0.1);
+        border-radius: 6px;
+        padding: 4px 12px;
+        margin-bottom: 20px;
+      ">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          
+          <tr style="border-bottom: 1px solid rgba(128, 128, 128, 0.1);">
+            <td style="padding: 10px 0; opacity: 0.7; width: 40%;">Round</td>
+            <td style="padding: 10px 0; font-weight: 600; text-align: right;">${interviewRole}</td>
+          </tr>
+
+          <tr style="border-bottom: 1px solid rgba(128, 128, 128, 0.1);">
+            <td style="padding: 10px 0; opacity: 0.7; vertical-align: top;">Proposed Window</td>
+            <td style="padding: 10px 0; font-weight: 600; text-align: right; line-height: 1.4;">
+              ${isLateral
+            ? `${new Date(interviewStart).toLocaleDateString("en-US")} (${new Date(interviewStart).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} - ${new Date(interviewEnd).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })})`
+            : `${new Date(startDate).toLocaleDateString("en-US")} - ${new Date(endDate).toLocaleDateString("en-US")}`
+          }
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 10px 0; opacity: 0.7;">Duration</td>
+            <td style="padding: 10px 0; font-weight: 600; text-align: right;">${duration} Minutes</td>
+          </tr>
+
+        </table>
+      </div>
+
+      <!-- Action Required Subtle Banner -->
+      <div style="
+        background-color: rgba(91, 95, 199, 0.1);
+        border: 1px dashed rgba(91, 95, 199, 0.3);
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 20px;
+        font-size: 13px;
+        line-height: 1.4;
+      ">
+        <span style="font-weight: 700; color: #5b5fc7; display: block; margin-bottom: 2px;">Action Required</span>
+        <span style="opacity: 0.9;"> Please review the proposed loop windows and submit your available slots.</span>
+      </div>
+
+      <!-- Action Button -->
+      <div style="margin-bottom: 4px;">
+        <a
+          href="${availabilityLink}"
+          target="_blank"
+          style="
+            background-color: #5b5fc7;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 10px 24px;
+            border-radius: 4px;
+            display: inline-block;
+            font-weight: 600;
+            font-size: 14px;
+            text-align: center;
+          "
+        >
+          Review Availability
+        </a>
+      </div>
+
+    </div>
+  </div>
+`;
         await graph.sendTeamsMessage(chat.id, htmlMessage, token);
       } catch (chatError) {
         console.error(

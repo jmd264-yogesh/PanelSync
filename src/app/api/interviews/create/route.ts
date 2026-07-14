@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Send Teams chat notifications to each panel member
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    
+
     for (const panel of interview.panels) {
       try {
         // Link to the web availability selection interface
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 
         // Create 1:1 chat between Recruiter (session user) and Panel member
         const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
-        
+
         // Format HTML rich card style message for Microsoft Teams
         const htmlMessage = `
           <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #6366f1; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
             </div>
           </div>
         `;
-        
+
         await graph.sendTeamsMessage(chat.id, htmlMessage, token);
       } catch (chatError) {
         console.error(`Failed to send Teams message to panel ${panel.email} (${panel.userId}):`, chatError);

@@ -322,7 +322,6 @@ export default function LateralHiringTab({
       const result = await res.json();
       if (!res.ok)
         throw new Error(result.error || "Failed to request panel.");
-      setInterviews((prev) => [result.interview, ...prev]);
       setCandidates((prev) =>
         prev.map((c) =>
           c.id === schedulingFor.id
@@ -533,220 +532,6 @@ export default function LateralHiringTab({
           </span>
         </div>
       ) : (
-        // <div className="glass-card" style={{ overflow: "hidden" }}>
-        //   <table className="data-table" style={{ width: "100%" }}>
-        //     <thead>
-        //       <tr>
-        //         <th>Candidate</th>
-        //         <th>Position</th>
-        //         <th>Experience</th>
-        //         <th>Current Company</th>
-        //         <th>Notice</th>
-        //         <th>Source</th>
-        //         <th>Status</th>
-        //         <th>Interviews</th>
-        //         <th style={{ textAlign: "right" }}>Action</th>
-        //       </tr>
-        //     </thead>
-        //     <tbody>
-        //       {candidates.map((candidate) => {
-        //         const candidateInterviews = getCandidateInterviews(
-        //           candidate.email,
-        //         );
-        //         const statusStyle = STATUS_BADGE_STYLE[candidate.status] ?? {
-        //           bg: "rgba(148,163,184,0.1)",
-        //           border: "1px solid rgba(148,163,184,0.25)",
-        //           color: "#94a3b8",
-        //         };
-        //         return (
-        //           <tr key={candidate.id}>
-        //             <td>
-        //               <div style={{ fontWeight: 600 }}>{candidate.name}</div>
-        //               <div className="text-muted text-xs">
-        //                 {candidate.email}
-        //               </div>
-        //             </td>
-        //             <td>{candidate.positionTitle}</td>
-        //             <td>
-        //               {candidate.experienceYears !== undefined
-        //                 ? `${candidate.experienceYears} yrs`
-        //                 : "—"}
-        //             </td>
-        //             <td>{candidate.currentCompany || "—"}</td>
-        //             <td>
-        //               {candidate.noticePeriodDays !== undefined
-        //                 ? `${candidate.noticePeriodDays}d`
-        //                 : "—"}
-        //             </td>
-        //             <td>{candidate.source || "—"}</td>
-        //             <td>
-        //               <select
-        //                 className="form-input"
-        //                 style={{
-        //                   padding: "0.25rem 0.5rem",
-        //                   height: "30px",
-        //                   fontSize: "0.75rem",
-        //                   background: statusStyle.bg,
-        //                   border: statusStyle.border,
-        //                   color: statusStyle.color,
-        //                   fontWeight: 600,
-        //                 }}
-        //                 value={candidate.status}
-        //                 disabled={updatingStatusId === candidate.id}
-        //                 onChange={(e) =>
-        //                   handleStatusChange(
-        //                     candidate.id,
-        //                     e.target.value as LateralCandidate["status"],
-        //                   )
-        //                 }
-        //               >
-        //                 {STATUS_OPTIONS.map((s) => (
-        //                   <option key={s} value={s}>
-        //                     {s}
-        //                   </option>
-        //                 ))}
-        //               </select>
-        //             </td>
-        //             <td>
-        //               {candidateInterviews.length === 0 ? (
-        //                 <span className="text-muted text-xs">—</span>
-        //               ) : (
-        //                 <div
-        //                   style={{
-        //                     display: "flex",
-        //                     flexDirection: "column",
-        //                     gap: "2px",
-        //                   }}
-        //                 >
-        //                   {candidateInterviews.map((intv) => (
-        //                     <span
-        //                       key={intv.id}
-        //                       className="text-xs"
-        //                       style={{ color: "var(--text-muted)" }}
-        //                     >
-        //                       {intv.role.replace(/^LATERAL - /, "")}{" "}
-        //                       <span
-        //                         className="badge"
-        //                         style={{
-        //                           fontSize: "0.6rem",
-        //                           marginLeft: "4px",
-        //                         }}
-        //                       >
-        //                         {intv.status}
-        //                       </span>
-        //                     </span>
-        //                   ))}
-        //                 </div>
-        //               )}
-        //             </td>
-        //             <td style={{ textAlign: "right" }}>
-        //               <div
-        //                 style={{
-        //                   display: "flex",
-        //                   alignItems: "center",
-        //                   justifyContent: "flex-end",
-        //                   gap: "0.4rem",
-        //                 }}
-        //               >
-        //                 <input
-        //                   type="file"
-        //                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        //                   style={{ display: "none" }}
-        //                   id={`lateral-resume-input-${candidate.id}`}
-        //                   onChange={(e) => {
-        //                     const file = e.target.files?.[0];
-        //                     if (file) handleResumeUpload(candidate.id, file);
-        //                     e.target.value = "";
-        //                   }}
-        //                 />
-        //                 <button
-        //                   onClick={() =>
-        //                     document
-        //                       .getElementById(
-        //                         `lateral-resume-input-${candidate.id}`,
-        //                       )
-        //                       ?.click()
-        //                   }
-        //                   disabled={uploadingResumeId === candidate.id}
-        //                   className="row-action-button"
-        //                   style={{
-        //                     height: "28px",
-        //                     background: candidate.resumeFileKey
-        //                       ? "rgba(16,185,129,0.06)"
-        //                       : undefined,
-        //                     border: candidate.resumeFileKey
-        //                       ? "1px solid rgba(16,185,129,0.2)"
-        //                       : undefined,
-        //                     color: candidate.resumeFileKey
-        //                       ? "var(--success)"
-        //                       : undefined,
-        //                   }}
-        //                   title={
-        //                     candidate.resumeFileKey
-        //                       ? "Replace attached resume"
-        //                       : "Attach resume"
-        //                   }
-        //                 >
-        //                   {uploadingResumeId === candidate.id ? (
-        //                     <Loader2 size={10} className="animate-spin" />
-        //                   ) : candidate.resumeFileKey ? (
-        //                     "Resume ✓"
-        //                   ) : (
-        //                     "Attach Resume"
-        //                   )}
-        //                 </button>
-        //                 <button
-        //                   onClick={() => openScheduleModal(candidate)}
-        //                   className="row-action-button"
-        //                   style={{
-        //                     height: "28px",
-        //                     background: "rgba(37,99,235,0.06)",
-        //                     border: "1px solid rgba(37,99,235,0.2)",
-        //                     color: "var(--primary)",
-        //                     display: "inline-flex",
-        //                     alignItems: "center",
-        //                     gap: "4px",
-        //                   }}
-        //                   title="Schedule an interview round"
-        //                 >
-        //                   <CalendarPlus size={11} />
-        //                   Schedule
-        //                 </button>
-        //                 <ConfirmDialog
-        //                   trigger={
-        //                     <button
-        //                       style={{
-        //                         border: "none",
-        //                         background: "transparent",
-        //                         cursor: "pointer",
-        //                         color: "var(--text-muted)",
-        //                         padding: "0.2rem",
-        //                         display: "flex",
-        //                         alignItems: "center",
-        //                       }}
-        //                       onMouseEnter={(e) =>
-        //                         (e.currentTarget.style.color = "#ef4444")
-        //                       }
-        //                       onMouseLeave={(e) =>
-        //                         (e.currentTarget.style.color = "")
-        //                       }
-        //                       title="Remove candidate"
-        //                     />
-        //                   }
-        //                   triggerChildren={<Trash2 size={15} />}
-        //                   title="Remove this lateral candidate?"
-        //                   description="This will remove the candidate from the lateral hiring queue. This action cannot be undone."
-        //                   confirmLabel="Yes, Remove"
-        //                   onConfirm={() => handleDeleteCandidate(candidate.id)}
-        //                 />
-        //               </div>
-        //             </td>
-        //           </tr>
-        //         );
-        //       })}
-        //     </tbody>
-        //   </table>
-        // </div>
         <div className="glass-card" style={{ overflowX: "auto", borderRadius: "12px", boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.08)" }}>
   {/* Embedded scoped styles to drastically improve the data-table UI */}
   <style>{`
@@ -1115,10 +900,10 @@ export default function LateralHiringTab({
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
                   >
-                    <option value="15">15 Minutes</option>
                     <option value="30">30 Minutes</option>
                     <option value="45">45 Minutes</option>
                     <option value="60">60 Minutes</option>
+                    <option value="90">90 Minutes</option>
                   </select>
                 </div>
 
