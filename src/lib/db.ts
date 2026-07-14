@@ -24,6 +24,8 @@ export interface InterviewPanel {
   availabilities: PanelAvailability[];
 }
 
+export type hiringTypeEnum = "CAMPUS" | "LATERAL";
+
 export interface Interview {
   id: string;
   candidateName: string;
@@ -33,6 +35,7 @@ export interface Interview {
   startDate: string;       // ISO string
   endDate: string;         // ISO string
   status: 'PENDING' | 'COLLECTED' | 'SCHEDULED' | 'CANCELLED';
+  hiringType: hiringTypeEnum;
   teamsMeetingUrl?: string;
   calendarEventId?: string;
   scheduledSlotStart?: string; // ISO string
@@ -225,6 +228,7 @@ export const db = {
         startDate: intv.startDate.toISOString(),
         endDate: intv.endDate.toISOString(),
         status: intv.status as any,
+        hiringType: intv.hiringType,
         teamsMeetingUrl: intv.teamsMeetingUrl || undefined,
         calendarEventId: intv.calendarEventId || undefined,
         scheduledSlotStart: intv.scheduledSlotStart ? intv.scheduledSlotStart.toISOString() : undefined,
@@ -284,6 +288,7 @@ export const db = {
       startDate: intv.startDate.toISOString(),
       endDate: intv.endDate.toISOString(),
       status: intv.status as any,
+      hiringType: intv.hiringType,
       teamsMeetingUrl: intv.teamsMeetingUrl || undefined,
       calendarEventId: intv.calendarEventId || undefined,
       scheduledSlotStart: intv.scheduledSlotStart ? intv.scheduledSlotStart.toISOString() : undefined,
@@ -313,6 +318,7 @@ export const db = {
     candidateName: string;
     candidateEmail: string;
     role: string;
+    hiringType: hiringTypeEnum;
     duration: number;
     startDate: string;
     endDate: string;
@@ -330,6 +336,7 @@ export const db = {
       startDate: new Date(params.startDate),
       endDate: new Date(params.endDate),
       status: 'PENDING',
+      hiringType: params.hiringType,
       createdAt: now,
       updatedAt: now,
     });

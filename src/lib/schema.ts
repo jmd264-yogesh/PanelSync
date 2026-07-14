@@ -1,4 +1,5 @@
 import {
+  pgEnum,
   pgTable,
   varchar,
   text,
@@ -22,6 +23,11 @@ export const sessions = pgTable("sessions", {
 });
 
 // 2. Interviews Table
+export const hiringTypeEnum = pgEnum("hiring_type", [
+  "CAMPUS",
+  "LATERAL",
+]);
+
 export const interviews = pgTable("interviews", {
   id: varchar("id", { length: 255 }).primaryKey(),
   candidateName: varchar("candidate_name", { length: 255 }).notNull(),
@@ -31,6 +37,7 @@ export const interviews = pgTable("interviews", {
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
   status: varchar("status", { length: 50 }).notNull(), // PENDING, COLLECTED, SCHEDULED, CANCELLED
+  hiringType: hiringTypeEnum("hiring_type").notNull(),
   teamsMeetingUrl: text("teams_meeting_url"),
   calendarEventId: varchar("calendar_event_id", { length: 255 }),
   scheduledSlotStart: timestamp("scheduled_slot_start"),
