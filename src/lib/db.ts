@@ -84,6 +84,20 @@ export interface LateralCandidate {
   resumeUploadedAt?: string;
   mappedInterviewId?: string;
   createdAt: string;
+  roleGrade?:string;
+}
+
+export interface RecalibrateSession {
+  id: string;
+  interviewId: string;
+  aiRunId: string | null;
+  questionScores: Record<string, number>;
+  rubricScores: Record<string, number>;
+  notes: string | null;
+  timerStartedAt: string | null;
+  timerEndedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AiRun {
@@ -93,6 +107,7 @@ export interface AiRun {
   triggeredByEmail: string;
   status: 'QUEUED' | 'PARSING' | 'EXTRACTING' | 'GENERATING' | 'COMPLETED' | 'FAILED';
   criteria: Record<string, any> | null;
+  spec: Record<string, any> | null;
   resumeDigest: Record<string, any> | null;
   questions: Record<string, any> | null;
   model: string | null;
@@ -1399,6 +1414,7 @@ export const db = {
     triggeredByEmail: row.triggeredByEmail,
     status: row.status as AiRun['status'],
     criteria: (row.criteria as Record<string, any>) ?? null,
+    spec: (row.spec as Record<string, any>) ?? null,
     resumeDigest: (row.resumeDigest as Record<string, any>) ?? null,
     questions: (row.questions as Record<string, any>) ?? null,
     model: row.model,
@@ -1431,6 +1447,7 @@ export const db = {
   updateAiRun: async (id: string, patch: {
     status?: AiRun['status'];
     criteria?: Record<string, any>;
+    spec?: Record<string, any>;
     resumeDigest?: Record<string, any>;
     questions?: Record<string, any>;
     model?: string;
@@ -1498,6 +1515,7 @@ export const db = {
     noticePeriodDays: row.noticePeriodDays ?? undefined,
     source: row.source || undefined,
     status: row.status as LateralCandidate['status'],
+    roleGrade: row.roleGrade || undefined,
     resumeFileKey: row.resumeFileKey || undefined,
     resumeSha256: row.resumeSha256 || undefined,
     resumeUploadedAt: row.resumeUploadedAt ? row.resumeUploadedAt.toISOString() : undefined,
@@ -1534,6 +1552,7 @@ export const db = {
     expectedCtc?: string;
     noticePeriodDays?: number;
     source?: string;
+    roleGrade?: string;
   }): Promise<LateralCandidate> => {
     const id = crypto.randomUUID();
     await dbClient.insert(schema.lateralCandidates).values({
@@ -1548,6 +1567,7 @@ export const db = {
       expectedCtc: params.expectedCtc,
       noticePeriodDays: params.noticePeriodDays,
       source: params.source,
+      roleGrade: params.roleGrade,
       status: 'NEW',
       createdAt: new Date(),
     });
@@ -1567,6 +1587,7 @@ export const db = {
     expectedCtc: string;
     noticePeriodDays: number;
     source: string;
+    roleGrade: string;
     status: LateralCandidate['status'];
   }>): Promise<boolean> => {
     await dbClient.update(schema.lateralCandidates).set(params as any).where(eq(schema.lateralCandidates.id, id));
@@ -1606,5 +1627,67 @@ export const db = {
     const normalizedEmail = email.trim().toLowerCase();
     const all = await db.getInterviews();
     return all.filter((i) => i.candidateEmail.toLowerCase() === normalizedEmail);
+  },
+
+  // --- Recalibrate (live spec-driven scoring session) helpers ---
+
+  mapRecalibrateSessionRow: (row: typeof schema.recalibrateSessions.$inferSelect): RecalibrateSession => ({
+    id: row.id,
+    interviewId: row.interviewId,
+    aiRunId: row.aiRunId,
+    questionScores: (row.questionScores as Record<string, number>) ?? {},
+    rubricScores: (row.rubricScores as Record<string, number>) ?? {},
+    notes: row.notes,
+    timerStartedAt: row.timerStartedAt ? row.timerStartedAt.toISOString() : null,
+    timerEndedAt: row.timerEndedAt ? row.timerEndedAt.toISOString() : null,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: row.updatedAt ? row.updatedAt.toISOString() : new Date().toISOString(),
+  }),
+
+  getOrCreateRecalibrateSession: async (interviewId: string): Promise<RecalibrateSession> => {
+    const [existing] = await dbClient
+      .select()
+      .from(schema.recalibrateSessions)
+      .where(eq(schema.recalibrateSessions.interviewId, interviewId))
+      .limit(1);
+    if (existing) return db.mapRecalibrateSessionRow(existing);
+
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await dbClient.insert(schema.recalibrateSessions).values({
+      id,
+      interviewId,
+      questionScores: {},
+      rubricScores: {},
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await dbClient
+      .select()
+      .from(schema.recalibrateSessions)
+      .where(eq(schema.recalibrateSessions.id, id))
+      .limit(1);
+    return db.mapRecalibrateSessionRow(row);
+  },
+
+  updateRecalibrateSession: async (interviewId: string, patch: Partial<{
+    aiRunId: string | null;
+    questionScores: Record<string, number>;
+    rubricScores: Record<string, number>;
+    notes: string | null;
+    timerStartedAt: Date | null;
+    timerEndedAt: Date | null;
+  }>): Promise<RecalibrateSession> => {
+    await db.getOrCreateRecalibrateSession(interviewId); // ensure a row exists first
+    await dbClient
+      .update(schema.recalibrateSessions)
+      .set({ ...patch, updatedAt: new Date() } as any)
+      .where(eq(schema.recalibrateSessions.interviewId, interviewId));
+    const [row] = await dbClient
+      .select()
+      .from(schema.recalibrateSessions)
+      .where(eq(schema.recalibrateSessions.interviewId, interviewId))
+      .limit(1);
+    return db.mapRecalibrateSessionRow(row);
   },
 };

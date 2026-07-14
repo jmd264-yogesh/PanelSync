@@ -1,4 +1,5 @@
-import { Criteria, ResumeDigest } from './schemas';
+import { Criteria, ResumeDigest, Spec } from './schemas';
+import { CALIBRATION, PLATFORMS, ROLE_GRADES, STYLES, TOPICS, TRACKS } from './spec-catalog';
 
 export const PROMPT_VERSION = 'v1';
 
@@ -34,6 +35,44 @@ Rules:
 Respond with JSON only, matching the required schema exactly.`;
 
   const userPrompt = `Resume digest:\n${JSON.stringify(digest)}\n\nPanelist criteria:\n${JSON.stringify(criteria)}`;
+
+  return { systemPrompt, userPrompt };
+}
+
+// Spec-driven generation: no resume/candidate needed, the panelist scopes the question
+// set directly (role grade, tracks, platform, topics, style).
+export function buildSpecQuestionPrompt(spec: Spec, focusAreas: string[]): { systemPrompt: string; userPrompt: string } {
+  const tier = ROLE_GRADES[spec.roleGrade].tier;
+  const calibration = CALIBRATION[tier];
+  const styleGuidance = STYLES[spec.style].promptGuidance;
+  const trackLabels = spec.tracks.map((t) => TRACKS[t]);
+  const platformLabels = spec.platforms.map((p) => PLATFORMS[p]);
+  const topicLabels = spec.topics.map((t) => TOPICS[t]);
+
+  const systemPrompt = `You are an interview question generator for a Data Engineering Center of Excellence hiring panel. You propose questions and scoring rubrics — panelists remain the decision-makers and can edit everything you produce. There is no candidate resume for this session; the panelist has instead scoped the question set directly by role grade, interview tracks, and topics.
+
+Rules:
+- Generate exactly ${spec.questionCount} questions.
+- Every question's "category" must be exactly one of the following (do not invent categories outside this list): ${focusAreas.join(', ')}.
+- Cover the selected tracks/topics roughly evenly across the question set.
+- Set "linkedResumeEvidence" to null for every question — there is no resume to link to.
+- Non-technical tracks (Solution Architecture, Client Handling & Presales, Communication & Articulation, Client Presentation) assess judgement, communication, and client/consulting skill, not syntax — do not ask coding questions for these categories.
+- Rubric bands must describe observable answer behaviours ("names partition strategies and trade-offs"), never vague vibes ("good understanding").
+- Rubric bands must fully cover 0 through maxMarks with no gaps or overlaps.
+- "totalMarks" must equal the sum of every question's "maxMarks" — compute it carefully.
+- Calibrate each question's "difficulty" honestly to the role grade below, and produce a spread across easy/medium/hard rather than clustering on one level.
+
+Calibration for this role grade: ${calibration}
+
+Question style: ${styleGuidance}
+
+Respond with JSON only, matching the required schema exactly.`;
+
+  const userPrompt = `Role grade: ${ROLE_GRADES[spec.roleGrade].label}
+Interview tracks: ${trackLabels.join(', ')}
+${spec.tracks.includes('technical') ? `Platform focus (ground technical questions in one of these where relevant): ${platformLabels.join(', ') || 'Platform-agnostic'}
+Topic areas: ${topicLabels.join(', ')}` : ''}
+Valid question categories: ${focusAreas.join(', ')}`;
 
   return { systemPrompt, userPrompt };
 }

@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { LateralCandidate, Interview, Panelist } from "@/lib/db";
 import { GraphUser } from "@/lib/graph";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -100,16 +101,8 @@ export default function LateralHiringTab({
   const [addError, setAddError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    positionTitle: "",
-    experienceYears: "",
-    currentCompany: "",
-    currentCtc: "",
-    expectedCtc: "",
-    noticePeriodDays: "",
-    source: "",
+    name: '', email: '', phone: '', positionTitle: '', experienceYears: '',
+    currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '', roleGrade: '',
   });
 
   const [uploadingResumeId, setUploadingResumeId] = useState<string | null>(
@@ -162,18 +155,7 @@ export default function LateralHiringTab({
   }, [panelSearchQuery, selectedPanels]);
 
   const resetAddForm = () => {
-    setForm({
-      name: "",
-      email: "",
-      phone: "",
-      positionTitle: "",
-      experienceYears: "",
-      currentCompany: "",
-      currentCtc: "",
-      expectedCtc: "",
-      noticePeriodDays: "",
-      source: "",
-    });
+    setForm({ name: '', email: '', phone: '', positionTitle: '', experienceYears: '', currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '', roleGrade: '' });
   };
 
   const handleAddCandidate = async (e: React.FormEvent) => {
@@ -388,106 +370,25 @@ export default function LateralHiringTab({
       </div>
 
       {showAddForm && (
-        <div
-          className="glass-card"
-          style={{ padding: "1.25rem", marginBottom: "1.5rem" }}
-        >
-          <form
-            onSubmit={handleAddCandidate}
-            style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "0.6rem",
-              }}
-            >
-              <input
-                className="form-input"
-                placeholder="Full name *"
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Email *"
-                type="email"
-                value={form.email}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, email: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Phone"
-                value={form.phone}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, phone: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Position title *"
-                value={form.positionTitle}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, positionTitle: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Experience (years)"
-                type="number"
-                min="0"
-                value={form.experienceYears}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, experienceYears: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Current company"
-                value={form.currentCompany}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, currentCompany: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Current CTC"
-                value={form.currentCtc}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, currentCtc: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Expected CTC"
-                value={form.expectedCtc}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, expectedCtc: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Notice period (days)"
-                type="number"
-                min="0"
-                value={form.noticePeriodDays}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, noticePeriodDays: e.target.value }))
-                }
-              />
-              <input
-                className="form-input"
-                placeholder="Source (Referral, LinkedIn, ...)"
-                value={form.source}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, source: e.target.value }))
-                }
-              />
+        <div className="glass-card" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
+          <form onSubmit={handleAddCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.6rem' }}>
+              <input className="form-input" placeholder="Full name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              <input className="form-input" placeholder="Email *" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+              <input className="form-input" placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              <input className="form-input" placeholder="Position title *" value={form.positionTitle} onChange={(e) => setForm((f) => ({ ...f, positionTitle: e.target.value }))} />
+              <input className="form-input" placeholder="Experience (years)" type="number" min="0" value={form.experienceYears} onChange={(e) => setForm((f) => ({ ...f, experienceYears: e.target.value }))} />
+              <input className="form-input" placeholder="Current company" value={form.currentCompany} onChange={(e) => setForm((f) => ({ ...f, currentCompany: e.target.value }))} />
+              <input className="form-input" placeholder="Current CTC" value={form.currentCtc} onChange={(e) => setForm((f) => ({ ...f, currentCtc: e.target.value }))} />
+              <input className="form-input" placeholder="Expected CTC" value={form.expectedCtc} onChange={(e) => setForm((f) => ({ ...f, expectedCtc: e.target.value }))} />
+              <input className="form-input" placeholder="Notice period (days)" type="number" min="0" value={form.noticePeriodDays} onChange={(e) => setForm((f) => ({ ...f, noticePeriodDays: e.target.value }))} />
+              <input className="form-input" placeholder="Source (Referral, LinkedIn, ...)" value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} />
+              <select className="form-input" value={form.roleGrade} onChange={(e) => setForm((f) => ({ ...f, roleGrade: e.target.value }))}>
+                <option value="">Role grade (for Recalibrate)…</option>
+                {Object.entries(ROLE_GRADES).map(([key, r]) => (
+                  <option key={key} value={key}>{r.label}</option>
+                ))}
+              </select>
             </div>
             {addError && (
               <div style={{ color: "#ef4444", fontSize: "0.8rem" }}>

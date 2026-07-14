@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { PanelistInterview, Interview, InterviewPanel, Drive } from '@/lib/db';
 import AvailabilityClient from '../availability/[token]/AvailabilityClient';
 import AiCopilotPanel from './components/AiCopilotPanel';
+import RecalibratePanel from './components/RecalibratePanel';
 import {
   Video,
   CheckCircle,
@@ -95,7 +96,7 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
   const [loadingL1Feedbacks, setLoadingL1Feedbacks] = useState<Record<string, boolean>>({});
   
   // Primary tab state (Panels vs Interviews & Feedback)
-  const [activePrimaryTab, setActivePrimaryTab] = useState<'PANELS' | 'FEEDBACK'>('PANELS');
+  const [activePrimaryTab, setActivePrimaryTab] = useState<'PANELS' | 'FEEDBACK' | 'RECALIBRATE'>('PANELS');
 
   // Round Tab state for filtering L1 vs L2 vs Lateral candidates
   const [activeRoundTab, setActiveRoundTab] = useState<'ALL' | 'L1' | 'L2' | 'LATERAL'>('ALL');
@@ -904,7 +905,63 @@ export default function PanelistClient({ initialInterviews, initialRequests, pan
             {tabCounts.feedback.total}
           </span>
         </button>
+
+        <button
+          onClick={() => setActivePrimaryTab('RECALIBRATE')}
+          style={{
+            padding: '0.75rem 0.25rem',
+            border: 'none',
+            background: 'none',
+            borderBottom: activePrimaryTab === 'RECALIBRATE' ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+            color: activePrimaryTab === 'RECALIBRATE' ? 'var(--primary)' : 'var(--text-muted)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            transition: 'var(--transition-fast)',
+            outline: 'none',
+          }}
+        >
+          <SlidersHorizontal size={16} />
+          <span>Recalibrate</span>
+          <span style={{
+            fontSize: '0.75rem',
+            background: activePrimaryTab === 'RECALIBRATE' ? 'var(--primary)' : 'var(--border-glass)',
+            color: activePrimaryTab === 'RECALIBRATE' ? '#ffffff' : 'var(--text-muted)',
+            padding: '2px 8px',
+            borderRadius: '12px',
+            fontWeight: 700
+          }}>
+            {tabCounts.feedback.lateral}
+          </span>
+        </button>
       </div>
+
+      {activePrimaryTab === 'RECALIBRATE' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.25rem' }}>Recalibrate — Lateral Hiring</h2>
+            <p className="text-muted text-sm" style={{ margin: 0 }}>
+              Generate spec-driven interview questions, score live, and export a report for each lateral candidate assigned to you.
+            </p>
+          </div>
+          {interviews.filter((i) => i.role.toLowerCase().includes('lateral')).length === 0 ? (
+            <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
+              <span className="text-muted text-sm">No lateral hiring interviews assigned to you yet.</span>
+            </div>
+          ) : (
+            interviews.filter((i) => i.role.toLowerCase().includes('lateral')).map((interview) => (
+              <RecalibratePanel
+                key={interview.interviewId}
+                interviewId={interview.interviewId}
+                candidateName={interview.candidateName}
+                positionTitle={interview.role.replace(/^LATERAL - /i, '')}
+                panelistName={panelistName}
+              />
+            ))
+          )}
+        </div>
+      )}
 
       {activePrimaryTab === 'PANELS' && (
         <div>
