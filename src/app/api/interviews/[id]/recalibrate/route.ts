@@ -64,6 +64,8 @@ export async function PATCH(
       notes: string | null;
       timerStartedAt: Date | null;
       timerEndedAt: Date | null;
+      submittedAt: Date | null;
+      submittedBy: string | null;
     }> = {};
 
     if (body.aiRunId !== undefined) {
@@ -95,6 +97,15 @@ export async function PATCH(
     }
     if (body.timerEndedAt !== undefined) {
       patch.timerEndedAt = body.timerEndedAt === null ? null : new Date(body.timerEndedAt);
+    }
+    // `submitted` is a trusted server-side flag — the client can't set submittedBy/submittedAt
+    // directly, so a recruiter-visible submission is always attributable to the real panelist.
+    if (body.submitted !== undefined) {
+      if (typeof body.submitted !== 'boolean') {
+        return NextResponse.json({ error: 'submitted must be a boolean' }, { status: 400 });
+      }
+      patch.submittedAt = body.submitted ? new Date() : null;
+      patch.submittedBy = body.submitted ? session.user.email : null;
     }
 
     const updated = await db.updateRecalibrateSession(id, patch);

@@ -57,7 +57,7 @@ export const QuestionSchema = z.object({
   difficulty: z.enum(['easy', 'medium', 'hard']),
   maxMarks: z.number().int().min(1).max(10),
   rubric: z.array(z.object({
-    band: z.string(),
+    band: z.string().regex(/^\d+\s*-\s*\d+$/, 'must be a numeric mark range like "0-2", not a descriptive label'),
     description: z.string().max(300),
     exampleSignals: z.array(z.string()).max(4),
   })).min(3).max(5),

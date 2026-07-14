@@ -27,6 +27,7 @@ Rules:
 - Generate exactly ${criteria.questionCount} questions.
 - Every question's "category" must be one of the panelist's focus areas (listed below) — do not invent categories outside that list.
 - Every question must reference either a focus area or one of the resume digest's "claimsToVerify" items via the "linkedResumeEvidence" field (or null if genuinely generic).
+- Each rubric band's "band" field must be a numeric mark range in the exact form "N-M" (e.g. "0-2", "3-4"), never a descriptive label like "Basic" or "Competent" — put the descriptive judgement in "description" instead.
 - Rubric bands must describe observable answer behaviours ("names partition strategies and trade-offs"), never vague vibes ("good understanding").
 - Rubric bands must fully cover 0 through maxMarks with no gaps or overlaps.
 - "totalMarks" must equal the sum of every question's "maxMarks" — compute it carefully.
@@ -57,6 +58,7 @@ Rules:
 - Cover the selected tracks/topics roughly evenly across the question set.
 - Set "linkedResumeEvidence" to null for every question — there is no resume to link to.
 - Non-technical tracks (Solution Architecture, Client Handling & Presales, Communication & Articulation, Client Presentation) assess judgement, communication, and client/consulting skill, not syntax — do not ask coding questions for these categories.
+- Each rubric band's "band" field must be a numeric mark range in the exact form "N-M" (e.g. "0-2", "3-4"), never a descriptive label like "Basic" or "Competent" — put the descriptive judgement in "description" instead.
 - Rubric bands must describe observable answer behaviours ("names partition strategies and trade-offs"), never vague vibes ("good understanding").
 - Rubric bands must fully cover 0 through maxMarks with no gaps or overlaps.
 - "totalMarks" must equal the sum of every question's "maxMarks" — compute it carefully.
