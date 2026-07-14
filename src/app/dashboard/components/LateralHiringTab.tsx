@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { LateralCandidate, Interview, Panelist } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -35,7 +36,7 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
 
   const [form, setForm] = useState({
     name: '', email: '', phone: '', positionTitle: '', experienceYears: '',
-    currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '',
+    currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '', roleGrade: '',
   });
 
   const [uploadingResumeId, setUploadingResumeId] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
   }, [panelSearchQuery, selectedPanels]);
 
   const resetAddForm = () => {
-    setForm({ name: '', email: '', phone: '', positionTitle: '', experienceYears: '', currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '' });
+    setForm({ name: '', email: '', phone: '', positionTitle: '', experienceYears: '', currentCompany: '', currentCtc: '', expectedCtc: '', noticePeriodDays: '', source: '', roleGrade: '' });
   };
 
   const handleAddCandidate = async (e: React.FormEvent) => {
@@ -235,6 +236,12 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
               <input className="form-input" placeholder="Expected CTC" value={form.expectedCtc} onChange={(e) => setForm((f) => ({ ...f, expectedCtc: e.target.value }))} />
               <input className="form-input" placeholder="Notice period (days)" type="number" min="0" value={form.noticePeriodDays} onChange={(e) => setForm((f) => ({ ...f, noticePeriodDays: e.target.value }))} />
               <input className="form-input" placeholder="Source (Referral, LinkedIn, ...)" value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} />
+              <select className="form-input" value={form.roleGrade} onChange={(e) => setForm((f) => ({ ...f, roleGrade: e.target.value }))}>
+                <option value="">Role grade (for Recalibrate)…</option>
+                {Object.entries(ROLE_GRADES).map(([key, r]) => (
+                  <option key={key} value={key}>{r.label}</option>
+                ))}
+              </select>
             </div>
             {addError && <div style={{ color: '#ef4444', fontSize: '0.8rem' }}>{addError}</div>}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -258,6 +265,7 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
               <tr>
                 <th>Candidate</th>
                 <th>Position</th>
+                <th>Grade</th>
                 <th>Experience</th>
                 <th>Current Company</th>
                 <th>Notice</th>
@@ -270,7 +278,7 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
             <tbody>
               {candidates.map((candidate) => {
                 const candidateInterviews = getCandidateInterviews(candidate.email);
-                const statusStyle = STATUS_BADGE_STYLE[candidate.status];
+                const statusStyle = STATUS_BADGE_STYLE[candidate.status] ?? STATUS_BADGE_STYLE.NEW;
                 return (
                   <tr key={candidate.id}>
                     <td>
@@ -278,6 +286,11 @@ export default function LateralHiringTab({ candidates, setCandidates, interviews
                       <div className="text-muted text-xs">{candidate.email}</div>
                     </td>
                     <td>{candidate.positionTitle}</td>
+                    <td>
+                      {candidate.roleGrade && ROLE_GRADES[candidate.roleGrade as keyof typeof ROLE_GRADES]
+                        ? <span className="badge">{ROLE_GRADES[candidate.roleGrade as keyof typeof ROLE_GRADES].label}</span>
+                        : <span className="text-muted text-xs">—</span>}
+                    </td>
                     <td>{candidate.experienceYears !== undefined ? `${candidate.experienceYears} yrs` : '—'}</td>
                     <td>{candidate.currentCompany || '—'}</td>
                     <td>{candidate.noticePeriodDays !== undefined ? `${candidate.noticePeriodDays}d` : '—'}</td>

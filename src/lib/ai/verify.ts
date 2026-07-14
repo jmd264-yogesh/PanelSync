@@ -1,9 +1,11 @@
-import { Criteria, QuestionSet } from './schemas';
+import { QuestionSet } from './schemas';
 
 export class QuestionSetVerificationError extends Error {}
 
 // The LLM proposes; this recomputes the arithmetic and cross-checks it never trusted the model for.
-export function verifyQuestionSet(questionSet: QuestionSet, criteria: Criteria): void {
+// `focusAreas` is the flat list of valid question categories — for the resume-driven flow
+// that's Criteria.focusAreas; for the spec-driven flow it's spec-catalog's deriveFocusAreas(spec).
+export function verifyQuestionSet(questionSet: QuestionSet, focusAreas: string[]): void {
   const recomputedTotal = questionSet.questions.reduce((sum, q) => sum + q.maxMarks, 0);
   if (recomputedTotal !== questionSet.totalMarks) {
     throw new QuestionSetVerificationError(
@@ -11,7 +13,7 @@ export function verifyQuestionSet(questionSet: QuestionSet, criteria: Criteria):
     );
   }
 
-  const focusAreaSet = new Set(criteria.focusAreas.map((f) => f.toLowerCase()));
+  const focusAreaSet = new Set(focusAreas.map((f) => f.toLowerCase()));
   for (const q of questionSet.questions) {
     if (!focusAreaSet.has(q.category.toLowerCase())) {
       throw new QuestionSetVerificationError(

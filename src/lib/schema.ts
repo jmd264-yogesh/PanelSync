@@ -124,6 +124,7 @@ export const aiRuns = pgTable('ai_runs', {
   triggeredByEmail: varchar('triggered_by_email', { length: 255 }).notNull(),
   status: varchar('status', { length: 50 }).notNull(), // QUEUED|PARSING|EXTRACTING|GENERATING|COMPLETED|FAILED
   criteria: jsonb('criteria'),
+  spec: jsonb('spec'), // spec-driven generation input (role grade/tracks/platforms/topics/style) — no resume needed
   resumeDigest: jsonb('resume_digest'),
   questions: jsonb('questions'),
   model: varchar('model', { length: 100 }),
@@ -159,6 +160,7 @@ export const lateralCandidates = pgTable('lateral_candidates', {
   noticePeriodDays: integer('notice_period_days'),
   source: varchar('source', { length: 100 }), // Referral | LinkedIn | Naukri | Other
   status: varchar('status', { length: 50 }).default('NEW').notNull(), // NEW|SCREENING|INTERVIEWING|OFFERED|HIRED|REJECTED|WITHDRAWN
+  roleGrade: varchar('role_grade', { length: 20 }), // intern|se|sse|enabler|sc|ssc|architect — Recalibrate question-difficulty default
   resumeFileKey: text('resume_file_key'),
   resumeSha256: varchar('resume_sha256', { length: 64 }),
   resumeUploadedAt: timestamp('resume_uploaded_at'),
@@ -166,5 +168,25 @@ export const lateralCandidates = pgTable('lateral_candidates', {
     .references(() => interviews.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
   deletedAt: timestamp('deleted_at'),
+});
+
+// 13. Recalibrate live-scoring sessions (one per interview) — persists the timer,
+// per-question scores, overall rubric grid, and notes for the panelist's live
+// spec-driven interview run, so it survives page reloads.
+export const recalibrateSessions = pgTable('recalibrate_sessions', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  interviewId: varchar('interview_id', { length: 255 })
+    .references(() => interviews.id, { onDelete: 'cascade' })
+    .notNull()
+    .unique(),
+  aiRunId: varchar('ai_run_id', { length: 255 })
+    .references(() => aiRuns.id, { onDelete: 'set null' }), // which run's questions are currently being scored
+  questionScores: jsonb('question_scores'), // { [questionId]: 1-5 }
+  rubricScores: jsonb('rubric_scores'), // { [dimensionLabel]: 1-5 }
+  notes: text('notes'),
+  timerStartedAt: timestamp('timer_started_at'),
+  timerEndedAt: timestamp('timer_ended_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
