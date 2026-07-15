@@ -7,11 +7,12 @@ import {
   Gauge, ListChecks, SlidersHorizontal, StickyNote, TrendingUp, TrendingDown, Minus, Clock3,
 } from 'lucide-react';
 import type { Spec } from '@/lib/ai/schemas';
+import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
+import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import {
-  ROLE_GRADES, CALIBRATION, TRACK_ORDER, TRACKS, STYLES, PLATFORMS, TOPICS, rubricDimensions,
-} from '@/lib/ai/spec-catalog';
-import type { RoleGrade, Platform, Topic, Style } from '@/lib/ai/spec-catalog';
-import { SpecChip, toggleInArray } from './spec-ui';
+  getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL,
+  TECHNICAL_RUBRIC, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC, BEHAVIOURAL_EXPECTED_BAND,
+} from '@/lib/ai/org-rubric';
 import { buildCandidateSheetHtml, buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
 
 interface RubricBand {
@@ -62,19 +63,25 @@ interface RecalibrateSession {
 
 const DEFAULT_SPEC: Spec = {
   roleGrade: 'se',
-  tracks: ['technical'],
-  platforms: ['fabric'],
-  topics: ['sql', 'modeling', 'pipeline'],
   style: 'practical',
   questionCount: 6,
+};
+
+// Org rubric scale — 1 Does Not Meet .. 4 Exceeds Expectation. Used for both the
+// per-question scores and the Overall Scoring Rubric grid, so the whole tool reads
+// against one consistent scale.
+const ORG_SCORE_LABELS: Record<number, string> = {
+  1: 'Does Not Meet',
+  2: 'Partially Meets',
+  3: 'Meets Expectation',
+  4: 'Exceeds Expectation',
 };
 
 const SCORE_COLORS: Record<number, string> = {
   1: '#ef4444',
   2: '#f97316',
-  3: '#f59e0b',
-  4: '#84cc16',
-  5: '#10b981',
+  3: '#3b82f6',
+  4: '#10b981',
 };
 
 const DIFFICULTY_STYLE: Record<Question['difficulty'], { bg: string; color: string }> = {
@@ -118,6 +125,7 @@ function ScoreDial({ value, selected, onSelect, size = 30 }: { value: number; se
     <button
       type="button"
       onClick={onSelect}
+      title={`${value} — ${ORG_SCORE_LABELS[value]}`}
       style={{
         width: `${size}px`,
         height: `${size}px`,
@@ -145,6 +153,55 @@ function ProgressBar({ value, max, color }: { value: number; max: number; color:
   return (
     <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: 'var(--border-glass)', overflow: 'hidden' }}>
       <div style={{ width: `${pct}%`, height: '100%', borderRadius: 'inherit', background: color, transition: 'width 0.4s ease-out' }} />
+    </div>
+  );
+}
+
+function ScoreLegend() {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+      {[1, 2, 3, 4].map((n) => (
+        <span key={n} style={{
+          display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', fontWeight: 600,
+          padding: '0.2rem 0.5rem', borderRadius: '999px', background: `${SCORE_COLORS[n]}1a`, color: SCORE_COLORS[n],
+        }}>
+          <span>{n}</span>
+          <span>{ORG_SCORE_LABELS[n]}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RubricRow({
+  label, bands, score, onScore,
+}: {
+  label: string;
+  bands: readonly [string, string, string, string];
+  score: number | undefined;
+  onScore: (n: number) => void;
+}) {
+  return (
+    <div style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border-glass)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>{label}</span>
+        <div style={{ display: 'flex', gap: '0.3rem' }}>
+          {[1, 2, 3, 4].map((n) => (
+            <ScoreDial key={n} value={n} selected={score === n} onSelect={() => onScore(n)} size={26} />
+          ))}
+        </div>
+      </div>
+      <details style={{ marginTop: '0.3rem' }}>
+        <summary style={{ fontSize: '0.7rem', cursor: 'pointer', color: 'var(--text-muted)' }}>View rubric</summary>
+        <div style={{ marginTop: '0.35rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          {bands.map((text, i) => (
+            <div key={i} style={{ fontSize: '0.72rem', display: 'flex', gap: '0.45rem', fontWeight: score === i + 1 ? 700 : 400 }}>
+              <span style={{ minWidth: '1.1rem', color: SCORE_COLORS[i + 1] }}>{i + 1}</span>
+              <span className={score === i + 1 ? undefined : 'text-muted'}>{text}</span>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
@@ -255,10 +312,6 @@ export default function RecalibratePanel({
   };
 
   const handleGenerate = async () => {
-    if (spec.tracks.includes('technical') && spec.topics.length === 0) {
-      toast.error('Select at least one topic area.');
-      return;
-    }
     setGenerating(true);
     setError(null);
     try {
@@ -332,12 +385,22 @@ export default function RecalibratePanel({
   };
 
   const questions = activeRun?.questions?.questions || [];
-  const dims = useMemo(() => rubricDimensions(spec), [spec]);
+  const orgTier = useMemo(() => getOrgTier(spec.roleGrade), [spec.roleGrade]);
+
+  const technicalDims = useMemo(() => TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => ({
+    label: TECHNICAL_CATEGORY_LABEL[id],
+    bands: TECHNICAL_RUBRIC[orgTier][id]!,
+  })), [orgTier]);
+  const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({
+    label: BEHAVIOURAL_CATEGORY_LABEL[id],
+    bands: BEHAVIOURAL_RUBRIC[id],
+  })), []);
+  const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
 
   const avgQuestionScore = useMemo(() => avgOf(questions.map((q) => questionScores[q.id]).filter((v): v is number => typeof v === 'number')), [questions, questionScores]);
   const scoredQuestionCount = questions.filter((q) => typeof questionScores[q.id] === 'number').length;
-  const avgRubricScore = useMemo(() => avgOf(dims.map((d) => rubricScores[d]).filter((v): v is number => typeof v === 'number')), [dims, rubricScores]);
-  const ratedDimCount = dims.filter((d) => typeof rubricScores[d] === 'number').length;
+  const avgRubricScore = useMemo(() => avgOf(allDims.map((d) => rubricScores[d.label]).filter((v): v is number => typeof v === 'number')), [allDims, rubricScores]);
+  const ratedDimCount = allDims.filter((d) => typeof rubricScores[d.label] === 'number').length;
   const gap = avgQuestionScore !== null && avgRubricScore !== null ? avgRubricScore - avgQuestionScore : null;
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
   const timerRunning = !!timerStartedAt && !timerEndedAt;
@@ -353,7 +416,7 @@ export default function RecalibratePanel({
     candidateName,
     positionTitle,
     roleGradeLabel: ROLE_GRADES[spec.roleGrade].label,
-    tracksLabel: TRACK_ORDER.filter((t) => spec.tracks.includes(t)).map((t) => TRACKS[t]).join(', '),
+    rubricTierLabel: ORG_TIER_LABEL[orgTier],
     styleLabel: STYLES[spec.style].label,
     panelistName,
     date: new Date().toISOString().slice(0, 10),
@@ -362,7 +425,7 @@ export default function RecalibratePanel({
       rubric: q.rubric.map((b) => ({ band: b.band, description: b.description })),
     })),
     questionScores,
-    rubricDimensions: dims,
+    rubricDimensions: allDims.map((d) => d.label),
     rubricScores,
     notes,
     durationLabel: elapsedLabel,
@@ -450,36 +513,9 @@ export default function RecalibratePanel({
           />
         </div>
         <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</div>
-
-        <div>
-          <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Interview tracks</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-            {TRACK_ORDER.map((t) => (
-              <SpecChip key={t} active={spec.tracks.includes(t)} label={TRACKS[t]} onClick={() => setSpec((s) => ({ ...s, tracks: toggleInArray(s.tracks, t, true) }))} />
-            ))}
-          </div>
+        <div className="text-xs text-muted">
+          Rubric: <strong style={{ color: 'var(--text-main)' }}>{ORG_TIER_LABEL[orgTier]}</strong> — bar: {ORG_TIER_BAR[orgTier]}
         </div>
-
-        {spec.tracks.includes('technical') && (
-          <>
-            <div>
-              <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Platform focus</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                {Object.entries(PLATFORMS).map(([key, label]) => (
-                  <SpecChip key={key} active={spec.platforms.includes(key as Platform)} label={label} onClick={() => setSpec((s) => ({ ...s, platforms: toggleInArray(s.platforms, key as Platform) }))} />
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Topic areas</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                {Object.entries(TOPICS).map(([key, label]) => (
-                  <SpecChip key={key} active={spec.topics.includes(key as Topic)} label={label} onClick={() => setSpec((s) => ({ ...s, topics: toggleInArray(s.topics, key as Topic) }))} />
-                ))}
-              </div>
-            </div>
-          </>
-        )}
 
         <div>
           <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={generating} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -514,7 +550,7 @@ export default function RecalibratePanel({
                 </div>
                 <p style={{ fontSize: '0.85rem', fontWeight: 600, margin: '0 0 0.5rem', lineHeight: 1.5 }}>{q.question}</p>
                 <details style={{ marginBottom: '0.6rem' }}>
-                  <summary style={{ fontSize: '0.72rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Rubric ({q.rubric.length} bands)</summary>
+                  <summary style={{ fontSize: '0.72rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model rubric ({q.rubric.length} bands, out of {q.maxMarks})</summary>
                   <div style={{ marginTop: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                     {q.rubric.map((band, bi) => (
                       <div key={bi} style={{ fontSize: '0.72rem', display: 'flex', gap: '0.5rem' }}>
@@ -526,7 +562,7 @@ export default function RecalibratePanel({
                 </details>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                   <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>Score</span>
-                  {[1, 2, 3, 4, 5].map((n) => (
+                  {[1, 2, 3, 4].map((n) => (
                     <ScoreDial key={n} value={n} selected={questionScores[q.id] === n} onSelect={() => scoreQuestion(q.id, n)} />
                   ))}
                 </div>
@@ -537,42 +573,41 @@ export default function RecalibratePanel({
       )}
 
       {questions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', borderTop: '1px solid var(--border-glass)', paddingTop: '0.9rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem', borderTop: '1px solid var(--border-glass)', paddingTop: '0.9rem' }}>
           <SectionHeader icon={<Gauge size={13} />} title="Overall Scoring Rubric" />
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'separate', borderSpacing: '0 0.35rem' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Skill Dimension</th>
-                  {[1, 2, 3, 4, 5].map((n) => <th key={n} style={{ textAlign: 'center', width: '40px' }} />)}
-                </tr>
-              </thead>
-              <tbody>
-                {dims.map((dim) => (
-                  <tr key={dim}>
-                    <td style={{ paddingRight: '0.75rem' }}>{dim}</td>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <td key={n} style={{ textAlign: 'center' }}>
-                        <ScoreDial value={n} selected={rubricScores[dim] === n} onSelect={() => scoreRubric(dim, n)} size={26} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="text-xs text-muted">
+            {ORG_TIER_LABEL[orgTier]} · bar: {ORG_TIER_BAR[orgTier]} · score 3 = the bar stated in the interview framework for this role
+          </div>
+          <ScoreLegend />
+
+          <div>
+            <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.4rem 0 0.2rem' }}>Technical Skill Rubric</div>
+            {technicalDims.map((dim) => (
+              <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} />
+            ))}
+          </div>
+
+          <div>
+            <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.6rem 0 0.2rem' }}>Behavioural Competency Rubric</div>
+            <div className="text-xs text-muted" style={{ marginBottom: '0.3rem' }}>
+              One shared scale across roles — reflects rough seniority, not the role being interviewed for. Expected range for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong>.
+            </div>
+            {behaviouralDims.map((dim) => (
+              <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} />
+            ))}
           </div>
 
           <div className="glass-card" style={{ padding: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
               <div>
                 <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Avg question score</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 5</span></div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 4</span></div>
                 <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} scored</div>
               </div>
               <div>
                 <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Avg rubric score</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 5</span></div>
-                <div className="text-xs text-muted">{ratedDimCount} dims rated</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 4</span></div>
+                <div className="text-xs text-muted">{ratedDimCount}/{allDims.length} dims rated</div>
               </div>
               <div>
                 <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Rubric vs question gap</div>

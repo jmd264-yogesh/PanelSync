@@ -4,10 +4,12 @@ import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+// Org rubric scale: 1 Does Not Meet .. 4 Exceeds Expectation — applies to both the
+// per-question scores and the Overall Scoring Rubric grid.
 function isValidScoreMap(value: unknown): value is Record<string, number> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   return Object.values(value as Record<string, unknown>).every(
-    (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5
+    (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 4
   );
 }
 
@@ -76,13 +78,13 @@ export async function PATCH(
     }
     if (body.questionScores !== undefined) {
       if (!isValidScoreMap(body.questionScores)) {
-        return NextResponse.json({ error: 'questionScores must map question IDs to integers 1-5' }, { status: 400 });
+        return NextResponse.json({ error: 'questionScores must map question IDs to integers 1-4' }, { status: 400 });
       }
       patch.questionScores = body.questionScores;
     }
     if (body.rubricScores !== undefined) {
       if (!isValidScoreMap(body.rubricScores)) {
-        return NextResponse.json({ error: 'rubricScores must map dimension labels to integers 1-5' }, { status: 400 });
+        return NextResponse.json({ error: 'rubricScores must map dimension labels to integers 1-4' }, { status: 400 });
       }
       patch.rubricScores = body.rubricScores;
     }

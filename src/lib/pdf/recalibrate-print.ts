@@ -21,7 +21,7 @@ export interface RecalibratePrintInput {
   candidateName: string;
   positionTitle: string;
   roleGradeLabel: string;
-  tracksLabel: string;
+  rubricTierLabel: string; // e.g. "SE & SSE" — which org rubric table this interview was scored against
   styleLabel: string;
   panelistName: string;
   date: string; // e.g. 2026-07-13
@@ -48,8 +48,8 @@ function analysisRows(input: RecalibratePrintInput): { rows: string; flag: strin
   const avgQ = avgOf(qScores);
   const avgR = avgOf(rScores);
 
-  let rows = `<tr><td>Avg question score</td><td>${avgQ !== null ? avgQ.toFixed(1) + ' / 5' : '—'}</td></tr>`;
-  rows += `<tr><td>Avg rubric score</td><td>${avgR !== null ? avgR.toFixed(1) + ' / 5' : '—'}</td></tr>`;
+  let rows = `<tr><td>Avg question score</td><td>${avgQ !== null ? avgQ.toFixed(1) + ' / 4' : '—'}</td></tr>`;
+  rows += `<tr><td>Avg rubric score</td><td>${avgR !== null ? avgR.toFixed(1) + ' / 4' : '—'}</td></tr>`;
   let flag = '';
   if (avgQ !== null && avgR !== null) {
     const diff = avgR - avgQ;
@@ -89,7 +89,7 @@ function metaTable(input: RecalibratePrintInput): string {
     <tr><td>Candidate</td><td>${escapeHtml(input.candidateName)}</td></tr>
     <tr><td>Position</td><td>${escapeHtml(input.positionTitle)}</td></tr>
     <tr><td>Role grade</td><td>${escapeHtml(input.roleGradeLabel)}</td></tr>
-    <tr><td>Interview tracks</td><td>${escapeHtml(input.tracksLabel)}</td></tr>
+    <tr><td>Rubric</td><td>${escapeHtml(input.rubricTierLabel)}</td></tr>
     <tr><td>Question style</td><td>${escapeHtml(input.styleLabel)}</td></tr>
     <tr><td>Date</td><td>${escapeHtml(input.date)}</td></tr>
   </table>`;
@@ -131,14 +131,14 @@ export function buildPanelistReportHtml(input: RecalibratePrintInput): string {
       <p class="qh"><b>Q${idx + 1}.</b> <span class="area">${escapeHtml(q.category)} · ${escapeHtml(q.difficulty)} · ${q.maxMarks} marks</span></p>
       <p class="qt">${escapeHtml(q.question)}</p>
       <p class="gg">${rubricLines}</p>
-      <p class="sc"><b>Score given:</b> ${score !== undefined ? score + ' / 5' : '— (not scored)'}</p>
+      <p class="sc"><b>Score given:</b> ${score !== undefined ? score + ' / 4' : '— (not scored)'}</p>
     </div>`;
   });
 
   let rubricRows = '';
   input.rubricDimensions.forEach((dim) => {
     const val = input.rubricScores[dim];
-    rubricRows += `<tr><td>${escapeHtml(dim)}</td><td>${val !== undefined ? val + ' / 5' : '—'}</td></tr>`;
+    rubricRows += `<tr><td>${escapeHtml(dim)}</td><td>${val !== undefined ? val + ' / 4' : '—'}</td></tr>`;
   });
 
   const notes = escapeHtml(input.notes) || '—';

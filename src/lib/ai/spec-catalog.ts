@@ -1,7 +1,10 @@
-import { Question, Spec } from './schemas';
+import { Question } from './schemas';
 
 // Catalog for the spec-driven ("no resume needed") AI question generation flow.
-// Ported from the standalone Calibrate DE CoE Interview Kit prototype.
+// Role grades + calibration text + question style are the only "catalog" left here —
+// the category taxonomy (what to ask about, and the Overall Scoring Rubric's
+// dimensions/bands) now comes entirely from the organization's actual rubric in
+// ./org-rubric.ts, keyed off roleGrade.
 
 export const ROLE_GRADES = {
   intern: { label: 'Intern', tier: 1 },
@@ -21,22 +24,12 @@ export const CALIBRATION: Record<number, string> = {
   4: 'Tier 4 (Data Architect): expect strategic, cross-engagement thinking, comfort defending a recommendation under scrutiny, and awareness of second-order organizational consequences, not just technical correctness.',
 };
 
-export const TRACKS = {
-  technical: 'Technical',
-  architecture: 'Solution Architecture',
-  presales: 'Client Handling & Presales',
-  comms: 'Communication & Articulation',
-  presentation: 'Client Presentation',
-} as const;
-export type Track = keyof typeof TRACKS;
-export const TRACK_ORDER: Track[] = ['technical', 'architecture', 'presales', 'comms', 'presentation'];
-
 export const STYLES = {
   foundational: {
     label: 'Logical / Foundational',
     hint: 'Tests core reasoning and fundamentals — the concepts a solid engineer should hold regardless of platform. Cleaner, more self-contained questions with a definable good answer.',
     promptGuidance:
-      'Test core reasoning and fundamentals — the concepts a solid practitioner should hold regardless of platform (data modelling logic, SQL/query reasoning, pipeline principles, trade-off thinking, or the relevant fundamentals for the track). Keep it clean and self-contained, with a definable "good answer" — this is about depth of understanding, not obscure trivia. Still reward reasoning over recall: prefer "why / how would you decide" over "define X".',
+      'Test core reasoning and fundamentals — the concepts a solid practitioner should hold regardless of platform (data modelling logic, SQL/query reasoning, pipeline principles, trade-off thinking, or the relevant fundamentals for the category). Keep it clean and self-contained, with a definable "good answer" — this is about depth of understanding, not obscure trivia. Still reward reasoning over recall: prefer "why / how would you decide" over "define X".',
   },
   practical: {
     label: 'Practical / Real-world',
@@ -46,59 +39,6 @@ export const STYLES = {
   },
 } as const;
 export type Style = keyof typeof STYLES;
-
-export const PLATFORMS = {
-  fabric: 'Microsoft Fabric',
-  databricks: 'Databricks',
-  snowflake: 'Snowflake',
-  dbt: 'dbt',
-  general: 'Platform-agnostic (overarching · Azure / AWS)',
-} as const;
-export type Platform = keyof typeof PLATFORMS;
-
-export const TOPICS = {
-  sql: 'SQL & Query Performance',
-  modeling: 'Data Modeling',
-  pipeline: 'Pipeline / ETL Design',
-  governance: 'Governance & Security',
-  streaming: 'Real-time / Streaming',
-  archtech: 'Architecture & System Design',
-  codereview: 'Code Review & Code Quality',
-} as const;
-export type Topic = keyof typeof TOPICS;
-
-// One label per selected topic for technical tracks, plus the track's own label for every
-// other selected track. This doubles as the prompt's "valid categories" list and the
-// focusAreas passed into verifyQuestionSet.
-export function deriveFocusAreas(spec: Spec): string[] {
-  const areas: string[] = [];
-  if (spec.tracks.includes('technical')) {
-    spec.topics.forEach((t) => areas.push(TOPICS[t]));
-  }
-  TRACK_ORDER.filter((t) => t !== 'technical' && spec.tracks.includes(t)).forEach((t) => areas.push(TRACKS[t]));
-  return areas;
-}
-
-// Fixed skill dimensions assessed for each non-technical track, used by the Recalibrate
-// Overall Scoring Rubric grid. Ported from the Calibrate prototype's TRACK_DIMS.
-export const TRACK_DIMS: Partial<Record<Track, string[]>> = {
-  comms: ['Clarity of Explanation', 'Handling Difficult Conversations', 'Active Listening & Adjusting to Audience'],
-  presales: ['Discovery & Needs Diagnosis', 'Objection Handling', 'Framing Technical Trade-offs as Business Impact'],
-  presentation: ['Structuring for the Audience', 'Executive Presence', 'Handling Live Curveballs'],
-  architecture: ['Strategic Trade-off Reasoning', 'Defending Recommendations Under Scrutiny', 'Forward-looking Design Judgement'],
-};
-
-// Skill dimensions for the Overall Scoring Rubric grid — topic labels (+ "Problem-Solving
-// Approach") for technical, plus each non-technical track's fixed dimension set.
-export function rubricDimensions(spec: Spec): string[] {
-  const dims: string[] = [];
-  if (spec.tracks.includes('technical')) {
-    spec.topics.forEach((t) => dims.push(TOPICS[t]));
-    dims.push('Problem-Solving Approach');
-  }
-  TRACK_ORDER.filter((t) => t !== 'technical' && spec.tracks.includes(t)).forEach((t) => dims.push(...(TRACK_DIMS[t] || [])));
-  return dims;
-}
 
 const DIFFICULTY_RANK: Record<Question['difficulty'], number> = { easy: 0, medium: 1, hard: 2 };
 

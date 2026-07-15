@@ -3,7 +3,7 @@ import { getPanelistSession } from '@/lib/session';
 import { db, AiRun } from '@/lib/db';
 import { QuestionSetSchema, Spec } from '@/lib/ai/schemas';
 import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { deriveFocusAreas } from '@/lib/ai/spec-catalog';
+import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +45,7 @@ export async function PATCH(
 
     if (run.criteria || run.spec) {
       try {
-        const focusAreas = run.criteria ? (run.criteria as any).focusAreas : deriveFocusAreas(run.spec as Spec);
+        const focusAreas = run.criteria ? (run.criteria as any).focusAreas : deriveFocusAreas((run.spec as Spec).roleGrade);
         verifyQuestionSet(parsed.data, focusAreas);
       } catch (err) {
         if (err instanceof QuestionSetVerificationError) {
