@@ -295,13 +295,14 @@ export default function LateralHiringTab({
         body: JSON.stringify({
           candidateName: schedulingFor.name,
           candidateEmail: schedulingFor.email,
-          role: `LATERAL - ${roundLabel.trim()} - ${schedulingFor.positionTitle}`,
+          role: `${roundLabel.trim()} - ${schedulingFor.positionTitle}`,
           duration: parseInt(duration, 10),
           startDate,
           startTime,
           endTime,
           panelists: selectedPanels,
           lateralCandidateId: schedulingFor.id,
+          hiringType: "LATERAL"
         }),
       });
       const result = await res.json();

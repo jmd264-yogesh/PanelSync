@@ -145,11 +145,8 @@ export default function InterviewsTab({
   drives,
   activeDrive,
 }: InterviewsTabProps) {
-  console.log(interviews[10]);
   // ── UI States ─────────────────────────────────────────────────────────────
-  const [activeHiringTab, setActiveHiringTab] = useState<"CAMPUS" | "LATERAL">(
-    "CAMPUS",
-  );
+  const [activeHiringTab, setActiveHiringTab] = useState<"CAMPUS" | "LATERAL">("CAMPUS");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "PENDING" | "COLLECTED" | "SCHEDULED"
   >("all");
@@ -710,26 +707,26 @@ export default function InterviewsTab({
       const info = getInterviewInfo(i.role);
       return activeHiringTab === "LATERAL" ? info.isLateral : info.isCampus;
     });
-    console.log("this is before filter", filtered);
+    // console.log("this is before filter", filtered);
 
-    console.log("After hiring:", filtered.length);
+    // console.log("After hiring:", filtered.length);
     if (selectedDrive && activeHiringTab === "CAMPUS") {
       filtered = filtered.filter((i) =>
         interviewInDriveWindow(i, selectedDrive),
       );
     }
-    console.log("After drive:", filtered.length);
+    // console.log("After drive:", filtered.length);
     if (statusFilter !== "all") {
       filtered = filtered.filter((i) => i.status === statusFilter);
     }
-    console.log("After status:", filtered.length);
+    // console.log("After status:", filtered.length);
 
     if (typeFilter !== "all") {
       filtered = filtered.filter((i) =>
         i.role.toLowerCase().includes(typeFilter.toLowerCase()),
       );
     }
-    console.log("After type:", filtered.length);
+    // console.log("After type:", filtered.length);
 
     if (dateFilter !== "all") {
       filtered = filtered.filter((i) => {
@@ -741,28 +738,28 @@ export default function InterviewsTab({
         return dateFilter >= startD && dateFilter <= endD;
       });
     }
-    console.log("After date:", filtered.length);
+    // console.log("After date:", filtered.length);
 
     if (
-  activeHiringTab === "CAMPUS" &&
-  collegeFilter !== "all"
-) {
-  filtered = filtered.filter((i) => {
-    const candidate = candidates.find(
-      (c) => c.email.toLowerCase() === i.candidateEmail.toLowerCase(),
-    );
+      activeHiringTab === "CAMPUS" &&
+      collegeFilter !== "all"
+    ) {
+      filtered = filtered.filter((i) => {
+        const candidate = candidates.find(
+          (c) => c.email.toLowerCase() === i.candidateEmail.toLowerCase(),
+        );
 
-    if (candidate) {
-      return (
-        candidate.collegeDrive &&
-        candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase()
-      );
+        if (candidate) {
+          return (
+            candidate.collegeDrive &&
+            candidate.collegeDrive.toLowerCase() === collegeFilter.toLowerCase()
+          );
+        }
+
+        return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
+      });
     }
-
-    return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
-  });
-}
-    console.log("After college:", filtered.length);
+    // console.log("After college:", filtered.length);
 
     if (filterThisWeek) {
       const today = new Date();
@@ -781,7 +778,7 @@ export default function InterviewsTab({
         return startD <= nextWeek && endD >= today;
       });
     }
-    console.log("After week:", filtered.length);
+    // console.log("After week:", filtered.length);
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -792,9 +789,9 @@ export default function InterviewsTab({
           i.role.toLowerCase().includes(query),
       );
     }
-    console.log("After search:", filtered.length);
+    // console.log("After search:", filtered.length);
 
-    console.log("this is after filterd", filtered);
+    // console.log("this is after filterd", filtered);
     return filtered;
   };
 
@@ -1594,7 +1591,6 @@ export default function InterviewsTab({
               }
 
               return panelRequestsList.map(({ key, interview, panel }) => {
-                console.log(interview);
                 const isSelected = selectedInterview?.id === interview.id;
                 const { isLateral, isL1, isL2 } = getInterviewInfo(
                   interview.role,

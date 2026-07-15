@@ -44,6 +44,12 @@ export async function POST(request: NextRequest) {
     }
 
     const newDrive = await db.createDrive(collegeName, startDate, endDate);
+
+    const today = new Intl.DateTimeFormat("en-CA", {timeZone: "Asia/Kolkata",}).format(new Date());
+    if (startDate.trim() === today) {
+      await db.setActiveDrive(newDrive.id);
+    }
+
     return NextResponse.json({ success: true, drive: newDrive });
   } catch (error) {
     console.error('Failed to create drive:', error);

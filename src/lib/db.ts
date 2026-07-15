@@ -142,6 +142,7 @@ export interface Drive {
 export interface PanelistInterview {
   interviewId: string;
   role: string;
+  hiringType: hiringTypeEnum;
   duration: number;
   scheduledSlotStart: string;
   scheduledSlotEnd: string;
@@ -1047,6 +1048,7 @@ export const db = {
       result.push({
         interviewId: interview.id,
         role: interview.role,
+        hiringType: interview.hiringType,
         duration: interview.duration,
         scheduledSlotStart: interview.scheduledSlotStart!.toISOString(),
         scheduledSlotEnd: interview.scheduledSlotEnd!.toISOString(),

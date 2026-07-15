@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { candidateName, candidateEmail, role, duration, startDate, endDate, panels, lateralCandidateId } = body;
+    const { candidateName, candidateEmail, role, duration, startDate, endDate, panels, lateralCandidateId, hiringType } = body;
 
     // 1. Validation
     if (!candidateName || !candidateEmail || !role || !duration || !startDate || !endDate || !panels || !panels.length) {
@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       candidateName,
       candidateEmail,
       role,
+      hiringType: hiringType,
       duration: parseInt(duration, 10),
       startDate,
       endDate,

@@ -30,9 +30,10 @@ export async function POST(request: NextRequest) {
       candidateEmail,
       role,
       lateralCandidateId,
+      hiringType,
     } = body;
 
-    const isLateral = Boolean(lateralCandidateId);
+    const isLateral = hiringType === 'LATERAL';
     const targetPanelists = bodyPanelists || (panelist ? [panelist] : []);
 
     if (!targetPanelists.length)
@@ -134,18 +135,13 @@ export async function POST(request: NextRequest) {
 
       const interviewEnd = isLateral ? `${startDate}T${endTime}:00` : endDate;
       const interview = await db.createInterview({
-        candidateName: isLateral ? candidateName : "Pending Assignment",
-
-        candidateEmail: isLateral ? candidateEmail : "pending@assign.com",
-
+        candidateName: candidateName,
+        candidateEmail: candidateEmail,
         role: interviewRole,
-
+        hiringType: hiringType,
         duration: Number(duration),
-
         startDate: interviewStart,
-
         endDate: interviewEnd,
-
         panels: [
           {
             userId: p.id,
@@ -187,8 +183,8 @@ export async function POST(request: NextRequest) {
         );
 
         const requestTitle = isLateral
-          ? "Lateral Interview Request"
-          : "Interview Slot Request";
+          ? "Lateral Hiring Interview Slot Request"
+          : "Campus Hiring Interview Slot Request";
 
         const greeting = isLateral
           ? `You have been nominated by <strong>${session.user.displayName}</strong> to interview <strong>${candidateName}</strong>.`
