@@ -36,13 +36,12 @@ export const CriteriaSchema = z.object({
 export type Criteria = z.infer<typeof CriteriaSchema>;
 
 // Spec-driven generation: an alternative to Criteria that needs no resume/candidate at
-// all — the panelist scopes the question set directly (role grade, tracks, platform,
-// topics, style) instead of it being derived from a resume digest.
+// all — the panelist scopes the question set directly. Role grade alone now determines
+// the question/rubric category taxonomy (the organization's technical + behavioural
+// rubric, keyed by role grade — see src/lib/ai/org-rubric.ts); there is no separate
+// tracks/platforms/topics selection.
 export const SpecSchema = z.object({
   roleGrade: z.enum(['intern', 'se', 'sse', 'enabler', 'sc', 'ssc', 'architect']),
-  tracks: z.array(z.enum(['technical', 'architecture', 'presales', 'comms', 'presentation'])).min(1),
-  platforms: z.array(z.enum(['fabric', 'databricks', 'snowflake', 'dbt', 'general'])).default([]),
-  topics: z.array(z.enum(['sql', 'modeling', 'pipeline', 'governance', 'streaming', 'archtech', 'codereview'])).default([]),
   style: z.enum(['foundational', 'practical']),
   questionCount: z.number().int().min(3).max(12),
 });

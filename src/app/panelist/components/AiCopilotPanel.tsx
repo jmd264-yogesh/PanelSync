@@ -4,9 +4,9 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { Sparkles, Loader2, FileText, Wand2, History, Save, AlertTriangle } from 'lucide-react';
 import type { Spec } from '@/lib/ai/schemas';
-import { ROLE_GRADES, CALIBRATION, TRACK_ORDER, TRACKS, STYLES, PLATFORMS, TOPICS } from '@/lib/ai/spec-catalog';
-import type { RoleGrade, Platform, Topic, Style } from '@/lib/ai/spec-catalog';
-import { SpecChip, toggleInArray } from './spec-ui';
+import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
+import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
+import { getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR } from '@/lib/ai/org-rubric';
 
 interface ResumeDigestSkill {
   name: string;
@@ -86,9 +86,6 @@ const DEFAULT_CRITERIA: Criteria = {
 
 const DEFAULT_SPEC: Spec = {
   roleGrade: 'se',
-  tracks: ['technical'],
-  platforms: ['fabric'],
-  topics: ['sql', 'modeling', 'pipeline'],
   style: 'practical',
   questionCount: 6,
 };
@@ -202,11 +199,6 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
   };
 
   const handleGenerateFromSpec = async () => {
-    if (spec.tracks.includes('technical') && spec.topics.length === 0) {
-      toast.error('Select at least one topic area.');
-      return;
-    }
-
     setLoadingQuestions(true);
     setError(null);
     try {
@@ -429,7 +421,7 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <h4 style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0 }}>Spec-driven Question Generation</h4>
               <p className="text-xs text-muted" style={{ margin: 0 }}>
-                No resume needed — scope the question set directly by role grade, tracks, and topics.
+                No resume needed — pick a role grade and the organization's own technical + behavioural rubric scopes the question set automatically.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
                 <select
@@ -461,51 +453,9 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
               </div>
               <div className="text-xs text-muted">{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</div>
               <div className="text-xs text-muted">{STYLES[spec.style].hint}</div>
-
-              <div>
-                <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Interview tracks</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                  {TRACK_ORDER.map((t) => (
-                    <SpecChip
-                      key={t}
-                      active={spec.tracks.includes(t)}
-                      label={TRACKS[t]}
-                      onClick={() => setSpec((s) => ({ ...s, tracks: toggleInArray(s.tracks, t, true) }))}
-                    />
-                  ))}
-                </div>
+              <div className="text-xs text-muted">
+                Rubric: <strong style={{ color: 'var(--text-main)' }}>{ORG_TIER_LABEL[getOrgTier(spec.roleGrade)]}</strong> — bar: {ORG_TIER_BAR[getOrgTier(spec.roleGrade)]}
               </div>
-
-              {spec.tracks.includes('technical') && (
-                <>
-                  <div>
-                    <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Platform focus</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {Object.entries(PLATFORMS).map(([key, label]) => (
-                        <SpecChip
-                          key={key}
-                          active={spec.platforms.includes(key as Platform)}
-                          label={label}
-                          onClick={() => setSpec((s) => ({ ...s, platforms: toggleInArray(s.platforms, key as Platform) }))}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs" style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Topic areas</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {Object.entries(TOPICS).map(([key, label]) => (
-                        <SpecChip
-                          key={key}
-                          active={spec.topics.includes(key as Topic)}
-                          label={label}
-                          onClick={() => setSpec((s) => ({ ...s, topics: toggleInArray(s.topics, key as Topic) }))}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
 
               <div>
                 <button className="btn btn-primary btn-sm" onClick={handleGenerateFromSpec} disabled={loadingQuestions} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>

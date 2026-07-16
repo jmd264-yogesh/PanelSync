@@ -2,8 +2,11 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, X, Download, Gauge, ListChecks, StickyNote, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle2, Clock3 } from 'lucide-react';
-import { ROLE_GRADES, TRACK_ORDER, TRACKS, STYLES, rubricDimensions } from '@/lib/ai/spec-catalog';
-import type { RoleGrade } from '@/lib/ai/spec-catalog';
+import { ROLE_GRADES, STYLES } from '@/lib/ai/spec-catalog';
+import {
+  getOrgTier, ORG_TIER_LABEL, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL, TECHNICAL_RUBRIC,
+  BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC, BEHAVIOURAL_EXPECTED_BAND,
+} from '@/lib/ai/org-rubric';
 import type { Spec } from '@/lib/ai/schemas';
 import { buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
 
@@ -40,9 +43,8 @@ interface RecalibrateReport {
 const SCORE_COLORS: Record<number, string> = {
   1: '#ef4444',
   2: '#f97316',
-  3: '#f59e0b',
-  4: '#84cc16',
-  5: '#10b981',
+  3: '#3b82f6',
+  4: '#10b981',
 };
 
 const DIFFICULTY_STYLE: Record<ReportQuestion['difficulty'], { bg: string; color: string }> = {
@@ -89,7 +91,7 @@ function ScoreChip({ value }: { value: number | undefined }) {
       fontSize: '0.72rem', fontWeight: 700, fontFamily: 'monospace',
       background: `${color}1a`, color,
     }}>
-      {value}/5
+      {value}/4
     </span>
   );
 }
@@ -128,12 +130,20 @@ export default function RecalibrateReportModal({
 
   const questions = report?.questions?.questions || [];
   const spec = report?.spec || null;
-  const dims = useMemo(() => (spec ? rubricDimensions(spec) : []), [spec]);
+  const orgTier = useMemo(() => (spec ? getOrgTier(spec.roleGrade) : null), [spec]);
+
+  const technicalDims = useMemo(() => {
+    if (!orgTier) return [];
+    return TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
+  }, [orgTier]);
+  const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({ label: BEHAVIOURAL_CATEGORY_LABEL[id], bands: BEHAVIOURAL_RUBRIC[id] })), []);
+  const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
+
   const questionScores = report?.session.questionScores || {};
   const rubricScores = report?.session.rubricScores || {};
 
   const avgQuestionScore = avgOf(questions.map((q) => questionScores[q.id]).filter((v): v is number => typeof v === 'number'));
-  const avgRubricScore = avgOf(dims.map((d) => rubricScores[d]).filter((v): v is number => typeof v === 'number'));
+  const avgRubricScore = avgOf(allDims.map((d) => rubricScores[d.label]).filter((v): v is number => typeof v === 'number'));
   const gap = avgQuestionScore !== null && avgRubricScore !== null ? avgRubricScore - avgQuestionScore : null;
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
 
@@ -146,18 +156,18 @@ export default function RecalibrateReportModal({
   })();
 
   const handleDownload = () => {
-    if (!report || !spec) return;
+    if (!report || !spec || !orgTier) return;
     const html = buildPanelistReportHtml({
       candidateName: report.candidateName,
       positionTitle: report.positionTitle,
       roleGradeLabel: ROLE_GRADES[spec.roleGrade].label,
-      tracksLabel: TRACK_ORDER.filter((t) => spec.tracks.includes(t)).map((t) => TRACKS[t]).join(', '),
+      rubricTierLabel: ORG_TIER_LABEL[orgTier],
       styleLabel: STYLES[spec.style].label,
       panelistName: report.session.submittedBy || '—',
       date: new Date().toISOString().slice(0, 10),
       questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, rubric: q.rubric })),
       questionScores,
-      rubricDimensions: dims,
+      rubricDimensions: allDims.map((d) => d.label),
       rubricScores,
       notes: report.session.notes || '',
       durationLabel,
@@ -200,7 +210,7 @@ export default function RecalibrateReportModal({
           </div>
         )}
 
-        {!loading && report && spec && (
+        {!loading && report && spec && orgTier && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div className="badge badge-success" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600, textTransform: 'none' }}>
               <CheckCircle2 size={13} />
@@ -212,6 +222,7 @@ export default function RecalibrateReportModal({
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
               <span className="badge badge-info">{ROLE_GRADES[spec.roleGrade].label}</span>
+              <span className="badge">{ORG_TIER_LABEL[orgTier]} rubric</span>
               <span className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Clock3 size={11} /> {durationLabel}</span>
             </div>
 
@@ -219,11 +230,11 @@ export default function RecalibrateReportModal({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
                 <div>
                   <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Avg question score</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 5</span></div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 4</span></div>
                 </div>
                 <div>
                   <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Avg rubric score</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 5</span></div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}> / 4</span></div>
                 </div>
                 <div>
                   <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Rubric vs question gap</div>
@@ -269,19 +280,32 @@ export default function RecalibrateReportModal({
               </div>
             </div>
 
-            {dims.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <SectionHeader icon={<Gauge size={13} />} title="Overall Scoring Rubric" />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  {dims.map((dim) => (
-                    <div key={dim} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
-                      <span>{dim}</span>
-                      <ScoreChip value={rubricScores[dim]} />
+            {technicalDims.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <SectionHeader icon={<Gauge size={13} />} title="Technical Skill Rubric" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {technicalDims.map((dim) => (
+                    <div key={dim.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                      <span>{dim.label}</span>
+                      <ScoreChip value={rubricScores[dim.label]} />
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <SectionHeader icon={<Gauge size={13} />} title="Behavioural Competency Rubric" />
+              <div className="text-xs text-muted">Expected range for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                {behaviouralDims.map((dim) => (
+                  <div key={dim.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                    <span>{dim.label}</span>
+                    <ScoreChip value={rubricScores[dim.label]} />
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {report.session.notes && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>

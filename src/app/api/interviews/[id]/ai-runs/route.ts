@@ -8,7 +8,8 @@ import { getAiProvider } from '@/lib/ai/provider';
 import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
 import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
 import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { deriveFocusAreas, sortByDifficulty } from '@/lib/ai/spec-catalog';
+import { sortByDifficulty } from '@/lib/ai/spec-catalog';
+import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,16 +67,13 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid spec', details: parsedSpec.error.issues }, { status: 400 });
       }
       const spec = parsedSpec.data;
-      if (spec.tracks.includes('technical') && spec.topics.length === 0) {
-        return NextResponse.json({ error: 'Select at least one topic area.' }, { status: 400 });
-      }
 
       let specRun = await db.createAiRun({ interviewId: id, candidateId: null, triggeredByEmail: session.user.email });
       const specProvider = getAiProvider();
 
       try {
         specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
-        const focusAreas = deriveFocusAreas(spec);
+        const focusAreas = deriveFocusAreas(spec.roleGrade);
         const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas);
         const questionResult = await specProvider.generateStructured({
           systemPrompt,
