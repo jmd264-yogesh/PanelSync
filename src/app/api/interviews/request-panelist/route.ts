@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
           {
             userId: p.id,
             name: p.displayName,
-            email: p.mail,
+            email: p.email || p.mail,
           },
         ],
       });

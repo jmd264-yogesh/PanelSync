@@ -307,45 +307,101 @@ export default function PanelistClient({
           : i.hiringType !== "LATERAL",
       ),
     );
-    return interviews.filter((i) =>
+  return interviews.filter((i) => {
+    // Hiring type
+    if (
       activeHiringTab === "LATERAL"
-        ? i.hiringType === "LATERAL"
-        : i.hiringType !== "LATERAL",
-    );
-  }, [interviews, activeHiringTab]);
+        ? i.hiringType !== "LATERAL"
+        : i.hiringType === "LATERAL"
+    ) {
+      return false;
+    }
+
+    // Campus Active Drive
+    if (
+      activeHiringTab === "CAMPUS" &&
+      filterActiveDrive &&
+      activeDrive &&
+      !isFromActiveDrive(i.role)
+    ) {
+      return false;
+    }
+
+    // Date
+    if (filterDate) {
+      if (!i.scheduledSlotStart) return false;
+
+      const d = new Date(i.scheduledSlotStart);
+      const localDate = `${d.getFullYear()}-${String(
+        d.getMonth() + 1,
+      ).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      if (localDate !== filterDate) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}, [
+  interviews,
+  activeHiringTab,
+  filterActiveDrive,
+  activeDrive,
+  filterDate,
+]);
 
   const hiringRequests = React.useMemo(() => {
-    return pendingRequests.filter((r) =>
+  return pendingRequests.filter((req) => {
+    // Hiring type
+    if (
       activeHiringTab === "LATERAL"
-        ? r.interview.hiringType === "LATERAL"
-        : r.interview.hiringType !== "LATERAL",
-    );
-  }, [pendingRequests, activeHiringTab]);
+        ? req.interview.hiringType !== "LATERAL"
+        : req.interview.hiringType === "LATERAL"
+    ) {
+      return false;
+    }
+
+    // Campus Active Drive
+    if (
+      activeHiringTab === "CAMPUS" &&
+      filterActiveDrive &&
+      activeDrive &&
+      !isFromActiveDrive(req.interview.role)
+    ) {
+      return false;
+    }
+
+    // Date
+    if (filterDate) {
+      const [y, m, d] = filterDate.split("-").map(Number);
+
+      const target = new Date(y, m - 1, d);
+      target.setHours(0, 0, 0, 0);
+
+      const start = new Date(req.interview.startDate);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(req.interview.endDate);
+      end.setHours(23, 59, 59, 999);
+
+      if (!(target >= start && target <= end)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}, [
+  pendingRequests,
+  activeHiringTab,
+  filterActiveDrive,
+  activeDrive,
+  filterDate,
+]);
 
   const filteredInterviews = React.useMemo(() => {
     return hiringInterviews.filter((i) => {
-      // Campus Active Drive filter
-      if (
-        activeHiringTab === "CAMPUS" &&
-        filterActiveDrive &&
-        activeDrive &&
-        !isFromActiveDrive(i.role)
-      ) {
-        return false;
-      }
-
-      // Date filter
-      if (filterDate) {
-        if (!i.scheduledSlotStart) return false;
-
-        const d = new Date(i.scheduledSlotStart);
-        const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-        if (localDate !== filterDate) {
-          return false;
-        }
-      }
-
       // Round filter
       if (activeRoundTab === "L1" && !i.role.toLowerCase().includes("l1")) {
         return false;
@@ -359,40 +415,11 @@ export default function PanelistClient({
     });
   }, [
     hiringInterviews,
-    activeHiringTab,
-    filterActiveDrive,
-    activeDrive,
-    filterDate,
     activeRoundTab,
   ]);
 
   const filteredRequests = React.useMemo(() => {
     return hiringRequests.filter((req) => {
-      if (
-        activeHiringTab === "CAMPUS" &&
-        filterActiveDrive &&
-        activeDrive &&
-        !isFromActiveDrive(req.interview.role)
-      ) {
-        return false;
-      }
-
-      if (filterDate) {
-        const [y, m, d] = filterDate.split("-").map(Number);
-
-        const target = new Date(y, m - 1, d);
-        target.setHours(0, 0, 0, 0);
-
-        const start = new Date(req.interview.startDate);
-        start.setHours(0, 0, 0, 0);
-
-        const end = new Date(req.interview.endDate);
-        end.setHours(23, 59, 59, 999);
-
-        if (!(target >= start && target <= end)) {
-          return false;
-        }
-      }
 
       if (
         activeRoundTab === "L1" &&
@@ -412,10 +439,6 @@ export default function PanelistClient({
     });
   }, [
     hiringRequests,
-    activeHiringTab,
-    filterActiveDrive,
-    activeDrive,
-    filterDate,
     activeRoundTab,
   ]);
 
@@ -448,7 +471,7 @@ export default function PanelistClient({
       const bCollege = getCollegeNameFromRole(b.role);
       return aCollege.localeCompare(bCollege);
     });
-  }, [filteredInterviews, activeHiringTab, activeDrive]);
+  }, [filteredInterviews, activeDrive]);
 
   // Memoized sorted and filtered pending requests (slots):
   // 1. Active drive first
@@ -488,17 +511,17 @@ export default function PanelistClient({
   // Memoized dynamic counts for primary and secondary tabs (taking into account active drive and date filters)
   const tabCounts = React.useMemo(() => {
     // Requests
-    const totalRequests = filteredRequests.length;
+    const totalRequests = hiringRequests.length;
 
-    const l1Requests = filteredRequests.filter((r) =>
+    const l1Requests = hiringRequests.filter((r) =>
       r.interview.role.toLowerCase().includes("l1"),
     ).length;
 
-    const l2Requests = filteredRequests.filter((r) =>
+    const l2Requests = hiringRequests.filter((r) =>
       r.interview.role.toLowerCase().includes("l2"),
     ).length;
 
-    const lateralRequests = filteredRequests.filter(
+    const lateralRequests = hiringRequests.filter(
       (r) => r.interview.hiringType === "LATERAL",
     ).length;
 
@@ -506,17 +529,17 @@ export default function PanelistClient({
       totalRequests - l1Requests - l2Requests - lateralRequests;
 
     // Interviews
-    const totalFeedback = filteredInterviews.length;
+    const totalFeedback = hiringInterviews.length;
 
-    const l1Feedback = filteredInterviews.filter((i) =>
+    const l1Feedback = hiringInterviews.filter((i) =>
       i.role.toLowerCase().includes("l1"),
     ).length;
 
-    const l2Feedback = filteredInterviews.filter((i) =>
+    const l2Feedback = hiringInterviews.filter((i) =>
       i.role.toLowerCase().includes("l2"),
     ).length;
 
-    const lateralFeedback = filteredInterviews.filter(
+    const lateralFeedback = hiringInterviews.filter(
       (i) => i.hiringType === "LATERAL",
     ).length;
 
@@ -539,7 +562,7 @@ export default function PanelistClient({
         general: generalFeedback,
       },
     };
-  }, [filteredRequests, filteredInterviews]);
+  }, [hiringRequests, hiringInterviews]);
 
   const refreshInterviews = async () => {
     try {

@@ -446,7 +446,8 @@ export default function PanelistsTab({
           interviewType: reqInterviewType,
           slots: selectedProposedSlots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
           collegeName: reqCollegeName,
-          candidateName: 'Campus Hiring',
+          candidateName: 'Pending Assignment',
+          candidateEmail: 'pending@assignement.com',
           hiringType: 'CAMPUS',
         }),
       });
