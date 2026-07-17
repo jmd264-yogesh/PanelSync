@@ -103,8 +103,9 @@ export function useRecalibrateSession({
   const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState('');
 
-  const [timerStartedAt, setTimerStartedAt] = useState<string | null>(null);
-  const [timerEndedAt, setTimerEndedAt] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [, setClockTick] = useState(0);
 
   useEffect(() => {
@@ -138,8 +139,9 @@ export function useRecalibrateSession({
           setQuestionScores(loadedSession.questionScores || {});
           setRubricScores(loadedSession.rubricScores || {});
           setNotes(loadedSession.notes || '');
-          setTimerStartedAt(loadedSession.timerStartedAt);
-          setTimerEndedAt(loadedSession.timerEndedAt);
+          setElapsedSeconds(loadedSession.timerEndedAt != null ? Number(loadedSession.timerEndedAt) : 0);
+          setStartedAt(loadedSession.timerStartedAt ? new Date(loadedSession.timerStartedAt).getTime() : null);
+          setIsRunning(!!loadedSession.timerStartedAt);
         }
         if (chosenRun) {
           setActiveRun(chosenRun);
@@ -159,10 +161,14 @@ export function useRecalibrateSession({
 
   // Live elapsed-time tick while the timer is running.
   useEffect(() => {
-    if (!timerStartedAt || timerEndedAt) return;
-    const id = setInterval(() => setClockTick((t) => t + 1), 1000);
+    if (!isRunning) return;
+
+    const id = setInterval(() => {
+      setClockTick((t) => t + 1);
+    }, 1000);
+
     return () => clearInterval(id);
-  }, [timerStartedAt, timerEndedAt]);
+  }, [isRunning]);
 
   const patchSession = async (patch: Partial<{
     aiRunId: string | null;
@@ -246,16 +252,58 @@ export function useRecalibrateSession({
   };
 
   const handleTimerStart = () => {
-    const now = new Date().toISOString();
-    setTimerStartedAt(now);
-    setTimerEndedAt(null);
-    void patchSession({ timerStartedAt: now, timerEndedAt: null });
+    const now = Date.now();
+
+    setElapsedSeconds(0);
+    setStartedAt(now);
+    setIsRunning(true);
+
+    void patchSession({
+      timerStartedAt: new Date(now).toISOString(),
+      timerEndedAt: "0",
+    });
   };
 
-  const handleTimerStop = () => {
-    const now = new Date().toISOString();
-    setTimerEndedAt(now);
-    void patchSession({ timerEndedAt: now });
+  const handleTimerPause = () => {
+    if (!startedAt) return;
+
+    const total =
+      elapsedSeconds +
+      Math.floor((Date.now() - startedAt) / 1000);
+
+    setElapsedSeconds(total);
+    setStartedAt(null);
+    setIsRunning(false);
+
+    void patchSession({
+      timerStartedAt: null,
+      timerEndedAt: String(total),
+    });
+  };
+
+  const handleTimerResume = () => {
+    if (isRunning) return;
+
+    const now = Date.now();
+
+    setStartedAt(now);
+    setIsRunning(true);
+
+    void patchSession({
+      timerStartedAt: new Date(now).toISOString(),
+      timerEndedAt: String(elapsedSeconds),
+    });
+  };
+
+  const handleTimerReset = () => {
+    setElapsedSeconds(0);
+    setStartedAt(null);
+    setIsRunning(false);
+
+    void patchSession({
+      timerStartedAt: null,
+      timerEndedAt: "0",
+    });
   };
 
   const questions = activeRun?.questions?.questions || [];
@@ -277,14 +325,14 @@ export function useRecalibrateSession({
   const ratedDimCount = allDims.filter((d) => typeof rubricScores[d.label] === 'number').length;
   const gap = avgQuestionScore !== null && avgRubricScore !== null ? avgRubricScore - avgQuestionScore : null;
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
-  const timerRunning = !!timerStartedAt && !timerEndedAt;
 
-  const elapsedLabel = (() => {
-    if (!timerStartedAt) return '—';
-    const start = new Date(timerStartedAt).getTime();
-    const end = timerEndedAt ? new Date(timerEndedAt).getTime() : Date.now();
-    return fmtElapsed(Math.max(0, Math.floor((end - start) / 1000)));
-  })();
+  const totalSeconds =
+    elapsedSeconds +
+    (isRunning && startedAt
+      ? Math.floor((Date.now() - startedAt) / 1000)
+      : 0);
+
+  const elapsedLabel = fmtElapsed(totalSeconds);
 
   const buildPrintInput = () => ({
     candidateName,
@@ -312,8 +360,9 @@ export function useRecalibrateSession({
     loading, generating, submitting, error,
     session, activeRun, spec, setSpec, notes, setNotes,
     questionScores, rubricScores,
-    timerStartedAt, timerEndedAt, timerRunning, elapsedLabel,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, handleTimerStart, handleTimerStop,
+    isRunning, startedAt, elapsedSeconds, elapsedLabel,
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, 
+    handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,
     questions, orgTier, technicalDims, behaviouralDims, allDims,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, gap, gapIsDiscrepant,
     handleDownloadCandidate, handleDownloadPanelist,

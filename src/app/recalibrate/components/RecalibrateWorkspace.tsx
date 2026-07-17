@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Wand2, Loader2, Play, Square, Download, AlertTriangle, Send, Undo2, CheckCircle2,
-  Gauge, ListChecks, SlidersHorizontal, StickyNote, TrendingUp, TrendingDown, Minus, Clock3, Pencil, ChevronDown,
+  Wand2, Loader2, Download, AlertTriangle, Send, Undo2, CheckCircle2,
+  Gauge, ListChecks, SlidersHorizontal, StickyNote, TrendingUp, TrendingDown, Minus, Pencil, ChevronDown,
+  Clock3,
 } from 'lucide-react';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
@@ -11,6 +12,7 @@ import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND } from '@/lib/a
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateRail';
+import InterviewStopwatch from './InterviewStopwatch';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -33,14 +35,25 @@ export default function RecalibrateWorkspace({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores, timerStartedAt, timerEndedAt, timerRunning, elapsedLabel,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, handleTimerStart, handleTimerStop,
+    questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur,
+    handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
     questions, orgTier, technicalDims, behaviouralDims,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant,
     handleDownloadCandidate, handleDownloadPanelist,
   } = rc;
 
   const [specExpanded, setSpecExpanded] = useState(true);
+
+  // A session "has started" once there's recorded elapsed time or it's actively running —
+  // this covers the resumed-after-refresh case where isRunning is true but elapsedSeconds
+  // may still be 0 for the first tick.
+  const hasStarted = isRunning || elapsedSeconds > 0;
+
+  const handleTimerReset = () => {
+    if (!confirm('Reset interview timer?')) return;
+    resetTimer();
+  };
 
   useEffect(() => {
     if (activeRun && questions.length > 0) setSpecExpanded(false);
@@ -49,9 +62,9 @@ export default function RecalibrateWorkspace({
   useEffect(() => {
     if (!onStatusChange) return;
     if (session?.submittedAt) { onStatusChange('submitted'); return; }
-    const hasProgress = Object.keys(questionScores).length > 0 || Object.keys(rubricScores).length > 0 || !!timerStartedAt;
+    const hasProgress = Object.keys(questionScores).length > 0 || Object.keys(rubricScores).length > 0 || hasStarted;
     onStatusChange(hasProgress ? 'in_progress' : 'not_started');
-  }, [session?.submittedAt, questionScores, rubricScores, timerStartedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.submittedAt, questionScores, rubricScores, hasStarted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -59,20 +72,78 @@ export default function RecalibrateWorkspace({
         <div className="glass-card" style={{ padding: '1.5rem', height: '96px' }} />
         <div style={{ display: 'flex', gap: '1.5rem' }}>
           <div className="glass-card" style={{ flex: 1, padding: '1.5rem', height: '320px' }} />
-          <div className="glass-card" style={{ width: '400px', padding: '1.5rem', height: '320px' }} />
+          <div className="glass-card" style={{ width: '340px', padding: '1.5rem', height: '320px' }} />
+          <div className="glass-card" style={{ width: '320px', padding: '1.5rem', height: '320px' }} />
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "1.25rem",
+        width: "100%",
+        minHeight: "100vh",
+        flex: 1,
+      }}
+    >
       <style>{`
-        .rc-workspace-grid { display: flex; gap: 1.5rem; align-items: flex-start; }
-        .rc-workspace-grid .rc-side { width: 400px; flex-shrink: 0; position: sticky; top: 1.5rem; max-height: calc(100vh - 3rem); overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; padding-bottom: 1rem; }
+        .rc-workspace-grid {
+          display: grid;
+          grid-template-columns:
+            minmax(500px, 1fr)
+            minmax(280px, 22%)
+            minmax(280px, 20%);
+          gap: 1.5rem;
+          align-items: flex-start;
+          width: 100%;
+        }
+
+        .rc-workspace-grid .rc-rubric-col,
+        .rc-workspace-grid .rc-interview-col {
+          position: sticky;
+          top: 1.5rem;
+          max-height: calc(100vh - 3rem);
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          padding-bottom: 1rem;
+        }
+
+        @media (max-width: 1400px) {
+          .rc-workspace-grid {
+            grid-template-columns:
+              minmax(0, 1fr)
+              300px
+              280px;
+          }
+        }
+
+        @media (max-width: 1200px) {
+          .rc-workspace-grid {
+            grid-template-columns:
+              minmax(0, 1fr)
+              280px
+              260px;
+          }
+        }
+
         @media (max-width: 1080px) {
-          .rc-workspace-grid { flex-direction: column; }
-          .rc-workspace-grid .rc-side { width: 100%; position: static; max-height: none; }
+          .rc-workspace-grid {
+            display: flex;
+            flex-direction: column;
+          }
+
+          .rc-workspace-grid .rc-rubric-col,
+          .rc-workspace-grid .rc-interview-col {
+            position: static;
+            width: 100%;
+            max-height: none;
+          }
         }
       `}</style>
 
@@ -100,36 +171,6 @@ export default function RecalibrateWorkspace({
             </div>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end' }}>
-              <span
-                className={timerRunning ? 'animate-pulse' : undefined}
-                style={{ width: '8px', height: '8px', borderRadius: '50%', background: timerRunning ? 'var(--success, #10b981)' : 'var(--border-glass)' }}
-              />
-              <div className="text-xs text-muted" style={{ letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>Elapsed</div>
-            </div>
-            <div style={{ fontFamily: 'monospace', fontSize: '2rem', fontWeight: 700, lineHeight: 1.1 }}>{elapsedLabel}</div>
-          </div>
-          {!timerStartedAt || timerEndedAt ? (
-            <button
-              onClick={handleTimerStart}
-              className="btn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--success, #10b981)', color: '#fff', border: 'none' }}
-            >
-              <Play size={15} /> Start
-            </button>
-          ) : (
-            <button
-              onClick={handleTimerStop}
-              className="btn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'var(--danger, #ef4444)', color: '#fff', border: 'none' }}
-            >
-              <Square size={15} /> Stop
-            </button>
-          )}
-        </div>
       </div>
 
       {error && (
@@ -140,8 +181,8 @@ export default function RecalibrateWorkspace({
       )}
 
       <div className="rc-workspace-grid">
-        {/* Main column */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Column 1 — Questions */}
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div className="glass-card" style={{ padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: questions.length > 0 ? 'pointer' : 'default' }}
               onClick={() => questions.length > 0 && setSpecExpanded((v) => !v)}
@@ -240,10 +281,39 @@ export default function RecalibrateWorkspace({
           )}
         </div>
 
-        {/* Sticky scorecard */}
+        {/* Column 2 — Rubric */}
         {questions.length > 0 && (
-          <div className="rc-side">
-            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="rc-rubric-col">
+            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
+              <ScoreLegend compact />
+              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.3rem 0 0' }}>Technical</div>
+              {technicalDims.map((dim) => (
+                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+              ))}
+              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.5rem 0 0' }}>Behavioural</div>
+              <div className="text-xs text-muted">Expected for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
+              {behaviouralDims.map((dim) => (
+                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Column 3 — Interview */}
+        <div className="rc-interview-col">
+          <InterviewStopwatch
+            elapsedLabel={elapsedLabel}
+            isRunning={isRunning}
+            hasStarted={hasStarted}
+            onStart={hasStarted ? handleTimerResume : handleTimerStart}
+            onPause={handleTimerPause}
+            onReset={handleTimerReset}
+          />
+
+          {questions.length > 0 && (
+            <>
+              <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <SectionHeader icon={<Gauge size={14} />} title="Live Analysis" />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                 <div>
@@ -278,20 +348,7 @@ export default function RecalibrateWorkspace({
               <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
             </div>
 
-            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
-              <ScoreLegend compact />
-              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.3rem 0 0' }}>Technical</div>
-              {technicalDims.map((dim) => (
-                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
-              ))}
-              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.5rem 0 0' }}>Behavioural</div>
-              <div className="text-xs text-muted">Expected for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
-              {behaviouralDims.map((dim) => (
-                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
-              ))}
-            </div>
-
+            {/* notes */}
             <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <SectionHeader icon={<StickyNote size={14} />} title="Notes" />
               <textarea
@@ -335,9 +392,10 @@ export default function RecalibrateWorkspace({
                   <span>Submit to recruiters</span>
                 </button>
               )}
-            </div>
-          </div>
-        )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
