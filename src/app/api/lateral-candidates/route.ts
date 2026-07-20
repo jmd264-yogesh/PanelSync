@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { db } from '@/lib/db';
+import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, email, phone, positionTitle, experienceYears, currentCompany, currentCtc, expectedCtc, noticePeriodDays, source } = body;
+    const { name, email, phone, positionTitle, experienceYears, currentCompany, currentCtc, expectedCtc, noticePeriodDays, source, roleGrade } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Candidate name is required.' }, { status: 400 });
@@ -39,6 +40,9 @@ export async function POST(request: NextRequest) {
     }
     if (!positionTitle || !positionTitle.trim()) {
       return NextResponse.json({ error: 'Position title is required.' }, { status: 400 });
+    }
+    if (roleGrade !== undefined && roleGrade !== '' && !(roleGrade in ROLE_GRADES)) {
+      return NextResponse.json({ error: `roleGrade must be one of: ${Object.keys(ROLE_GRADES).join(', ')}` }, { status: 400 });
     }
 
     await db.addLateralCandidate({
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest) {
       expectedCtc: expectedCtc?.trim() || undefined,
       noticePeriodDays: noticePeriodDays !== undefined && noticePeriodDays !== '' ? Number(noticePeriodDays) : undefined,
       source: source?.trim() || undefined,
+      roleGrade: roleGrade?.trim() || undefined,
     });
 
     const list = await db.getLateralCandidates();

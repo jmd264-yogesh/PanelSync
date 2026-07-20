@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { db } from '@/lib/db';
+import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,13 @@ export async function PATCH(
     if (body.expectedCtc !== undefined) updateParams.expectedCtc = body.expectedCtc?.trim() || null;
     if (body.noticePeriodDays !== undefined) updateParams.noticePeriodDays = body.noticePeriodDays === '' ? null : Number(body.noticePeriodDays);
     if (body.source !== undefined) updateParams.source = body.source?.trim() || null;
+    if (body.roleGrade !== undefined) {
+      const trimmed = body.roleGrade?.trim() || '';
+      if (trimmed && !(trimmed in ROLE_GRADES)) {
+        return NextResponse.json({ error: `roleGrade must be one of: ${Object.keys(ROLE_GRADES).join(', ')}` }, { status: 400 });
+      }
+      updateParams.roleGrade = trimmed || null;
+    }
     if (body.status !== undefined) {
       if (!VALID_STATUSES.includes(body.status)) {
         return NextResponse.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 });

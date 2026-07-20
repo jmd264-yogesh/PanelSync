@@ -446,6 +446,9 @@ export default function PanelistsTab({
           interviewType: reqInterviewType,
           slots: selectedProposedSlots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
           collegeName: reqCollegeName,
+          candidateName: 'Pending Assignment',
+          candidateEmail: 'pending@assignement.com',
+          hiringType: 'CAMPUS',
         }),
       });
       if (!res.ok) {
@@ -1064,12 +1067,14 @@ export default function PanelistsTab({
 
       {/* Request Slot Overlay Modal */}
       {reqPanelists.length > 0 && (
-        <div style={{
+        <div onClick={() => {
+    setReqPanelists([]);
+  }} style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(8px)',
           zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem'
         }}>
-          <div className="glass-card animate-pulse-once" style={{ maxWidth: '520px', width: '100%', padding: '2rem', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-glass)' }}>
+          <div className="glass-card animate-pulse-once" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px', width: '100%', padding: '2rem', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-glass)' }}>
             <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.75rem', color: 'var(--fg)', fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
               Request Slots from {reqPanelists.length === 1 ? reqPanelists[0].displayName : `${reqPanelists.length} Panelists`}
             </h3>
@@ -1211,10 +1216,9 @@ export default function PanelistsTab({
               {/* Teams Message Preview Card */}
               <div style={{ background: 'var(--preview-bg)', padding: '1.25rem', borderRadius: '14px', border: '1px solid var(--border)', marginBottom: '1.5rem' }}>
                 <span className="text-muted text-xs block font-bold" style={{ marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teams Message Preview Card</span>
-                <div style={{ borderLeft: '4px solid #6366f1', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--fg-secondary)' }}>
+                <div style={{ paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--fg-secondary)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', color: '#818cf8', fontSize: '0.6rem', padding: '1px 6px', textTransform: 'uppercase', fontWeight: 700 }}>REQUEST</span>
-                    <span style={{ fontWeight: 850, color: 'var(--fg)', fontSize: '0.85rem' }}>Interview Slot Request</span>
+                    <span style={{ fontWeight: 850 }}>📅 Campus Hiring Interview Slot Request</span>
                   </div>
                   
                   <p style={{ margin: '4px 0', fontSize: '0.8rem', color: 'var(--fg)' }}>Hello <strong>{reqPanelists.length === 1 ? reqPanelists[0].displayName : '[Panelist Name]'}</strong>,</p>
@@ -1253,7 +1257,7 @@ export default function PanelistsTab({
                     {reqSlots.filter((s) => s.selected).length === 0 && <div style={{ fontStyle: 'italic', color: 'var(--danger)' }}>No slots selected! Please enable at least one slot.</div>}
                   </div>
                   
-                  <div style={{ marginTop: '0.75rem', background: '#6366f1', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '6px', display: 'inline-block', fontSize: '0.75rem', fontWeight: 700 }}>Select Slots / Provide Availability</div>
+                  <div style={{ marginTop: '0.75rem', background: '#6366f1', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '6px', display: 'inline-block', fontSize: '0.75rem', fontWeight: 700 }}>Review Availability</div>
                 </div>
               </div>
 

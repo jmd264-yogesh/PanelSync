@@ -30,10 +30,15 @@ class GeminiProvider implements StructuredAiProvider {
       throw new Error('GEMINI_API_KEY is not configured.');
     }
     this.client = new GoogleGenAI({ apiKey });
-    this.model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    this.model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   }
 
   async generateStructured<T>({ systemPrompt, userPrompt, zodSchema }: GenerateStructuredArgs<T>): Promise<GenerateStructuredResult<T>> {
+    // Constrain Gemini's decoding to the schema's actual shape (not just prose in the
+    // prompt) — without this, the model periodically simplifies nested object arrays
+    // (e.g. rubric bands) into plain strings, which then fails validation below.
+    const responseJsonSchema = z.toJSONSchema(zodSchema, { unrepresentable: 'any' });
+
     const attempt = async (prompt: string) => {
       const response = await this.client.models.generateContent({
         model: this.model,
@@ -41,6 +46,7 @@ class GeminiProvider implements StructuredAiProvider {
         config: {
           systemInstruction: systemPrompt,
           responseMimeType: 'application/json',
+          responseJsonSchema,
         },
       });
       const text = response.text;

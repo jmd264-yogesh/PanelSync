@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { db, AiRun } from '@/lib/db';
-import { QuestionSetSchema } from '@/lib/ai/schemas';
+import { QuestionSetSchema, Spec } from '@/lib/ai/schemas';
 import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
+import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,9 +43,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid questions payload', details: parsed.error.issues }, { status: 400 });
     }
 
-    if (run.criteria) {
+    if (run.criteria || run.spec) {
       try {
-        verifyQuestionSet(parsed.data, run.criteria as any);
+        const focusAreas = run.criteria ? (run.criteria as any).focusAreas : deriveFocusAreas((run.spec as Spec).roleGrade);
+        verifyQuestionSet(parsed.data, focusAreas);
       } catch (err) {
         if (err instanceof QuestionSetVerificationError) {
           return NextResponse.json({ error: err.message }, { status: 422 });

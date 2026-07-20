@@ -5,9 +5,11 @@ import { blob } from '@/lib/blob';
 import { extractResumeText, ResumeUnreadableError } from '@/lib/ai/extract-text';
 import { redactPII } from '@/lib/ai/redact';
 import { getAiProvider } from '@/lib/ai/provider';
-import { buildDigestPrompt, buildQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
-import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema } from '@/lib/ai/schemas';
+import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
+import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
 import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
+import { sortByDifficulty } from '@/lib/ai/spec-catalog';
+import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +60,47 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
+
+    if (body.spec) {
+      const parsedSpec = SpecSchema.safeParse(body.spec);
+      if (!parsedSpec.success) {
+        return NextResponse.json({ error: 'Invalid spec', details: parsedSpec.error.issues }, { status: 400 });
+      }
+      const spec = parsedSpec.data;
+
+      let specRun = await db.createAiRun({ interviewId: id, candidateId: null, triggeredByEmail: session.user.email });
+      const specProvider = getAiProvider();
+
+      try {
+        specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
+        const focusAreas = deriveFocusAreas(spec.roleGrade);
+        const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas);
+        const questionResult = await specProvider.generateStructured({
+          systemPrompt,
+          userPrompt,
+          zodSchema: QuestionSetSchema,
+        });
+
+        verifyQuestionSet(questionResult.data, focusAreas);
+        const ordered = { ...questionResult.data, questions: sortByDifficulty(questionResult.data.questions) };
+
+        specRun = await db.updateAiRun(specRun.id, {
+          status: 'COMPLETED',
+          questions: ordered,
+          model: questionResult.model,
+          promptVersion: PROMPT_VERSION,
+          completedAt: new Date(),
+        });
+
+        return NextResponse.json(sanitizeRun(specRun));
+      } catch (err) {
+        const message = err instanceof QuestionSetVerificationError ? err.message : 'AI run failed. Please try again.';
+        console.error(`AI run ${specRun.id} failed:`, err);
+        await db.updateAiRun(specRun.id, { status: 'FAILED', error: message, completedAt: new Date() });
+        return NextResponse.json({ error: message }, { status: 422 });
+      }
+    }
+
     let criteria = null;
     if (body.criteria) {
       const parsedCriteria = CriteriaSchema.safeParse(body.criteria);
@@ -122,7 +165,7 @@ export async function POST(
         zodSchema: QuestionSetSchema,
       });
 
-      verifyQuestionSet(questionResult.data, criteria);
+      verifyQuestionSet(questionResult.data, criteria.focusAreas);
 
       run = await db.updateAiRun(run.id, {
         status: 'COMPLETED',
