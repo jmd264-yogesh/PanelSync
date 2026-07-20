@@ -25,12 +25,15 @@ export default function RecalibratePanel({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores, timerStartedAt, timerEndedAt, timerRunning, elapsedLabel,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, handleTimerStart, handleTimerStop,
+    questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, 
+    handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,
     questions, orgTier, technicalDims, behaviouralDims,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant,
     handleDownloadCandidate, handleDownloadPanelist,
   } = rc;
+
+  const hasStarted = isRunning || elapsedSeconds > 0;
 
   if (loading) {
     return (
@@ -61,28 +64,57 @@ export default function RecalibratePanel({
           <div style={{ textAlign: 'right' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'flex-end' }}>
               <span
-                className={timerRunning ? 'animate-pulse' : undefined}
-                style={{ width: '7px', height: '7px', borderRadius: '50%', background: timerRunning ? 'var(--success, #10b981)' : 'var(--border-glass)' }}
+                className={isRunning ? 'animate-pulse' : undefined}
+                style={{ width: '7px', height: '7px', borderRadius: '50%', background: isRunning ? 'var(--success, #10b981)' : 'var(--border-glass)' }}
               />
               <div className="text-xs text-muted" style={{ letterSpacing: '0.06em', textTransform: 'uppercase' }}>Elapsed</div>
             </div>
             <div style={{ fontFamily: 'monospace', fontSize: '1.2rem', fontWeight: 700 }}>{elapsedLabel}</div>
           </div>
-          {!timerStartedAt || timerEndedAt ? (
+          {!hasStarted ? (
             <button
               className="btn btn-sm"
               onClick={handleTimerStart}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'var(--success-glow, rgba(16,185,129,0.1))', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--success, #10b981)' }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                background: "var(--success-glow, rgba(16,185,129,0.1))",
+                border: "1px solid rgba(16,185,129,0.3)",
+                color: "var(--success, #10b981)",
+              }}
             >
               <Play size={12} /> Start timer
+            </button>
+          ) : isRunning ? (
+            <button
+              className="btn btn-sm"
+              onClick={handleTimerPause}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                background: "var(--danger-glow, rgba(239,68,68,0.1))",
+                border: "1px solid rgba(239,68,68,0.3)",
+                color: "var(--danger, #ef4444)",
+              }}
+            >
+              <Square size={12} /> Pause timer
             </button>
           ) : (
             <button
               className="btn btn-sm"
-              onClick={handleTimerStop}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'var(--danger-glow, rgba(239,68,68,0.1))', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger, #ef4444)' }}
+              onClick={handleTimerResume}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                background: "var(--success-glow, rgba(16,185,129,0.1))",
+                border: "1px solid rgba(16,185,129,0.3)",
+                color: "var(--success, #10b981)",
+              }}
             >
-              <Square size={12} /> Stop timer
+              <Play size={12} /> Resume timer
             </button>
           )}
         </div>

@@ -189,6 +189,7 @@ export async function POST(request: NextRequest) {
           startDate: new Date(interview.startDate),
           endDate: new Date(interview.endDate),
           status: newStatus,
+          hiringType: interview.hiringType,
           teamsMeetingUrl,
           calendarEventId,
           scheduledSlotStart: new Date(slotStart),

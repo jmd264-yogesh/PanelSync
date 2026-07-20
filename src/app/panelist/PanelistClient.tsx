@@ -299,14 +299,6 @@ export default function PanelistClient({
   // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
   // 3. Alphabetically by college name
   const hiringInterviews = React.useMemo(() => {
-    console.log(
-      "this is all the interviews",
-      interviews.filter((i) =>
-        activeHiringTab === "LATERAL"
-          ? i.hiringType === "LATERAL"
-          : i.hiringType !== "LATERAL",
-      ),
-    );
   return interviews.filter((i) => {
     // Hiring type
     if (
@@ -444,8 +436,6 @@ export default function PanelistClient({
 
   const filteredSortedInterviews = React.useMemo(() => {
     let result = [...filteredInterviews];
-
-    console.log("this is the interviews", result);
 
     return result.sort((a, b) => {
       // 1. Prioritize pending feedback (where feedback is not yet submitted)
