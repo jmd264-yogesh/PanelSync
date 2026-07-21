@@ -56,7 +56,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
-      "eslint --fix"
+      "bash .husky/eslint-wrapper.sh"
     ]
   }
 }

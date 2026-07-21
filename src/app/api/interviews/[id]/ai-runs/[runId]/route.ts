@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPanelistSession } from '@/lib/session';
-import { db, AiRun } from '@/lib/db';
-import { QuestionSetSchema, Spec } from '@/lib/ai/schemas';
-import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { deriveFocusAreas } from '@/lib/ai/org-rubric';
+import { getPanelistSession } from '@server/lib/session';
+import { db, AiRun } from '@server/lib/db';
+import { QuestionSetSchema, Spec } from '@server/services/ai/schemas';
+import { verifyQuestionSet, QuestionSetVerificationError } from '@server/services/ai/verify';
+import { deriveFocusAreas } from '@server/services/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 

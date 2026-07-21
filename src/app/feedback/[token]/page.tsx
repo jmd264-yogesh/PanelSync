@@ -1,5 +1,5 @@
-import { db } from '@/lib/db';
-import FeedbackClient from './FeedbackClient';
+import { db } from '@server/lib/db';
+import { FeedbackClient } from '@/feedback/components/FeedbackClient';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 
 interface PageProps {

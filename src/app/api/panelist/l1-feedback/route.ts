@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPanelistSession } from '@/lib/session';
-import { dbClient } from '@/lib/db';
-import * as schema from '@/lib/schema';
+import { getPanelistSession } from '@server/lib/session';
+import { dbClient } from '@server/lib/db';
+import * as schema from '@server/lib/schema';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';

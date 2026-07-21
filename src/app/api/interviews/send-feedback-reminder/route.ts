@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, getAnyValidAccessToken } from '@/lib/session';
-import { db, dbClient } from '@/lib/db';
-import { graph } from '@/lib/graph';
-import * as schema from '@/lib/schema';
+import { getSession, getAnyValidAccessToken } from '@server/lib/session';
+import { db, dbClient } from '@server/lib/db';
+import { graph } from '@server/lib/graph';
+import * as schema from '@server/lib/schema';
 import { eq } from 'drizzle-orm';
 
 /**

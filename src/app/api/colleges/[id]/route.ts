@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { collegesService } from '@server/services/colleges/colleges.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,14 +15,11 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    if (!id) {
-      return NextResponse.json({ error: 'Missing college ID' }, { status: 400 });
-    }
-
-    await db.deleteCollege(id);
-    return NextResponse.json({ success: true });
+    const result = await collegesService.deleteCollege(id);
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error('Failed to delete college:', error);
-    return NextResponse.json({ error: error.message || 'Failed to delete college' }, { status: 400 });
+    const message = error instanceof Error ? error.message : 'Failed to delete college';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

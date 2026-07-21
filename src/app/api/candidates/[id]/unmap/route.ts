@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { candidatesService } from '@server/services/candidates/candidates.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,19 +21,11 @@ export async function POST(
       return NextResponse.json({ error: 'Missing candidate ID' }, { status: 400 });
     }
 
-    const unmapped = await db.unmapCandidate(id);
-    if (!unmapped) {
-      return NextResponse.json({ error: 'Candidate is not currently mapped to an interview.' }, { status: 400 });
-    }
-
-    const [candidates, interviews] = await Promise.all([
-      db.getUploadedCandidates(),
-      db.getInterviews(),
-    ]);
-
-    return NextResponse.json({ success: true, candidates, interviews });
+    const result = await candidatesService.unmapCandidate(id);
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error('Failed to unmap candidate:', error);
-    return NextResponse.json({ error: 'Failed to unmap candidate' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to unmap candidate';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,9 +1,7 @@
-import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
-import { blob } from '@/lib/blob';
-import { validateResumeFile, InvalidResumeFileError } from '@/lib/file-validate';
+import { getSession } from '@server/lib/session';
+import { lateralCandidatesService } from '@server/services/lateral-candidates/lateral-candidates.service';
+import { InvalidResumeFileError } from '@server/util/file-validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,9 +17,6 @@ export async function POST(
 
   try {
     const { id } = await params;
-    if (!id) {
-      return NextResponse.json({ error: 'Missing candidate ID' }, { status: 400 });
-    }
 
     const formData = await request.formData();
     const file = formData.get('resume');
@@ -29,28 +24,14 @@ export async function POST(
       return NextResponse.json({ error: 'No resume file provided.' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    let contentType: string;
-    try {
-      ({ contentType } = validateResumeFile(buffer));
-    } catch (err) {
-      if (err instanceof InvalidResumeFileError) {
-        return NextResponse.json({ error: err.message }, { status: 400 });
-      }
-      throw err;
-    }
-
-    const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-    const { fileKey } = await blob.uploadResume(id, buffer, file.name, contentType);
-
-    await db.setLateralCandidateResume(id, { fileKey, sha256 });
-    await db.addAuditLog(session.user.email, 'RESUME_UPLOADED', 'LateralCandidate', id, { sha256 });
-
-    const candidates = await db.getLateralCandidates();
+    const candidates = await lateralCandidatesService.uploadResume(id, file, session.user.email);
     return NextResponse.json({ success: true, candidates });
   } catch (error) {
     console.error('Failed to upload resume:', error);
-    return NextResponse.json({ error: 'Failed to upload resume' }, { status: 500 });
+    if (error instanceof InvalidResumeFileError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    const message = error instanceof Error ? error.message : 'Failed to upload resume';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

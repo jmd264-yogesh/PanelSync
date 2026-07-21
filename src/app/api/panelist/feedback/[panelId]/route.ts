@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPanelistSession } from '@/lib/session';
-import { db, dbClient } from '@/lib/db';
-import * as schema from '@/lib/schema';
+import { getPanelistSession } from '@server/lib/session';
+import { db, dbClient } from '@server/lib/db';
+import * as schema from '@server/lib/schema';
 import { eq } from 'drizzle-orm';
 
 export async function POST(

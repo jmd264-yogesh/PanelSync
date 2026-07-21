@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
-import { cn } from "@/lib/utils";
-import { ThemeProvider } from "@/components/theme-provider";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "@/components/ui/sonner";
+import { cn } from "@/common/util/utils";
+import { ThemeProvider } from "@/common/components/ThemeProvider";
+import { TooltipProvider } from "@/common/components/ui/tooltip";
+import { Toaster } from "@/common/components/ui/sonner";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],

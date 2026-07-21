@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { getSession, getPanelistSession } from '@/lib/session';
+import { getSession, getPanelistSession } from '@server/lib/session';
 import { redirect } from 'next/navigation';
 import { Calendar, Shield, Cpu, Users } from 'lucide-react';
 

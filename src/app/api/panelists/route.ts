@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidAccessToken } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getValidAccessToken } from '@server/lib/session';
+import { panelistsService } from '@server/services/panelists/panelists.service';
 
 export async function GET() {
   const token = await getValidAccessToken();
@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   try {
-    const panelists = await db.getPanelists();
+    const panelists = await panelistsService.getPanelists();
     return NextResponse.json(panelists);
   } catch (error) {
     console.error('Failed to load panelists:', error);
@@ -27,15 +27,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { user, roles } = body;
 
-    if (!user || !user.id || !user.displayName || !user.email || !roles || !Array.isArray(roles)) {
-      return NextResponse.json({ error: 'Missing user profile or roles' }, { status: 400 });
-    }
-
-    // Add or update panelist in local JSON store
-    const panelist = await db.addPanelist(user, roles);
+    const panelist = await panelistsService.addPanelist(user, roles);
     return NextResponse.json(panelist);
   } catch (error) {
     console.error('Failed to save panelist:', error);
-    return NextResponse.json({ error: 'Failed to save panelist' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to save panelist';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

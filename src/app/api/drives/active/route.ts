@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { drivesService } from '@server/services/drives/drives.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,15 +14,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { id } = body;
 
-    if (!id || typeof id !== 'string') {
-      return NextResponse.json({ error: 'Drive ID is required' }, { status: 400 });
-    }
-
-    await db.setActiveDrive(id);
-    const updatedActiveDrive = await db.getActiveDrive();
-    return NextResponse.json({ success: true, activeDrive: updatedActiveDrive });
+    const result = await drivesService.setActiveDrive(id);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to set active drive:', error);
-    return NextResponse.json({ error: 'Failed to set active drive' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to set active drive';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

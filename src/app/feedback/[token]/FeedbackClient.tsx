@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Interview, InterviewPanel } from '@/lib/db';
+import { Interview, InterviewPanel } from '@server/lib/db';
 import {
   CheckCircle,
   XCircle,

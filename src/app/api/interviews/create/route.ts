@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidAccessToken, getSession } from '@/lib/session';
-import { db, dbClient } from '@/lib/db';
-import { graph } from '@/lib/graph';
-import * as schema from '@/lib/schema';
-import { sql } from 'drizzle-orm';
+import { getValidAccessToken, getSession } from '@server/lib/session';
+import { interviewsService } from '@server/services/interviews/interviews.service';
+import { graph } from '@server/lib/graph';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -17,67 +15,34 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { candidateName, candidateEmail, role, duration, startDate, endDate, panels, lateralCandidateId, hiringType } = body;
 
-    // 1. Validation
+    // Validate required fields
     if (!candidateName || !candidateEmail || !role || !duration || !startDate || !endDate || !panels || !panels.length) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 2. Create database records
-    const interview = await db.createInterview({
-      candidateName,
-      candidateEmail,
-      role,
-      hiringType: hiringType,
-      duration: parseInt(duration, 10),
-      startDate,
-      endDate,
-      panels: panels.map((p: any) => ({
-        userId: p.id,
-        name: p.displayName,
-        email: p.mail || p.userPrincipalName,
-      })),
-    });
+    // Create interview via service
+    const interview = await interviewsService.createInterview(
+      {
+        candidateName,
+        candidateEmail,
+        role,
+        hiringType,
+        duration: parseInt(duration, 10),
+        startDate,
+        endDate,
+        panels,
+        lateralCandidateId,
+      },
+      session.user.email
+    );
 
-    // Also update candidate status in bulk upload queue to MAPPED
-    if (candidateEmail && candidateEmail !== 'pending@assign.com') {
-      try {
-        await dbClient
-          .update(schema.uploadedCandidates)
-          .set({
-            status: 'MAPPED',
-            mappedInterviewId: interview.id,
-          })
-          .where(
-            sql`LOWER(${schema.uploadedCandidates.email}) = LOWER(${candidateEmail.trim()})`
-          );
-      } catch (dbErr) {
-        console.error('Failed to update uploaded candidate status to MAPPED:', dbErr);
-      }
-    }
-
-    // Link the interview back to the lateral candidate row and advance their pipeline status
-    if (lateralCandidateId) {
-      try {
-        await db.setLateralCandidateInterview(lateralCandidateId, interview.id);
-      } catch (dbErr) {
-        console.error('Failed to link interview to lateral candidate:', dbErr);
-      }
-    }
-
-    // 3. Send Teams chat notifications to each panel member
+    // Send Teams notifications to panel members
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     for (const panel of interview.panels) {
       try {
-        // Link to the web availability selection interface
         const availabilityLink = `${appUrl}/availability/${panel.token}`;
 
-
-
-        // Create 1:1 chat between Recruiter (session user) and Panel member
-        const chat = await graph.createOneOnOneChat(session.user.id, panel.userId, token);
-
-        // Format HTML rich card style message for Microsoft Teams
         const htmlMessage = `
           <div style="font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; border-left: 4px solid #6366f1; background-color: #0f172a; color: #f8fafc; border-radius: 8px; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
             <h3 style="margin-top: 0; color: #6366f1; font-size: 16px; font-weight: 600;">Interview Panel Request</h3>
@@ -97,7 +62,7 @@ export async function POST(request: NextRequest) {
               Please click the link below to select your available slots:
             </p>
             <div style="margin-top: 16px; margin-bottom: 12px;">
-              <a href="${availabilityLink}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; transition: background-color 0.2s;">
+              <a href="${availabilityLink}" style="background-color: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">
                 Provide Availability
               </a>
             </div>
@@ -107,9 +72,9 @@ export async function POST(request: NextRequest) {
           </div>
         `;
 
-        await graph.sendTeamsMessage(chat.id, htmlMessage, token);
+        await graph.sendTeamsMessage(panel.userId, htmlMessage, token);
       } catch (chatError) {
-        console.error(`Failed to send Teams message to panel ${panel.email} (${panel.userId}):`, chatError);
+        console.error(`Failed to send Teams message to panel ${panel.email}:`, chatError);
       }
     }
 
