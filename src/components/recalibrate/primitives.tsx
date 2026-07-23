@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 
 // Org rubric scale — 1 Does Not Meet .. 4 Exceeds Expectation. Shared visual language
 // (color + labels) for every score control across Recalibrate, compact or full-page.
@@ -23,6 +25,23 @@ export const DIFFICULTY_STYLE: Record<'easy' | 'medium' | 'hard', { bg: string; 
   medium: { bg: 'var(--warning-glow, rgba(245,158,11,0.1))', color: 'var(--warning, #f59e0b)' },
   hard: { bg: 'var(--danger-glow, rgba(239,68,68,0.1))', color: 'var(--danger, #ef4444)' },
 };
+
+// Pairs an action with its keyboard shortcut on hover/focus — `trigger` must be a single
+// element (a button, typically) since Base UI's Tooltip merges its a11y props onto it
+// rather than wrapping it in an extra DOM node.
+export function KbdHintPopover({ label, keys, trigger }: { label: string; keys: string[]; trigger: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={trigger} />
+      <TooltipContent>
+        <span>{label}</span>
+        <KbdGroup>
+          {keys.map((key) => <Kbd key={key}>{key}</Kbd>)}
+        </KbdGroup>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function SectionHeader({ icon, title, right }: { icon: React.ReactNode; title: string; right?: React.ReactNode }) {
   return (

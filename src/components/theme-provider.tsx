@@ -14,9 +14,16 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   };
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({
+  children,
+  forcedTheme,
+}: {
+  children: React.ReactNode
+  /** Locks the resolved theme for this subtree (e.g. the Recalibrate console's forced dark mode) — the ThemeToggle has no effect while a forcedTheme is set, by next-themes' design. */
+  forcedTheme?: string
+}) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange forcedTheme={forcedTheme}>
       {children}
     </NextThemesProvider>
   )

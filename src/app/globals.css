@@ -662,6 +662,18 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Recalibrate console tokens — exposed as Tailwind utilities (bg-rc-brand,
+     rounded-rc-md, text-rc-body-lg, ...) without touching the shadcn radius/color
+     scale above. */
+  --color-rc-brand: var(--rc-brand);
+  --color-rc-brand-hover: var(--rc-brand-hover);
+  --radius-rc-sm: var(--rc-radius-sm);
+  --radius-rc-md: var(--rc-radius-md);
+  --radius-rc-lg: var(--rc-radius-lg);
+  --radius-rc-xl: var(--rc-radius-xl);
+  --text-rc-body-lg: var(--rc-font-body-lg);
+  --text-rc-kbd: var(--rc-font-kbd);
 }
 
 .dark {
@@ -764,6 +776,19 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
   --badge-l2-bg: rgba(124, 58, 237, 0.08);
   --badge-l2-border: rgba(124, 58, 237, 0.25);
   --badge-l2-text: #7c3aed;
+
+  /* Recalibrate interview console — dedicated accent, distinct from the app-wide
+     --primary (blue), plus a few scale tokens the console redesign introduces.
+     Radius/type tokens are theme-independent, so they aren't repeated in .dark. */
+  --rc-brand: #7c3aed;
+  --rc-brand-hover: #6d28d9;
+  --rc-brand-glow: rgba(124, 58, 237, 0.1);
+  --rc-radius-sm: 6px;
+  --rc-radius-md: 10px;
+  --rc-radius-lg: 14px;
+  --rc-radius-xl: 20px;
+  --rc-font-body-lg: 1.375rem;
+  --rc-font-kbd: 0.75rem;
 }
 
 .dark {
@@ -807,6 +832,10 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator {
   --badge-l2-bg: rgba(124, 58, 237, 0.12);
   --badge-l2-border: rgba(124, 58, 237, 0.3);
   --badge-l2-text: #c084fc;
+
+  --rc-brand: #a855f7;
+  --rc-brand-hover: #9333ea;
+  --rc-brand-glow: rgba(168, 85, 247, 0.14);
 }
 
 html,
