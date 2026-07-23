@@ -13,6 +13,7 @@ import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateRail';
 import InterviewStopwatch from './InterviewStopwatch';
+import L1ReferencePanel from './L1ReferencePanel';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -24,14 +25,17 @@ export default function RecalibrateWorkspace({
   candidateName,
   positionTitle,
   panelistName,
+  round = null,
   onStatusChange,
 }: {
   interviewId: string;
   candidateName: string;
   positionTitle: string;
   panelistName: string;
+  round?: 'L1' | 'L2' | null;
   onStatusChange?: (status: CandidateStatus) => void;
 }) {
+  const isL2Round = round === 'L2';
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
@@ -161,6 +165,17 @@ export default function RecalibrateWorkspace({
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, fontFamily: 'var(--font-heading)' }}>{candidateName}</h1>
             <p className="text-muted" style={{ margin: '0.1rem 0 0', fontSize: '0.9rem' }}>{positionTitle}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
+              {round && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', fontSize: '0.72rem', fontWeight: 700,
+                  padding: '0.2rem 0.55rem', borderRadius: '999px',
+                  background: round === 'L1' ? 'var(--badge-l1-bg)' : 'var(--badge-l2-bg)',
+                  color: round === 'L1' ? 'var(--badge-l1-text)' : 'var(--badge-l2-text)',
+                  border: round === 'L1' ? '1px solid var(--badge-l1-border)' : '1px solid var(--badge-l2-border)',
+                }}>
+                  {round} Round
+                </span>
+              )}
               <span className="badge badge-info">{ROLE_GRADES[spec.roleGrade].label}</span>
               <span className="badge">{ORG_TIER_LABEL[orgTier]} rubric</span>
               {session?.submittedAt && (
@@ -284,24 +299,38 @@ export default function RecalibrateWorkspace({
         {/* Column 2 — Rubric */}
         {questions.length > 0 && (
           <div className="rc-rubric-col">
-            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
               <ScoreLegend compact />
-              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.3rem 0 0' }}>Technical</div>
-              {technicalDims.map((dim) => (
-                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
-              ))}
-              <div className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0.5rem 0 0' }}>Behavioural</div>
-              <div className="text-xs text-muted">Expected for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
-              {behaviouralDims.map((dim) => (
-                <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
-              ))}
+
+              <div style={{
+                borderLeft: '3px solid #a855f7', borderRadius: '10px', background: 'rgba(168, 85, 247, 0.05)',
+                padding: '0.75rem 0.9rem 0.15rem',
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Technical</div>
+                {technicalDims.map((dim) => (
+                  <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+                ))}
+              </div>
+
+              <div style={{
+                borderLeft: '3px solid var(--success, #10b981)', borderRadius: '10px', background: 'var(--success-glow, rgba(16,185,129,0.05))',
+                padding: '0.75rem 0.9rem 0.15rem',
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success, #10b981)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Behavioural</div>
+                <div className="text-xs text-muted" style={{ marginBottom: '0.3rem' }}>Expected for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
+                {behaviouralDims.map((dim) => (
+                  <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+                ))}
+              </div>
             </div>
           </div>
         )}
 
         {/* Column 3 — Interview */}
         <div className="rc-interview-col">
+          {isL2Round && <L1ReferencePanel interviewId={interviewId} />}
+
           <InterviewStopwatch
             elapsedLabel={elapsedLabel}
             isRunning={isRunning}

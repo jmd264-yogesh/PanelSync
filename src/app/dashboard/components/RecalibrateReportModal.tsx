@@ -24,9 +24,9 @@ interface ReportQuestion {
   rubric: RubricBand[];
 }
 
-interface RecalibrateReport {
-  candidateName: string;
-  positionTitle: string;
+interface RoundReport {
+  round: 'L1' | 'L2' | null;
+  interviewId: string;
   spec: Spec | null;
   questions: { questions: ReportQuestion[] } | null;
   session: {
@@ -38,6 +38,12 @@ interface RecalibrateReport {
     submittedAt: string | null;
     submittedBy: string | null;
   };
+}
+
+interface RecalibrateReport {
+  candidateName: string;
+  positionTitle: string;
+  rounds: RoundReport[];
 }
 
 const SCORE_COLORS: Record<number, string> = {
@@ -106,6 +112,7 @@ export default function RecalibrateReportModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<RecalibrateReport | null>(null);
+  const [selectedRoundIdx, setSelectedRoundIdx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,8 +135,9 @@ export default function RecalibrateReportModal({
     return () => { cancelled = true; };
   }, [candidateId]);
 
-  const questions = report?.questions?.questions || [];
-  const spec = report?.spec || null;
+  const activeRound = report?.rounds[selectedRoundIdx] || null;
+  const questions = activeRound?.questions?.questions || [];
+  const spec = activeRound?.spec || null;
   const orgTier = useMemo(() => (spec ? getOrgTier(spec.roleGrade) : null), [spec]);
 
   const technicalDims = useMemo(() => {
@@ -139,8 +147,8 @@ export default function RecalibrateReportModal({
   const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({ label: BEHAVIOURAL_CATEGORY_LABEL[id], bands: BEHAVIOURAL_RUBRIC[id] })), []);
   const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
 
-  const questionScores = report?.session.questionScores || {};
-  const rubricScores = report?.session.rubricScores || {};
+  const questionScores = activeRound?.session.questionScores || {};
+  const rubricScores = activeRound?.session.rubricScores || {};
 
   const avgQuestionScore = avgOf(questions.map((q) => questionScores[q.id]).filter((v): v is number => typeof v === 'number'));
   const avgRubricScore = avgOf(allDims.map((d) => rubricScores[d.label]).filter((v): v is number => typeof v === 'number'));
@@ -148,7 +156,7 @@ export default function RecalibrateReportModal({
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
 
   const durationLabel = (() => {
-    const s = report?.session;
+    const s = activeRound?.session;
     if (!s?.timerStartedAt) return '—';
     const start = new Date(s.timerStartedAt).getTime();
     const end = s.timerEndedAt ? new Date(s.timerEndedAt).getTime() : start;
@@ -156,20 +164,20 @@ export default function RecalibrateReportModal({
   })();
 
   const handleDownload = () => {
-    if (!report || !spec || !orgTier) return;
+    if (!report || !activeRound || !spec || !orgTier) return;
     const html = buildPanelistReportHtml({
       candidateName: report.candidateName,
       positionTitle: report.positionTitle,
       roleGradeLabel: ROLE_GRADES[spec.roleGrade].label,
       rubricTierLabel: ORG_TIER_LABEL[orgTier],
       styleLabel: STYLES[spec.style].label,
-      panelistName: report.session.submittedBy || '—',
+      panelistName: activeRound.session.submittedBy || '—',
       date: new Date().toISOString().slice(0, 10),
       questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, rubric: q.rubric })),
       questionScores,
       rubricDimensions: allDims.map((d) => d.label),
       rubricScores,
-      notes: report.session.notes || '',
+      notes: activeRound.session.notes || '',
       durationLabel,
     });
     printHtmlDocument(html);
@@ -210,17 +218,39 @@ export default function RecalibrateReportModal({
           </div>
         )}
 
-        {!loading && report && spec && orgTier && (
+        {!loading && report && report.rounds.length > 1 && (
+          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem' }}>
+            {report.rounds.map((r, i) => (
+              <button
+                key={r.interviewId}
+                type="button"
+                onClick={() => setSelectedRoundIdx(i)}
+                className="badge"
+                style={{
+                  cursor: 'pointer',
+                  background: i === selectedRoundIdx ? 'var(--primary-glow)' : undefined,
+                  border: i === selectedRoundIdx ? '1px solid var(--primary)' : undefined,
+                  color: i === selectedRoundIdx ? 'var(--primary)' : undefined,
+                }}
+              >
+                {r.round || 'Round'} {i === 0 ? '(latest)' : ''}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!loading && activeRound && spec && orgTier && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div className="badge badge-success" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600, textTransform: 'none' }}>
               <CheckCircle2 size={13} />
               <span>
-                Submitted{report.session.submittedBy ? ` by ${report.session.submittedBy}` : ''}
-                {report.session.submittedAt ? ` on ${new Date(report.session.submittedAt).toLocaleString()}` : ''}
+                Submitted{activeRound.session.submittedBy ? ` by ${activeRound.session.submittedBy}` : ''}
+                {activeRound.session.submittedAt ? ` on ${new Date(activeRound.session.submittedAt).toLocaleString()}` : ''}
               </span>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {activeRound.round && <span className="badge">{activeRound.round} Round</span>}
               <span className="badge badge-info">{ROLE_GRADES[spec.roleGrade].label}</span>
               <span className="badge">{ORG_TIER_LABEL[orgTier]} rubric</span>
               <span className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Clock3 size={11} /> {durationLabel}</span>
@@ -307,10 +337,10 @@ export default function RecalibrateReportModal({
               </div>
             </div>
 
-            {report.session.notes && (
+            {activeRound.session.notes && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <SectionHeader icon={<StickyNote size={13} />} title="Panelist notes" />
-                <p className="text-sm text-muted" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{report.session.notes}</p>
+                <p className="text-sm text-muted" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{activeRound.session.notes}</p>
               </div>
             )}
 

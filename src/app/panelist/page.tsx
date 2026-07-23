@@ -1,7 +1,7 @@
 import { getPanelistSession } from '@/lib/session';
 import { db } from '@/lib/db';
 import { redirect } from 'next/navigation';
-import { Calendar, LogOut } from 'lucide-react';
+import { Calendar, LogOut, Gauge } from 'lucide-react';
 import PanelistClient from './PanelistClient';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -14,12 +14,16 @@ export default async function PanelistPage() {
     redirect('/');
   }
 
-  const [interviews, pendingRequests, panelistRecord, activeDrive] = await Promise.all([
+  const [allInterviews, allRequests, panelistRecord, activeDrive] = await Promise.all([
     db.getPanelistInterviews(session.user.email),
     db.getPanelistRequests(session.user.email),
     db.getPanelistByEmail(session.user.email),
     db.getActiveDrive(),
   ]);
+
+  // This portal is Campus Hiring only now — Lateral Hiring lives entirely at /recalibrate.
+  const interviews = allInterviews.filter((i) => i.hiringType !== 'LATERAL');
+  const pendingRequests = allRequests.filter((r) => r.interview.hiringType !== 'LATERAL');
 
   return (
     <div className="app-shell">
@@ -38,6 +42,10 @@ export default async function PanelistPage() {
           </div>
 
           <div className="header-actions">
+            <a href="/recalibrate" className="header-signout" style={{ textDecoration: 'none' }}>
+              <Gauge size={14} />
+              <span>Lateral Hiring / Recalibrate</span>
+            </a>
             <ThemeToggle />
             <div className="user-summary">
               <div className="user-avatar">

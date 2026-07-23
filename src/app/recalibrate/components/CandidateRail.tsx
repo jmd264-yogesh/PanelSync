@@ -40,7 +40,9 @@ export default function CandidateRail({
         const status = statuses[interview.interviewId] || 'not_started';
         const meta = STATUS_META[status];
         const Icon = meta.icon;
-        const position = interview.role.replace(/^LATERAL - /i, '');
+        const roleLower = interview.role.toLowerCase();
+        const round = roleLower.includes('l2') ? 'L2' : roleLower.includes('l1') ? 'L1' : null;
+        const position = interview.role.replace(/^(L1|L2)\s*-\s*/i, '').replace(/^LATERAL - /i, '');
 
         return (
           <button
@@ -72,8 +74,20 @@ export default function CandidateRail({
               {initials(interview.candidateName)}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.83rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {interview.candidateName}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <span style={{ fontSize: '0.83rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {interview.candidateName}
+                </span>
+                {round && (
+                  <span style={{
+                    fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', flexShrink: 0,
+                    background: round === 'L1' ? 'var(--badge-l1-bg)' : 'var(--badge-l2-bg)',
+                    color: round === 'L1' ? 'var(--badge-l1-text)' : 'var(--badge-l2-text)',
+                    border: round === 'L1' ? '1px solid var(--badge-l1-border)' : '1px solid var(--badge-l2-border)',
+                  }}>
+                    {round}
+                  </span>
+                )}
               </div>
               <div className="text-muted" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {position}

@@ -112,8 +112,9 @@ export default function RecalibrateWorkspaceClient({
             key={selected.interviewId}
             interviewId={selected.interviewId}
             candidateName={selected.candidateName}
-            positionTitle={selected.role.replace(/^LATERAL - /i, '')}
+            positionTitle={selected.role.replace(/^(L1|L2)\s*-\s*/i, '').replace(/^LATERAL - /i, '')}
             panelistName={panelistName}
+            round={selected.role.toLowerCase().includes('l2') ? 'L2' : selected.role.toLowerCase().includes('l1') ? 'L1' : null}
             onStatusChange={(status) => setStatuses((prev) => ({ ...prev, [selected.interviewId]: status }))}
           />
         ) : (

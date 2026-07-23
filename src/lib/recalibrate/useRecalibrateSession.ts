@@ -79,9 +79,8 @@ function avgOf(values: number[]): number | null {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-// All Recalibrate data + business logic — shared between the compact panelist-dashboard
-// tab (RecalibratePanel) and the dedicated full-page workspace (/recalibrate), so both
-// surfaces stay behaviourally identical and only differ in layout/visual composition.
+// All Recalibrate data + business logic, used by the /recalibrate workspace
+// (Lateral Hiring lives entirely there — see RecalibrateWorkspace.tsx).
 export function useRecalibrateSession({
   interviewId, candidateName, positionTitle, panelistName,
 }: {
