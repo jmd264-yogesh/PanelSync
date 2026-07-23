@@ -3,7 +3,6 @@ import { db } from '@/lib/db';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { Gauge, LogOut } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
 import RecalibrateWorkspaceClient from './RecalibrateWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +36,6 @@ export default async function RecalibratePage() {
             <a href="/panelist" className="header-signout" style={{ textDecoration: 'none' }}>
               <span>Panelist Portal</span>
             </a>
-            <ThemeToggle />
             <div className="user-summary">
               <div className="user-avatar">
                 {session.user.displayName.slice(0, 1).toUpperCase()}
