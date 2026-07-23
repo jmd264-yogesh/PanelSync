@@ -707,26 +707,20 @@ export default function InterviewsTab({
       const info = getInterviewInfo(i.role);
       return activeHiringTab === "LATERAL" ? info.isLateral : info.isCampus;
     });
-    // console.log("this is before filter", filtered);
-
-    // console.log("After hiring:", filtered.length);
     if (selectedDrive && activeHiringTab === "CAMPUS") {
       filtered = filtered.filter((i) =>
         interviewInDriveWindow(i, selectedDrive),
       );
     }
-    // console.log("After drive:", filtered.length);
     if (statusFilter !== "all") {
       filtered = filtered.filter((i) => i.status === statusFilter);
     }
-    // console.log("After status:", filtered.length);
 
     if (typeFilter !== "all") {
       filtered = filtered.filter((i) =>
         i.role.toLowerCase().includes(typeFilter.toLowerCase()),
       );
     }
-    // console.log("After type:", filtered.length);
 
     if (dateFilter !== "all") {
       filtered = filtered.filter((i) => {
@@ -738,7 +732,6 @@ export default function InterviewsTab({
         return dateFilter >= startD && dateFilter <= endD;
       });
     }
-    // console.log("After date:", filtered.length);
 
     if (
       activeHiringTab === "CAMPUS" &&
@@ -759,7 +752,6 @@ export default function InterviewsTab({
         return i.role.toLowerCase().includes(collegeFilter.toLowerCase());
       });
     }
-    // console.log("After college:", filtered.length);
 
     if (filterThisWeek) {
       const today = new Date();
@@ -778,7 +770,6 @@ export default function InterviewsTab({
         return startD <= nextWeek && endD >= today;
       });
     }
-    // console.log("After week:", filtered.length);
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -789,9 +780,6 @@ export default function InterviewsTab({
           i.role.toLowerCase().includes(query),
       );
     }
-    // console.log("After search:", filtered.length);
-
-    // console.log("this is after filterd", filtered);
     return filtered;
   };
 
@@ -1159,18 +1147,18 @@ export default function InterviewsTab({
     (p) => p.status === "SUBMITTED",
   ).length;
 
-  console.log("STATS_DEBUG:", {
-    typeFilter,
-    statusFilter,
-    dateFilter,
-    collegeFilter,
-    overallLength: overallInterviewsForAnalytics.length,
-    filteredLength: filteredInterviewsList.length,
-    l1Scheduled,
-    l2Scheduled,
-    l1Pending,
-    l2Pending,
-  });
+  // console.log("STATS_DEBUG:", {
+  //   typeFilter,
+  //   statusFilter,
+  //   dateFilter,
+  //   collegeFilter,
+  //   overallLength: overallInterviewsForAnalytics.length,
+  //   filteredLength: filteredInterviewsList.length,
+  //   l1Scheduled,
+  //   l2Scheduled,
+  //   l1Pending,
+  //   l2Pending,
+  // });
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

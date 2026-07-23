@@ -117,6 +117,7 @@ export default function LateralHiringTab({
   const [schedulingFor, setSchedulingFor] = useState<LateralCandidate | null>(
     null,
   );
+  const [roundType, setRoundType] = useState<"L1" | "L2">("L1");
   const [roundLabel, setRoundLabel] = useState("Round 1");
   const [duration, setDuration] = useState("45");
   const [startDate, setStartDate] = useState("");
@@ -255,6 +256,7 @@ export default function LateralHiringTab({
 
   const openScheduleModal = (candidate: LateralCandidate) => {
     setSchedulingFor(candidate);
+    setRoundType("L1");
     setRoundLabel("Round 1");
     setDuration("45");
     setStartDate(todayStr);
@@ -295,7 +297,7 @@ export default function LateralHiringTab({
         body: JSON.stringify({
           candidateName: schedulingFor.name,
           candidateEmail: schedulingFor.email,
-          role: `${roundLabel.trim()} - ${schedulingFor.positionTitle}`,
+          role: `${roundType} - ${roundLabel.trim()} - ${schedulingFor.positionTitle}`,
           duration: parseInt(duration, 10),
           startDate,
           startTime,
@@ -585,28 +587,48 @@ export default function LateralHiringTab({
                     gap: "4px", /* Spaced out stacked interview badges */
                   }}
                 >
-                  {candidateInterviews.map((intv) => (
-                    <span
-                      key={intv.id}
-                      className="text-xs"
-                      style={{ color: "var(--text-muted)", display: "inline-flex", alignItems: "center" }}
-                    >
-                      {intv.role.replace(/^LATERAL - /, "")}{" "}
+                  {candidateInterviews.map((intv) => {
+                    const roleLower = intv.role.toLowerCase();
+                    const round = roleLower.includes("l2") ? "L2" : roleLower.includes("l1") ? "L1" : null;
+                    const label = intv.role.replace(/^(L1|L2)\s*-\s*/i, "").replace(/^LATERAL - /i, "");
+                    return (
                       <span
-                        className="badge"
-                        style={{
-                          fontSize: "0.65rem",
-                          padding: "1px 4px",
-                          borderRadius: "4px",
-                          background: "rgba(255,255,255,0.06)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          marginLeft: "6px",
-                        }}
+                        key={intv.id}
+                        className="text-xs"
+                        style={{ color: "var(--text-muted)", display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: "4px" }}
                       >
-                        {intv.status}
+                        {round && (
+                          <span
+                            className="badge"
+                            style={{
+                              fontSize: "0.62rem",
+                              padding: "1px 5px",
+                              borderRadius: "4px",
+                              background: round === "L1" ? "var(--badge-l1-bg)" : "var(--badge-l2-bg)",
+                              border: round === "L1" ? "1px solid var(--badge-l1-border)" : "1px solid var(--badge-l2-border)",
+                              color: round === "L1" ? "var(--badge-l1-text)" : "var(--badge-l2-text)",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {round}
+                          </span>
+                        )}
+                        {label}{" "}
+                        <span
+                          className="badge"
+                          style={{
+                            fontSize: "0.65rem",
+                            padding: "1px 4px",
+                            borderRadius: "4px",
+                            background: "rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                          }}
+                        >
+                          {intv.status}
+                        </span>
                       </span>
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </td>
@@ -787,6 +809,38 @@ export default function LateralHiringTab({
                 <X size={18} />
               </button>
             </div>
+            {(() => {
+              const existingRounds = interviews.filter(
+                (i) =>
+                  i.hiringType === "LATERAL" &&
+                  i.candidateEmail.toLowerCase() ===
+                    schedulingFor.email.toLowerCase(),
+              );
+              if (existingRounds.length === 0) return null;
+              return (
+                <div
+                  className="text-xs text-muted"
+                  style={{
+                    marginBottom: "0.75rem",
+                    padding: "0.5rem 0.65rem",
+                    borderRadius: "var(--radius-sm)",
+                    background: "rgba(99,102,241,0.06)",
+                    border: "1px solid rgba(99,102,241,0.15)",
+                  }}
+                >
+                  Already scheduled for this candidate:{" "}
+                  {existingRounds
+                    .map((i) =>
+                      i.role.toLowerCase().includes("l2")
+                        ? "L2"
+                        : i.role.toLowerCase().includes("l1")
+                          ? "L1"
+                          : i.role,
+                    )
+                    .join(", ")}
+                </div>
+              );
+            })()}
             <form
               onSubmit={handleScheduleInterview}
               style={{
@@ -795,9 +849,17 @@ export default function LateralHiringTab({
                 gap: "0.75rem",
               }}
             >
+              <select
+                className="form-input"
+                value={roundType}
+                onChange={(e) => setRoundType(e.target.value as "L1" | "L2")}
+              >
+                <option value="L1">L1 Round</option>
+                <option value="L2">L2 Round</option>
+              </select>
               <input
                 className="form-input"
-                placeholder="Round name (e.g. Technical Round 1)"
+                placeholder="Round description (e.g. Technical Screening)"
                 value={roundLabel}
                 onChange={(e) => setRoundLabel(e.target.value)}
               />

@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { PanelistInterview, Interview, InterviewPanel, Drive } from "@/lib/db";
 import AvailabilityClient from "../availability/[token]/AvailabilityClient";
 import AiCopilotPanel from "./components/AiCopilotPanel";
-import RecalibratePanel from "./components/RecalibratePanel";
 import {
   Video,
   CheckCircle,
@@ -18,7 +17,6 @@ import {
   AlertCircle,
   SlidersHorizontal,
   X,
-  FileText,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -136,13 +134,10 @@ export default function PanelistClient({
 
   // Primary tab state (Panels vs Interviews & Feedback)
   const [activePrimaryTab, setActivePrimaryTab] = useState<
-    "PANELS" | "FEEDBACK" | "RECALIBRATE"
+    "PANELS" | "FEEDBACK"
   >("PANELS");
-  const [activeHiringTab, setActiveHiringTab] = useState<"CAMPUS" | "LATERAL">(
-    "CAMPUS",
-  );
-
-  // Round Tab state for filtering L1 vs L2 vs Lateral candidates
+  // Round Tab state for filtering L1 vs L2 candidates (Campus Hiring only — Lateral
+  // Hiring now lives entirely at /recalibrate)
   const [activeRoundTab, setActiveRoundTab] = useState<"ALL" | "L1" | "L2">(
     "ALL",
   );
@@ -230,21 +225,6 @@ export default function PanelistClient({
       }
     >
   >({});
-  const [lateralRatings, setLateralRatings] = useState<
-    Record<
-      string,
-      {
-        technical: number;
-        communication: number;
-        collaboration: number;
-        techNotes: string;
-        commNotes: string;
-        collabNotes: string;
-        comments: string;
-      }
-    >
-  >({});
-
   const isL1 = panelistRoles.includes("L1");
   const isL2 = panelistRoles.includes("L2");
 
@@ -262,7 +242,6 @@ export default function PanelistClient({
   const getRoleBadgeStyle = (role: string) => {
     const isL1Role = role.toLowerCase().includes("l1");
     const isL2Role = role.toLowerCase().includes("l2");
-    const isLateralRole = role.toLowerCase().includes("lateral");
 
     if (isL1Role) {
       return {
@@ -278,13 +257,6 @@ export default function PanelistClient({
         color: "var(--badge-l2-text)",
         label: "L2 Round",
       };
-    } else if (isLateralRole) {
-      return {
-        background: "rgba(245, 158, 11, 0.08)",
-        border: "1px solid rgba(245, 158, 11, 0.25)",
-        color: "#f59e0b",
-        label: "Lateral Hiring",
-      };
     }
     return {
       background: "rgba(99, 102, 241, 0.08)",
@@ -298,28 +270,17 @@ export default function PanelistClient({
   // 1. Active drive first
   // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
   // 3. Alphabetically by college name
+  // This portal is Campus Hiring only — /panelist/page.tsx already excludes Lateral
+  // Hiring rows server-side, but these memos defensively re-exclude them too (Lateral
+  // Hiring lives entirely at /recalibrate now).
   const hiringInterviews = React.useMemo(() => {
-    console.log(
-      "this is all the interviews",
-      interviews.filter((i) =>
-        activeHiringTab === "LATERAL"
-          ? i.hiringType === "LATERAL"
-          : i.hiringType !== "LATERAL",
-      ),
-    );
   return interviews.filter((i) => {
-    // Hiring type
-    if (
-      activeHiringTab === "LATERAL"
-        ? i.hiringType !== "LATERAL"
-        : i.hiringType === "LATERAL"
-    ) {
+    if (i.hiringType === "LATERAL") {
       return false;
     }
 
-    // Campus Active Drive
+    // Active Drive
     if (
-      activeHiringTab === "CAMPUS" &&
       filterActiveDrive &&
       activeDrive &&
       !isFromActiveDrive(i.role)
@@ -345,7 +306,6 @@ export default function PanelistClient({
   });
 }, [
   interviews,
-  activeHiringTab,
   filterActiveDrive,
   activeDrive,
   filterDate,
@@ -353,18 +313,12 @@ export default function PanelistClient({
 
   const hiringRequests = React.useMemo(() => {
   return pendingRequests.filter((req) => {
-    // Hiring type
-    if (
-      activeHiringTab === "LATERAL"
-        ? req.interview.hiringType !== "LATERAL"
-        : req.interview.hiringType === "LATERAL"
-    ) {
+    if (req.interview.hiringType === "LATERAL") {
       return false;
     }
 
-    // Campus Active Drive
+    // Active Drive
     if (
-      activeHiringTab === "CAMPUS" &&
       filterActiveDrive &&
       activeDrive &&
       !isFromActiveDrive(req.interview.role)
@@ -394,7 +348,6 @@ export default function PanelistClient({
   });
 }, [
   pendingRequests,
-  activeHiringTab,
   filterActiveDrive,
   activeDrive,
   filterDate,
@@ -444,8 +397,6 @@ export default function PanelistClient({
 
   const filteredSortedInterviews = React.useMemo(() => {
     let result = [...filteredInterviews];
-
-    console.log("this is the interviews", result);
 
     return result.sort((a, b) => {
       // 1. Prioritize pending feedback (where feedback is not yet submitted)
@@ -521,12 +472,7 @@ export default function PanelistClient({
       r.interview.role.toLowerCase().includes("l2"),
     ).length;
 
-    const lateralRequests = hiringRequests.filter(
-      (r) => r.interview.hiringType === "LATERAL",
-    ).length;
-
-    const generalRequests =
-      totalRequests - l1Requests - l2Requests - lateralRequests;
+    const generalRequests = totalRequests - l1Requests - l2Requests;
 
     // Interviews
     const totalFeedback = hiringInterviews.length;
@@ -539,26 +485,19 @@ export default function PanelistClient({
       i.role.toLowerCase().includes("l2"),
     ).length;
 
-    const lateralFeedback = hiringInterviews.filter(
-      (i) => i.hiringType === "LATERAL",
-    ).length;
-
-    const generalFeedback =
-      totalFeedback - l1Feedback - l2Feedback - lateralFeedback;
+    const generalFeedback = totalFeedback - l1Feedback - l2Feedback;
 
     return {
       requests: {
         total: totalRequests,
         l1: l1Requests,
         l2: l2Requests,
-        lateral: lateralRequests,
         general: generalRequests,
       },
       feedback: {
         total: totalFeedback,
         l1: l1Feedback,
         l2: l2Feedback,
-        lateral: lateralFeedback,
         general: generalFeedback,
       },
     };
@@ -594,7 +533,6 @@ export default function PanelistClient({
     const roleLower = interview.role.toLowerCase();
     const isL1Role = roleLower.includes("l1");
     const isL2Role = roleLower.includes("l2");
-    const isLateralRole = interview.hiringType === "LATERAL";
 
     if (isL1Role && parsed && parsed.scores) {
       setL1Ratings((prev) => ({
@@ -621,19 +559,6 @@ export default function PanelistClient({
           depthNotes: parsed.notes?.technicalDepthNotes || "",
           leadNotes: parsed.notes?.leadershipNotes || "",
           fitNotes: parsed.notes?.culturalFitNotes || "",
-          comments: parsed.comments || "",
-        },
-      }));
-    } else if (isLateralRole && parsed && parsed.scores) {
-      setLateralRatings((prev) => ({
-        ...prev,
-        [interview.panelId]: {
-          technical: parsed.scores.technical || 0,
-          communication: parsed.scores.communication || 0,
-          collaboration: parsed.scores.collaboration || 0,
-          techNotes: parsed.notes?.technicalNotes || "",
-          commNotes: parsed.notes?.communicationNotes || "",
-          collabNotes: parsed.notes?.collaborationNotes || "",
           comments: parsed.comments || "",
         },
       }));
@@ -707,7 +632,6 @@ export default function PanelistClient({
     const roleLower = interview.role.toLowerCase();
     const isL1Role = roleLower.includes("l1");
     const isL2Role = roleLower.includes("l2");
-    const isLateralRole = interview.hiringType === "LATERAL";
 
     setSubmittingFeedback((prev) => ({ ...prev, [interview.panelId]: true }));
     setFeedbackError((prev) => ({ ...prev, [interview.panelId]: null }));
@@ -783,39 +707,6 @@ export default function PanelistClient({
             technicalDepthNotes: current.depthNotes,
             leadershipNotes: current.leadNotes,
             culturalFitNotes: current.fitNotes,
-          },
-          comments: current.comments,
-        });
-      } else if (isLateralRole) {
-        const current = lateralRatings[interview.panelId] || {
-          technical: 0,
-          communication: 0,
-          collaboration: 0,
-          techNotes: "",
-          commNotes: "",
-          collabNotes: "",
-          comments: "",
-        };
-
-        if (
-          current.technical === 0 ||
-          current.communication === 0 ||
-          current.collaboration === 0
-        ) {
-          throw new Error("Please provide ratings for all evaluation metrics.");
-        }
-
-        feedbackString = JSON.stringify({
-          type: "LATERAL",
-          scores: {
-            technical: current.technical,
-            communication: current.communication,
-            collaboration: current.collaboration,
-          },
-          notes: {
-            technicalNotes: current.techNotes,
-            communicationNotes: current.commNotes,
-            collaborationNotes: current.collabNotes,
           },
           comments: current.comments,
         });
@@ -1005,23 +896,6 @@ export default function PanelistClient({
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-        <button
-          type="button"
-          className={`btn ${activeHiringTab === "CAMPUS" ? "btn-primary" : "btn-secondary"}`}
-          onClick={() => setActiveHiringTab("CAMPUS")}
-        >
-          Campus Hiring
-        </button>
-        <button
-          type="button"
-          className={`btn ${activeHiringTab === "LATERAL" ? "btn-primary" : "btn-secondary"}`}
-          onClick={() => setActiveHiringTab("LATERAL")}
-        >
-          Lateral Hiring
-        </button>
-      </div>
-
       {/* Filter Bar */}
       <div
         style={{
@@ -1061,8 +935,7 @@ export default function PanelistClient({
           }}
         >
           {/* Active Drive Scope */}
-          {/* {activeHiringTab === "CAMPUS" && activeDrive && ( */}
-          {activeHiringTab !== "LATERAL" && activeDrive && (
+          {activeDrive && (
             <button
               onClick={() => setFilterActiveDrive(!filterActiveDrive)}
               style={{
@@ -1143,8 +1016,7 @@ export default function PanelistClient({
         </div>
 
         {/* Reset Filters Link */}
-        {(filterDate ||
-          (activeHiringTab === "CAMPUS" && filterActiveDrive)) && (
+        {(filterDate || filterActiveDrive) && (
           <button
             onClick={() => {
               setFilterActiveDrive(false);
@@ -1274,95 +1146,7 @@ export default function PanelistClient({
           </span>
         </button>
 
-        {activeHiringTab === "LATERAL" && (
-          <button
-            onClick={() => setActivePrimaryTab("RECALIBRATE")}
-            style={{
-              padding: "0.75rem 0.25rem",
-              border: "none",
-              background: "none",
-              borderBottom:
-                activePrimaryTab === "RECALIBRATE"
-                  ? "2.5px solid var(--primary)"
-                  : "2.5px solid transparent",
-              color:
-                activePrimaryTab === "RECALIBRATE"
-                  ? "var(--primary)"
-                  : "var(--text-muted)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              transition: "var(--transition-fast)",
-              outline: "none",
-            }}
-          >
-            <SlidersHorizontal size={16} />
-            <span>Recalibrate</span>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                background:
-                  activePrimaryTab === "RECALIBRATE"
-                    ? "var(--primary)"
-                    : "var(--border-glass)",
-                color:
-                  activePrimaryTab === "RECALIBRATE"
-                    ? "#ffffff"
-                    : "var(--text-muted)",
-                padding: "2px 8px",
-                borderRadius: "12px",
-                fontWeight: 700,
-              }}
-            >
-              {tabCounts.feedback.lateral}
-            </span>
-          </button>
-        )}
       </div>
-
-      {activePrimaryTab === "RECALIBRATE" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div>
-            <h2
-              style={{
-                fontSize: "1.15rem",
-                fontWeight: 700,
-                marginBottom: "0.25rem",
-              }}
-            >
-              Recalibrate — Lateral Hiring
-            </h2>
-            <p className="text-muted text-sm" style={{ margin: 0 }}>
-              Generate spec-driven interview questions, score live, and export a
-              report for each lateral candidate assigned to you.
-            </p>
-          </div>
-          {hiringInterviews.filter((i) => i.hiringType === "LATERAL").length ===
-          0 ? (
-            <div
-              className="glass-card"
-              style={{ padding: "2rem", textAlign: "center" }}
-            >
-              <span className="text-muted text-sm">
-                No lateral hiring interviews assigned to you yet.
-              </span>
-            </div>
-          ) : (
-            hiringInterviews
-              .filter((i) => i.hiringType === "LATERAL")
-              .map((interview) => (
-                <RecalibratePanel
-                  key={interview.interviewId}
-                  interviewId={interview.interviewId}
-                  candidateName={interview.candidateName}
-                  positionTitle={interview.role.replace(/^LATERAL - /i, "")}
-                  panelistName={panelistName}
-                />
-              ))
-          )}
-        </div>
-      )}
 
       {activePrimaryTab === "PANELS" && (
         <div>
@@ -2088,28 +1872,6 @@ export default function PanelistClient({
                         interviewId={interview.interviewId}
                         defaultRoleTitle={interview.role}
                       />
-                    )}
-
-                    {interview.hiringType === "LATERAL" && (
-                      <div style={{ margin: "0.5rem 0" }}>
-                        <a
-                          href={`/api/interviews/${interview.interviewId}/resume`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.35rem",
-                            fontSize: "0.78rem",
-                            fontWeight: 600,
-                            color: "#f59e0b",
-                            textDecoration: "none",
-                          }}
-                        >
-                          <FileText size={13} />
-                          <span>View Resume</span>
-                        </a>
-                      </div>
                     )}
 
                     {/* Feedback section */}
@@ -2938,124 +2700,6 @@ export default function PanelistClient({
                                         </div>
                                       )}
 
-                                      {parsed.type === "LATERAL" && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "0.4rem",
-                                            fontSize: "0.75rem",
-                                          }}
-                                        >
-                                          <div>
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                justifyContent: "space-between",
-                                                alignItems: "center",
-                                              }}
-                                            >
-                                              <span style={{ fontWeight: 600 }}>
-                                                Technical Depth:
-                                              </span>
-                                              {renderStarsStatic(
-                                                parsed.scores?.technical || 0,
-                                              )}
-                                            </div>
-                                            {parsed.notes?.technicalNotes && (
-                                              <p
-                                                style={{
-                                                  color: "var(--text-muted)",
-                                                  margin: "2px 0 0 0",
-                                                  fontSize: "0.72rem",
-                                                  lineHeight: 1.35,
-                                                }}
-                                              >
-                                                {parsed.notes.technicalNotes}
-                                              </p>
-                                            )}
-                                          </div>
-                                          <div
-                                            style={{
-                                              borderTop:
-                                                "1px solid var(--border-glass)",
-                                              paddingTop: "0.25rem",
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                justifyContent: "space-between",
-                                                alignItems: "center",
-                                              }}
-                                            >
-                                              <span style={{ fontWeight: 600 }}>
-                                                Communication:
-                                              </span>
-                                              {renderStarsStatic(
-                                                parsed.scores?.communication ||
-                                                  0,
-                                              )}
-                                            </div>
-                                            {parsed.notes
-                                              ?.communicationNotes && (
-                                              <p
-                                                style={{
-                                                  color: "var(--text-muted)",
-                                                  margin: "2px 0 0 0",
-                                                  fontSize: "0.72rem",
-                                                  lineHeight: 1.35,
-                                                }}
-                                              >
-                                                {
-                                                  parsed.notes
-                                                    .communicationNotes
-                                                }
-                                              </p>
-                                            )}
-                                          </div>
-                                          <div
-                                            style={{
-                                              borderTop:
-                                                "1px solid var(--border-glass)",
-                                              paddingTop: "0.25rem",
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                justifyContent: "space-between",
-                                                alignItems: "center",
-                                              }}
-                                            >
-                                              <span style={{ fontWeight: 600 }}>
-                                                Collaboration &amp; Fit:
-                                              </span>
-                                              {renderStarsStatic(
-                                                parsed.scores?.collaboration ||
-                                                  0,
-                                              )}
-                                            </div>
-                                            {parsed.notes
-                                              ?.collaborationNotes && (
-                                              <p
-                                                style={{
-                                                  color: "var(--text-muted)",
-                                                  margin: "2px 0 0 0",
-                                                  fontSize: "0.72rem",
-                                                  lineHeight: 1.35,
-                                                }}
-                                              >
-                                                {
-                                                  parsed.notes
-                                                    .collaborationNotes
-                                                }
-                                              </p>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-
                                       {/* Overall summary notes */}
                                       {parsed.comments && (
                                         <div
@@ -3122,345 +2766,6 @@ export default function PanelistClient({
                                 const roleLower = interview.role.toLowerCase();
                                 const isL1Role = roleLower.includes("l1");
                                 const isL2Role = roleLower.includes("l2");
-                                const isLateralRole =
-                                  interview.hiringType === "LATERAL";
-
-                                if (isLateralRole) {
-                                  const current = lateralRatings[
-                                    interview.panelId
-                                  ] || {
-                                    technical: 0,
-                                    communication: 0,
-                                    collaboration: 0,
-                                    techNotes: "",
-                                    commNotes: "",
-                                    collabNotes: "",
-                                    comments: "",
-                                  };
-
-                                  const updateLateral = (
-                                    field: keyof typeof current,
-                                    val: any,
-                                  ) => {
-                                    setLateralRatings((prev) => ({
-                                      ...prev,
-                                      [interview.panelId]: {
-                                        ...(prev[interview.panelId] || current),
-                                        [field]: val,
-                                      },
-                                    }));
-                                  };
-
-                                  return (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "1rem",
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          fontSize: "0.8rem",
-                                          color: "var(--text-muted)",
-                                          fontStyle: "italic",
-                                          marginBottom: "0.25rem",
-                                        }}
-                                      >
-                                        Evaluating Lateral Hiring Interview
-                                        Metrics:
-                                      </div>
-
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "0.75rem",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            background: "var(--bg-main)",
-                                            border:
-                                              "1px solid var(--border-glass)",
-                                            padding: "0.75rem",
-                                            borderRadius: "var(--radius-sm)",
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              justifyContent: "space-between",
-                                              alignItems: "center",
-                                              marginBottom: "0.5rem",
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "0.82rem",
-                                                fontWeight: 600,
-                                              }}
-                                            >
-                                              Technical Depth *
-                                            </span>
-                                            {renderStarRating(
-                                              current.technical,
-                                              (r) =>
-                                                updateLateral("technical", r),
-                                              isSubmitting,
-                                            )}
-                                          </div>
-                                          <textarea
-                                            className="form-input"
-                                            rows={2}
-                                            placeholder="Technical skill assessment, technical expertise, depth for the role..."
-                                            style={{
-                                              fontSize: "0.78rem",
-                                              resize: "vertical",
-                                            }}
-                                            value={current.techNotes}
-                                            onChange={(update) =>
-                                              updateLateral(
-                                                "techNotes",
-                                                update.target.value,
-                                              )
-                                            }
-                                            disabled={isSubmitting}
-                                          />
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            background: "var(--bg-main)",
-                                            border:
-                                              "1px solid var(--border-glass)",
-                                            padding: "0.75rem",
-                                            borderRadius: "var(--radius-sm)",
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              justifyContent: "space-between",
-                                              alignItems: "center",
-                                              marginBottom: "0.5rem",
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "0.82rem",
-                                                fontWeight: 600,
-                                              }}
-                                            >
-                                              Communication *
-                                            </span>
-                                            {renderStarRating(
-                                              current.communication,
-                                              (r) =>
-                                                updateLateral(
-                                                  "communication",
-                                                  r,
-                                                ),
-                                              isSubmitting,
-                                            )}
-                                          </div>
-                                          <textarea
-                                            className="form-input"
-                                            rows={2}
-                                            placeholder="Communication skills, explanations structure, discussion..."
-                                            style={{
-                                              fontSize: "0.78rem",
-                                              resize: "vertical",
-                                            }}
-                                            value={current.commNotes}
-                                            onChange={(update) =>
-                                              updateLateral(
-                                                "commNotes",
-                                                update.target.value,
-                                              )
-                                            }
-                                            disabled={isSubmitting}
-                                          />
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            background: "var(--bg-main)",
-                                            border:
-                                              "1px solid var(--border-glass)",
-                                            padding: "0.75rem",
-                                            borderRadius: "var(--radius-sm)",
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              justifyContent: "space-between",
-                                              alignItems: "center",
-                                              marginBottom: "0.5rem",
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "0.82rem",
-                                                fontWeight: 600,
-                                              }}
-                                            >
-                                              Collaboration &amp; Fit *
-                                            </span>
-                                            {renderStarRating(
-                                              current.collaboration,
-                                              (r) =>
-                                                updateLateral(
-                                                  "collaboration",
-                                                  r,
-                                                ),
-                                              isSubmitting,
-                                            )}
-                                          </div>
-                                          <textarea
-                                            className="form-input"
-                                            rows={2}
-                                            placeholder="Team fit, ownership, stakeholder collaboration..."
-                                            style={{
-                                              fontSize: "0.78rem",
-                                              resize: "vertical",
-                                            }}
-                                            value={current.collabNotes}
-                                            onChange={(update) =>
-                                              updateLateral(
-                                                "collabNotes",
-                                                update.target.value,
-                                              )
-                                            }
-                                            disabled={isSubmitting}
-                                          />
-                                        </div>
-                                      </div>
-
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "0.4rem",
-                                        }}
-                                      >
-                                        <label
-                                          style={{
-                                            fontSize: "0.8rem",
-                                            fontWeight: 600,
-                                          }}
-                                        >
-                                          Overall Comments / Summary
-                                          Recommendation
-                                        </label>
-                                        <textarea
-                                          className="form-input"
-                                          rows={2}
-                                          placeholder="Summary comments of performance..."
-                                          style={{
-                                            fontSize: "0.8rem",
-                                            resize: "vertical",
-                                          }}
-                                          value={current.comments}
-                                          onChange={(update) =>
-                                            updateLateral(
-                                              "comments",
-                                              update.target.value,
-                                            )
-                                          }
-                                          disabled={isSubmitting}
-                                        />
-                                      </div>
-
-                                      {feedbackError[interview.panelId] && (
-                                        <p
-                                          style={{
-                                            color: "#ef4444",
-                                            fontSize: "0.78rem",
-                                          }}
-                                        >
-                                          {feedbackError[interview.panelId]}
-                                        </p>
-                                      )}
-
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          gap: "0.5rem",
-                                          marginTop: "0.25rem",
-                                        }}
-                                      >
-                                        <button
-                                          onClick={() =>
-                                            handleFeedbackSubmit(
-                                              interview,
-                                              "PASSED",
-                                            )
-                                          }
-                                          disabled={isSubmitting}
-                                          className="btn btn-sm"
-                                          style={{
-                                            background: "rgba(245,158,11,0.12)",
-                                            border:
-                                              "1px solid rgba(245,158,11,0.3)",
-                                            color: "#f59e0b",
-                                          }}
-                                        >
-                                          {isSubmitting ? (
-                                            <Loader2
-                                              size={12}
-                                              className="animate-spin"
-                                            />
-                                          ) : (
-                                            <CheckCircle size={12} />
-                                          )}
-                                          Submit &amp; Pass
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleFeedbackSubmit(
-                                              interview,
-                                              "REJECTED",
-                                            )
-                                          }
-                                          disabled={isSubmitting}
-                                          className="btn btn-sm"
-                                          style={{
-                                            background: "rgba(239,68,68,0.08)",
-                                            border:
-                                              "1px solid rgba(239,68,68,0.25)",
-                                            color: "#ef4444",
-                                          }}
-                                        >
-                                          {isSubmitting ? (
-                                            <Loader2
-                                              size={12}
-                                              className="animate-spin"
-                                            />
-                                          ) : (
-                                            <XCircle size={12} />
-                                          )}
-                                          Submit &amp; Reject
-                                        </button>
-                                        {isEditing[interview.panelId] && (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              setIsEditing((prev) => ({
-                                                ...prev,
-                                                [interview.panelId]: false,
-                                              }))
-                                            }
-                                            className="btn btn-secondary btn-sm"
-                                          >
-                                            Cancel Edit
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                }
 
                                 if (isL1Role) {
                                   const current = l1Ratings[

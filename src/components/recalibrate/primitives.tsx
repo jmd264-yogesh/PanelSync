@@ -112,21 +112,32 @@ export function RubricRow({
   onScore: (n: number) => void;
   dialSize?: number;
 }) {
+  const selectedBand = typeof score === 'number' ? bands[score - 1] : undefined;
   return (
-    <div style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border-glass)' }}>
+    <div style={{ padding: '0.7rem 0', borderBottom: '1px solid var(--border-glass)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{label}</span>
         <div style={{ display: 'flex', gap: '0.3rem' }}>
           {[1, 2, 3, 4].map((n) => (
             <ScoreDial key={n} value={n} selected={score === n} onSelect={() => onScore(n)} size={dialSize} />
           ))}
         </div>
       </div>
-      <details style={{ marginTop: '0.3rem' }}>
-        <summary style={{ fontSize: '0.7rem', cursor: 'pointer', color: 'var(--text-muted)' }}>View rubric</summary>
-        <div style={{ marginTop: '0.35rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      {selectedBand && (
+        <div style={{
+          marginTop: '0.4rem', display: 'flex', gap: '0.45rem', alignItems: 'flex-start',
+          fontSize: '0.8rem', lineHeight: 1.5, padding: '0.4rem 0.55rem', borderRadius: '8px',
+          background: `${SCORE_COLORS[score as number]}12`,
+        }}>
+          <span style={{ fontWeight: 700, color: SCORE_COLORS[score as number], flexShrink: 0 }}>{score}/4</span>
+          <span>{selectedBand}</span>
+        </div>
+      )}
+      <details style={{ marginTop: '0.35rem' }}>
+        <summary style={{ fontSize: '0.74rem', cursor: 'pointer', color: 'var(--text-muted)' }}>View all bands</summary>
+        <div style={{ marginTop: '0.35rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
           {bands.map((text, i) => (
-            <div key={i} style={{ fontSize: '0.72rem', display: 'flex', gap: '0.45rem', fontWeight: score === i + 1 ? 700 : 400 }}>
+            <div key={i} style={{ fontSize: '0.76rem', display: 'flex', gap: '0.45rem', fontWeight: score === i + 1 ? 700 : 400 }}>
               <span style={{ minWidth: '1.1rem', color: SCORE_COLORS[i + 1] }}>{i + 1}</span>
               <span className={score === i + 1 ? undefined : 'text-muted'}>{text}</span>
             </div>

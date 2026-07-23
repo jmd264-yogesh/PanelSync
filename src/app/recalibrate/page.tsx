@@ -15,7 +15,7 @@ export default async function RecalibratePage() {
   }
 
   const allInterviews = await db.getPanelistInterviews(session.user.email);
-  const lateralInterviews = allInterviews.filter((i) => i.role.toLowerCase().includes('lateral'));
+  const lateralInterviews = allInterviews.filter((i) => i.hiringType === 'LATERAL');
 
   return (
     <div className="app-shell" style={{ background: 'var(--bg-main)' }}>
