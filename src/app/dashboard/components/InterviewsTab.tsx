@@ -783,7 +783,11 @@ export default function InterviewsTab({
     return filtered;
   };
 
-  const filteredInterviewsList = getFilteredInterviews();
+  // "Pending Assignment" interviews are panelist-first booking slots with no candidate
+  // mapped yet — they don't belong in the main Interviews list, only in candidate/mapping flows.
+  const filteredInterviewsList = getFilteredInterviews().filter(
+    (i) => i.candidateName !== "Pending Assignment",
+  );
 
   // ── Drive Metrics ─────────────────────────────────────────────────────────
   const candidateCardTitle =
