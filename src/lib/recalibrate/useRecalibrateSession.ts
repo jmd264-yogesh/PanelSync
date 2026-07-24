@@ -25,6 +25,7 @@ export interface RecalibrateQuestion {
   linkedResumeEvidence: string | null;
   difficulty: 'easy' | 'medium' | 'hard';
   maxMarks: number;
+  modelAnswer: string;
   rubric: RubricBand[];
   followUps: string[];
 }
@@ -343,6 +344,7 @@ export function useRecalibrateSession({
     date: new Date().toISOString().slice(0, 10),
     questions: questions.map((q) => ({
       id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks,
+      modelAnswer: q.modelAnswer,
       rubric: q.rubric.map((b) => ({ band: b.band, description: b.description })),
     })),
     questionScores,

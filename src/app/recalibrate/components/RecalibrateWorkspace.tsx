@@ -272,6 +272,19 @@ export default function RecalibrateWorkspace({
                       <span className="badge" style={{ fontSize: '0.65rem', background: dStyle.bg, color: dStyle.color, border: 'none' }}>{q.difficulty}</span>
                     </div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 0.65rem', lineHeight: 1.55 }}>{q.question}</p>
+                    {q.modelAnswer && (
+                      <details style={{ marginBottom: '0.6rem' }} open>
+                        <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model answer (panelist reference only)</summary>
+                        <p style={{
+                          marginTop: '0.45rem', marginBottom: 0, fontSize: '0.82rem', lineHeight: 1.55,
+                          padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)',
+                          background: 'var(--bg-card-hover)', borderLeft: '3px solid var(--rc-brand, #7c3aed)',
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          {q.modelAnswer}
+                        </p>
+                      </details>
+                    )}
                     <details style={{ marginBottom: '0.7rem' }}>
                       <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model rubric ({q.rubric.length} bands, out of {q.maxMarks})</summary>
                       <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>

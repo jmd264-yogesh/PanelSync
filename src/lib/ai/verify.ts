@@ -5,14 +5,12 @@ export class QuestionSetVerificationError extends Error {}
 // The LLM proposes; this recomputes the arithmetic and cross-checks it never trusted the model for.
 // `focusAreas` is the flat list of valid question categories — for the resume-driven flow
 // that's Criteria.focusAreas; for the spec-driven flow it's spec-catalog's deriveFocusAreas(spec).
+//
+// Note: `totalMarks` is NOT cross-checked here — LLMs reliably slip on that exact arithmetic
+// (add up N maxMarks correctly across a whole JSON payload), so instead of rejecting an
+// otherwise-valid question set over it, the caller recomputes and overwrites `totalMarks`
+// itself from `questions[].maxMarks` before this runs. See recomputeTotalMarks() below.
 export function verifyQuestionSet(questionSet: QuestionSet, focusAreas: string[]): void {
-  const recomputedTotal = questionSet.questions.reduce((sum, q) => sum + q.maxMarks, 0);
-  if (recomputedTotal !== questionSet.totalMarks) {
-    throw new QuestionSetVerificationError(
-      `totalMarks (${questionSet.totalMarks}) does not match the sum of question maxMarks (${recomputedTotal}).`
-    );
-  }
-
   const focusAreaSet = new Set(focusAreas.map((f) => f.toLowerCase()));
   for (const q of questionSet.questions) {
     if (!focusAreaSet.has(q.category.toLowerCase())) {
@@ -52,4 +50,10 @@ function parseBand(band: string): { start: number; end: number } {
 
 function parseBandStart(band: string): number {
   return parseBand(band).start;
+}
+
+// The only source of truth for totalMarks — call this on every question set before it's
+// verified, stored, or displayed, instead of trusting whatever the model put in the field.
+export function recomputeTotalMarks(questionSet: QuestionSet): QuestionSet {
+  return { ...questionSet, totalMarks: questionSet.questions.reduce((sum, q) => sum + q.maxMarks, 0) };
 }

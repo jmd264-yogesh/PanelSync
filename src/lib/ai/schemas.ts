@@ -55,6 +55,7 @@ export const QuestionSchema = z.object({
   linkedResumeEvidence: z.string().nullable(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   maxMarks: z.number().int().min(1).max(10),
+  modelAnswer: z.string().max(800),
   rubric: z.array(z.object({
     band: z.string().regex(/^\d+\s*-\s*\d+$/, 'must be a numeric mark range like "0-2", not a descriptive label'),
     description: z.string().max(300),

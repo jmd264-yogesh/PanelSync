@@ -14,6 +14,7 @@ export interface RecalibrateQuestion {
   question: string;
   difficulty: 'easy' | 'medium' | 'hard';
   maxMarks: number;
+  modelAnswer: string;
   rubric: RecalibrateRubricBand[];
 }
 
@@ -76,6 +77,7 @@ const BASE_STYLE = `
   .q{border:1px solid #d5dde5;padding:9px 12px;margin:8px 0;page-break-inside:avoid;}
   .qh{margin:0 0 4px;} .area{color:#4a5c70;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
   .qt{margin:0 0 6px;font-weight:600;}
+  .ma{margin:0 0 6px;padding:6px 8px;background:#eef2f6;border-left:3px solid #4a5c70;font-size:10px;color:#33475b;}
   .gg{margin:0 0 6px;color:#33475b;font-size:10px;}
   .sc{margin:0;}
   .flag{border:1.5px solid #D97757;background:#fbeee8;color:#8a3418;padding:8px 10px;font-weight:600;margin-top:8px;}
@@ -130,6 +132,7 @@ export function buildPanelistReportHtml(input: RecalibratePrintInput): string {
     qBlock += `<div class="q">
       <p class="qh"><b>Q${idx + 1}.</b> <span class="area">${escapeHtml(q.category)} · ${escapeHtml(q.difficulty)} · ${q.maxMarks} marks</span></p>
       <p class="qt">${escapeHtml(q.question)}</p>
+      <p class="ma"><b>Model answer:</b> ${escapeHtml(q.modelAnswer)}</p>
       <p class="gg">${rubricLines}</p>
       <p class="sc"><b>Score given:</b> ${score !== undefined ? score + ' / 4' : '— (not scored)'}</p>
     </div>`;

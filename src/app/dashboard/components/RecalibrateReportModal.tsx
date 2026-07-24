@@ -21,6 +21,7 @@ interface ReportQuestion {
   question: string;
   difficulty: 'easy' | 'medium' | 'hard';
   maxMarks: number;
+  modelAnswer: string;
   rubric: RubricBand[];
 }
 
@@ -173,7 +174,7 @@ export default function RecalibrateReportModal({
       styleLabel: STYLES[spec.style].label,
       panelistName: activeRound.session.submittedBy || '—',
       date: new Date().toISOString().slice(0, 10),
-      questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, rubric: q.rubric })),
+      questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, modelAnswer: q.modelAnswer, rubric: q.rubric })),
       questionScores,
       rubricDimensions: allDims.map((d) => d.label),
       rubricScores,
