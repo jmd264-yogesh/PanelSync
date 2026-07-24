@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPanelistSession } from '@/lib/session';
-import { db } from '@/lib/db';
-import { blob } from '@/lib/blob';
+import { getPanelistSession } from '@server/lib/session';
+import { db } from '@server/lib/db';
+import { blob } from '@server/lib/blob';
 
 export const dynamic = 'force-dynamic';
 

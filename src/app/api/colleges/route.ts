@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { collegesService } from '@server/services/colleges/colleges.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   try {
-    const colleges = await db.getColleges();
+    const colleges = await collegesService.getColleges();
     return NextResponse.json(colleges);
   } catch (error) {
     console.error('Failed to load colleges:', error);
@@ -29,18 +29,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name } = body;
 
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return NextResponse.json({ error: 'College name is required' }, { status: 400 });
-    }
-
-    try {
-      await db.addCollege(name);
-      return NextResponse.json({ success: true, name: name.trim() });
-    } catch (dbErr: any) {
-      return NextResponse.json({ error: dbErr.message || 'Database error adding college' }, { status: 400 });
-    }
+    const result = await collegesService.addCollege(name);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to add college:', error);
-    return NextResponse.json({ error: 'Failed to add college' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to add college';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

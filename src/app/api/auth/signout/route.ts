@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { clearSession } from '@/lib/session';
+import { authService } from '@server/services/auth/auth.service';
 
 export async function GET(request: NextRequest) {
-  await clearSession();
+  // Clear user session
+  await authService.destroySession();
+
+  // Redirect to home page
   const response = NextResponse.redirect(new URL('/', request.url));
+
   return response;
 }

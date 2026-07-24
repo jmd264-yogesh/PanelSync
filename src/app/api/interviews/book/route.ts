@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidAccessToken, getSession } from '@/lib/session';
-import { db } from '@/lib/db';
-import { graph } from '@/lib/graph';
+import { getValidAccessToken, getSession } from '@server/lib/session';
+import { interviewsService } from '@server/services/interviews/interviews.service';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -15,44 +14,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { interviewId, startTime, endTime, description } = body;
 
+    // Validate required fields
     if (!interviewId || !startTime || !endTime) {
       return NextResponse.json({ error: 'Missing required booking details' }, { status: 400 });
     }
 
-    const interview = await db.getInterview(interviewId);
-    if (!interview) {
-      return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
-    }
-
-    const ccEmails = await db.getRecruiterCCEmails(session.user.email);
-
-    // Call Microsoft Graph to create a calendar event with an online Teams meeting link
-    const meeting = await graph.createTeamsMeeting(
+    // Book interview via service
+    const result = await interviewsService.bookInterview(
+      { interviewId, startTime, endTime, description },
       session.user.email,
-      {
-        candidateName: interview.candidateName,
-        candidateEmail: interview.candidateEmail,
-        role: interview.role,
-        description: description || 'Interview scheduled via Microsoft Teams Scheduler.',
-        startTime,
-        endTime,
-        panelEmails: interview.panels.map((p) => p.email),
-        ccEmails,
-      },
       token
     );
 
-    // Save scheduled details to the JSON database
-    await db.bookInterview(interviewId, {
-      scheduledSlotStart: startTime,
-      scheduledSlotEnd: endTime,
-      teamsMeetingUrl: meeting.joinUrl || meeting.webLink || '',
-      calendarEventId: meeting.id || '',
-    });
-
-    return NextResponse.json({ success: true, meeting });
-  } catch (error) {
+    return NextResponse.json({ success: true, meeting: result.meeting });
+  } catch (error: any) {
     console.error('Failed to book interview:', error);
+
+    if (error.message === 'INTERVIEW_NOT_FOUND') {
+      return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+    }
+
     return NextResponse.json({ error: 'Failed to book interview' }, { status: 500 });
   }
 }

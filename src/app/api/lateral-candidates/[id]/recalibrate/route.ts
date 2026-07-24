@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { lateralCandidatesService } from '@server/services/lateral-candidates/lateral-candidates.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,30 +18,12 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const candidate = await db.getLateralCandidate(id);
-    if (!candidate) {
-      return NextResponse.json({ error: 'Candidate not found' }, { status: 404 });
-    }
-    if (!candidate.mappedInterviewId) {
-      return NextResponse.json({ error: 'No interview scheduled for this candidate yet.' }, { status: 404 });
-    }
-
-    const recalibrateSession = await db.getRecalibrateSession(candidate.mappedInterviewId);
-    if (!recalibrateSession || !recalibrateSession.submittedAt) {
-      return NextResponse.json({ error: 'This candidate has no submitted Recalibrate assessment yet.' }, { status: 404 });
-    }
-
-    const aiRun = recalibrateSession.aiRunId ? await db.getAiRun(recalibrateSession.aiRunId) : null;
-
-    return NextResponse.json({
-      candidateName: candidate.name,
-      positionTitle: candidate.positionTitle,
-      session: recalibrateSession,
-      spec: aiRun?.spec ?? null,
-      questions: aiRun?.questions ?? null,
-    });
+    const report = await lateralCandidatesService.getRecalibrateReport(id);
+    return NextResponse.json(report);
   } catch (error) {
     console.error('Failed to fetch recalibrate report:', error);
-    return NextResponse.json({ error: 'Failed to fetch recalibrate report' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to fetch recalibrate report';
+    const status = message.includes('not found') ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

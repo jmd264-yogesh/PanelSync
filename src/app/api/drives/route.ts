@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { drivesService } from '@server/services/drives/drives.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +11,8 @@ export async function GET() {
   }
 
   try {
-    const drives = await db.getDrives();
-    const activeDrive = await db.getActiveDrive();
-    return NextResponse.json({ drives, activeDrive });
+    const result = await drivesService.getDrivesWithActive();
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to load drives:', error);
     return NextResponse.json({ error: 'Failed to load drives' }, { status: 500 });
@@ -30,29 +29,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { collegeName, startDate, endDate } = body;
 
-    if (!collegeName || typeof collegeName !== 'string' || !collegeName.trim()) {
-      return NextResponse.json({ error: 'College name is required' }, { status: 400 });
-    }
-    if (!startDate || typeof startDate !== 'string' || !startDate.trim()) {
-      return NextResponse.json({ error: 'Start date is required' }, { status: 400 });
-    }
-    if (!endDate || typeof endDate !== 'string' || !endDate.trim()) {
-      return NextResponse.json({ error: 'End date is required' }, { status: 400 });
-    }
-    if (endDate.trim() < startDate.trim()) {
-      return NextResponse.json({ error: 'End date cannot be before the start date' }, { status: 400 });
-    }
-
-    const newDrive = await db.createDrive(collegeName, startDate, endDate);
-
-    const today = new Intl.DateTimeFormat("en-CA", {timeZone: "Asia/Kolkata",}).format(new Date());
-    if (startDate.trim() === today) {
-      await db.setActiveDrive(newDrive.id);
-    }
-
-    return NextResponse.json({ success: true, drive: newDrive });
+    const result = await drivesService.createDrive(collegeName, startDate, endDate);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to create drive:', error);
-    return NextResponse.json({ error: 'Failed to create drive' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to create drive';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

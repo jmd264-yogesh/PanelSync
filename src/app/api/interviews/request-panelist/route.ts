@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getValidAccessToken, getSession } from "@/lib/session";
-import { db, dbClient } from "@/lib/db";
-import { graph } from "@/lib/graph";
+import { getValidAccessToken, getSession } from "@server/lib/session";
+import { db, dbClient } from "@server/lib/db";
+import { graph } from "@server/lib/graph";
 import { eq } from "drizzle-orm";
-import * as schema from "@/lib/schema";
+import * as schema from "@server/lib/schema";
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();

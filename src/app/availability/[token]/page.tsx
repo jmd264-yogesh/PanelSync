@@ -1,5 +1,5 @@
-import { db } from '@/lib/db';
-import AvailabilityClient from './AvailabilityClient';
+import { db } from '@server/lib/db';
+import { AvailabilityClient } from '@/availability/components/AvailabilityClient';
 import { AlertCircle } from 'lucide-react';
 
 interface PageProps {

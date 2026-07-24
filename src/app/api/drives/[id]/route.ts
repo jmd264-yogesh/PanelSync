@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getSession } from '@server/lib/session';
+import { drivesService } from '@server/services/drives/drives.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,15 +15,12 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    if (!id) {
-      return NextResponse.json({ error: 'Missing drive ID' }, { status: 400 });
-    }
-
-    await db.deleteDrive(id);
-    return NextResponse.json({ success: true });
+    const result = await drivesService.deleteDrive(id);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to delete drive:', error);
-    return NextResponse.json({ error: 'Failed to delete drive' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to delete drive';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
@@ -38,20 +35,14 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    if (!id) {
-      return NextResponse.json({ error: 'Missing drive ID' }, { status: 400 });
-    }
-
     const body = await request.json();
     const { status } = body;
-    if (status !== 'OPEN' && status !== 'CLOSED') {
-      return NextResponse.json({ error: 'status must be OPEN or CLOSED' }, { status: 400 });
-    }
 
-    await db.setDriveStatus(id, status);
-    return NextResponse.json({ success: true });
+    const result = await drivesService.updateDriveStatus(id, status);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to update drive status:', error);
-    return NextResponse.json({ error: 'Failed to update drive status' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to update drive status';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

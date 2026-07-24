@@ -1,10 +1,10 @@
-import { getPanelistSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getPanelistSession } from '@server/lib/session';
+import { db } from '@server/lib/db';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { Gauge, LogOut } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
-import RecalibrateWorkspaceClient from './RecalibrateWorkspaceClient';
+import { ThemeToggle } from '@/common/components/ThemeToggle';
+import { RecalibrateWorkspaceClient } from '@/recalibrate/components/RecalibrateWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { setSession } from '@/lib/session';
+import { authService } from '@server/services/auth/auth.service';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -7,17 +7,23 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
   const stateParam = searchParams.get('state') || '';
-  const isPanelistLogin = stateParam.includes('role=panelist');
 
+  // Parse role from OAuth state
+  const role = authService.parseRoleFromState(stateParam);
+
+  // Handle OAuth errors
   if (error) {
     console.error('OAuth Callback Error:', error, errorDescription);
-    return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(errorDescription || error)}`, request.url));
+    return NextResponse.redirect(
+      new URL(`/?error=${encodeURIComponent(errorDescription || error)}`, request.url)
+    );
   }
 
   if (!code) {
     return NextResponse.redirect(new URL('/?error=no_code_provided', request.url));
   }
 
+  // Validate environment configuration
   const clientId = process.env.AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID || 'common';
@@ -28,82 +34,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/?error=server_configuration_error', request.url));
   }
 
+  const config = { clientId, clientSecret, tenantId, redirectUri };
+
   try {
-    // 1. Exchange authorization code for access and refresh tokens
-    const tokenResponse = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: redirectUri,
-        scope: 'openid profile offline_access User.Read User.Read.All Chat.Create ChatMessage.Send Calendars.ReadWrite',
-      }),
-    });
+    // Exchange authorization code for tokens
+    const tokenData = await authService.exchangeCodeForTokens(code, config);
 
-    if (!tokenResponse.ok) {
-      const errText = await tokenResponse.text();
-      console.error('Token exchange failed:', errText);
-      return NextResponse.redirect(new URL('/?error=token_exchange_failed', request.url));
+    // Fetch user profile from Microsoft Graph
+    const userProfile = await authService.fetchUserProfile(tokenData.access_token);
+
+    // Extract user email
+    const userEmail = authService.extractEmail(userProfile);
+
+    // Verify role-based access
+    const accessCheck = await authService.verifyRoleAccess(userEmail, role);
+    if (!accessCheck.allowed) {
+      return NextResponse.redirect(
+        new URL(`/?error=${accessCheck.reason?.toLowerCase()}`, request.url)
+      );
     }
 
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
-    const expiresAt = Date.now() + tokenData.expires_in * 1000;
+    // Create session
+    const session = await authService.createSession(tokenData, userProfile, role);
 
-    // 2. Query Microsoft Graph to retrieve authenticated user details
-    const userResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!userResponse.ok) {
-      const errText = await userResponse.text();
-      console.error('Graph user profile request failed:', errText);
-      return NextResponse.redirect(new URL('/?error=user_profile_failed', request.url));
-    }
-
-    const userData = await userResponse.json();
-    const userEmail = (userData.mail || userData.userPrincipalName || '').toLowerCase().trim();
-
-    // 3. Verify role-based access
-    const { db } = await import('@/lib/db');
-
-    if (isPanelistLogin) {
-      const isPanelist = await db.isPanelist(userEmail);
-      if (!isPanelist) {
-        console.warn(`Panelist sign-in attempt by unregistered email: ${userEmail}`);
-        return NextResponse.redirect(new URL('/?error=not_a_panelist', request.url));
-      }
-    } else {
-      const isAllowed = await db.isEmailAllowed(userEmail);
-      if (!isAllowed) {
-        console.warn(`Unauthorized recruiter sign-in attempt by email: ${userEmail}`);
-        return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
-      }
-    }
-
-    // 4. Save session to server store and get sessionId
-    const sessionId = await setSession({
-      accessToken,
-      refreshToken,
-      expiresAt,
-      user: {
-        id: userData.id,
-        displayName: userData.displayName,
-        email: userEmail,
-      },
-    });
-
-    const redirectPath = isPanelistLogin ? '/panelist' : '/dashboard';
-    const response = NextResponse.redirect(new URL(redirectPath, request.url));
-    response.cookies.set('sessionId', sessionId, {
+    // Set session cookie and redirect
+    const response = NextResponse.redirect(new URL(session.redirectPath, request.url));
+    response.cookies.set('sessionId', session.sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -112,8 +68,13 @@ export async function GET(request: NextRequest) {
     });
 
     return response;
-  } catch (err) {
-    console.error('Callback handler network or parsing error:', err);
-    return NextResponse.redirect(new URL('/?error=internal_server_error', request.url));
+  } catch (err: any) {
+    console.error('Callback handler error:', err);
+    const errorCode = err.message === 'TOKEN_EXCHANGE_FAILED'
+      ? 'token_exchange_failed'
+      : err.message === 'USER_PROFILE_FAILED'
+      ? 'user_profile_failed'
+      : 'internal_server_error';
+    return NextResponse.redirect(new URL(`/?error=${errorCode}`, request.url));
   }
 }

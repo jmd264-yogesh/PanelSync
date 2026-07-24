@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidAccessToken } from '@/lib/session';
-import { graph } from '@/lib/graph';
+import { getValidAccessToken } from '@server/lib/session';
+import { usersService } from '@server/services/users/users.service';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q') || '';
-
-  if (query.trim().length < 2) {
-    return NextResponse.json([]);
-  }
 
   const token = await getValidAccessToken();
   if (!token) {
@@ -16,7 +12,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const users = await graph.searchUsers(query, token);
+    const users = await usersService.searchUsers(query, token);
     return NextResponse.json(users);
   } catch (error) {
     console.error('Failed to search users:', error);

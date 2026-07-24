@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getValidAccessToken, getSession } from "@/lib/session";
-import { db } from "@/lib/db";
+import { getValidAccessToken, getSession } from "@server/lib/session";
+import { interviewsService } from "@server/services/interviews/interviews.service";
 
 export async function GET(_request: NextRequest) {
   const token = await getValidAccessToken();
@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest) {
   }
 
   try {
-    const interviews = await db.getInterviews();
+    const interviews = await interviewsService.getAllInterviews();
 
     return NextResponse.json({
       success: true,

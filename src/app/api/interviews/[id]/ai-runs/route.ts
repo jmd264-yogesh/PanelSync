@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPanelistSession } from '@/lib/session';
-import { db, AiRun } from '@/lib/db';
-import { blob } from '@/lib/blob';
-import { extractResumeText, ResumeUnreadableError } from '@/lib/ai/extract-text';
-import { redactPII } from '@/lib/ai/redact';
-import { getAiProvider } from '@/lib/ai/provider';
-import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
-import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
-import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { sortByDifficulty } from '@/lib/ai/spec-catalog';
-import { deriveFocusAreas } from '@/lib/ai/org-rubric';
+import { getPanelistSession } from '@server/lib/session';
+import { db, AiRun } from '@server/lib/db';
+import { blob } from '@server/lib/blob';
+import { extractResumeText, ResumeUnreadableError } from '@server/services/ai/extract-text';
+import { redactPII } from '@server/services/ai/redact';
+import { getAiProvider } from '@server/services/ai/provider';
+import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@server/services/ai/prompts';
+import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@server/services/ai/schemas';
+import { verifyQuestionSet, QuestionSetVerificationError } from '@server/services/ai/verify';
+import { sortByDifficulty } from '@server/services/ai/spec-catalog';
+import { deriveFocusAreas } from '@server/services/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
 

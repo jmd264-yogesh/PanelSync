@@ -1,11 +1,10 @@
 import { Calendar, LogOut, Sparkles } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import { ThemeToggle } from '@/components/theme-toggle';
-import { db } from '@/lib/db';
-import { getSession } from '@/lib/session';
-
-import DashboardClient from './DashboardClient';
+import { ThemeToggle } from '@/common/components/ThemeToggle';
+import { db } from '@server/lib/db';
+import { getSession } from '@server/lib/session';
+import { DashboardClient } from '@/dashboard/components/DashboardClient';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,9 +1,9 @@
-import { getPanelistSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { getPanelistSession } from '@server/lib/session';
+import { db } from '@server/lib/db';
 import { redirect } from 'next/navigation';
 import { Calendar, LogOut } from 'lucide-react';
-import PanelistClient from './PanelistClient';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { PanelistClient } from '@/panelist/components/PanelistClient';
+import { ThemeToggle } from '@/common/components/ThemeToggle';
 
 export const dynamic = 'force-dynamic';
 
