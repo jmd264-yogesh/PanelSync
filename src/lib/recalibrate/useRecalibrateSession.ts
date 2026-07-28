@@ -207,6 +207,14 @@ export function useRecalibrateSession({
       setRubricScores({});
       await patchSession({ aiRunId: result.id, questionScores: {}, rubricScores: {} });
       toast.success('Questions and rubric generated.');
+
+      // Start scoring the clock the moment questions are ready — resume rather than
+      // reset if the panelist had already started (e.g. regenerating mid-interview),
+      // so a regenerate never wipes out elapsed time.
+      if (!isRunning) {
+        if (elapsedSeconds > 0) handleTimerResume();
+        else handleTimerStart();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to generate questions.');
       toast.error(err.message || 'Failed to generate questions.');
