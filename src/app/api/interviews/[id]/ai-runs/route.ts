@@ -73,7 +73,7 @@ export async function POST(
 
       try {
         specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
-        const focusAreas = deriveFocusAreas(spec.roleGrade);
+        const focusAreas = deriveFocusAreas(spec.roleGrade, spec.techStacks);
         const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas);
         const questionResult = await specProvider.generateStructured({
           systemPrompt,

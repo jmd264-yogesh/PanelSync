@@ -54,7 +54,7 @@ export function buildSpecQuestionPrompt(spec: Spec, focusAreas: string[]): { sys
   const calibration = CALIBRATION[tier];
   const styleGuidance = STYLES[spec.style].promptGuidance;
   const orgTier = getOrgTier(spec.roleGrade);
-  const dims = rubricDimensionsWithBands(spec.roleGrade);
+  const dims = rubricDimensionsWithBands(spec.roleGrade, spec.techStacks);
   const behaviouralLabels = new Set(Object.values(BEHAVIOURAL_CATEGORY_LABEL) as string[]);
 
   const categoryBriefs = dims.map(({ label, bands }) => {

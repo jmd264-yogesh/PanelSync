@@ -143,8 +143,10 @@ export default function RecalibrateReportModal({
 
   const technicalDims = useMemo(() => {
     if (!orgTier) return [];
-    return TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
-  }, [orgTier]);
+    const all = TECHNICAL_CATEGORIES_BY_TIER[orgTier];
+    const selected = spec?.techStacks && spec.techStacks.length > 0 ? all.filter((id) => spec.techStacks.includes(id)) : all;
+    return selected.map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
+  }, [orgTier, spec]);
   const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({ label: BEHAVIOURAL_CATEGORY_LABEL[id], bands: BEHAVIOURAL_RUBRIC[id] })), []);
   const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
 

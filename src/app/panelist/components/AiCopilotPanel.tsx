@@ -6,7 +6,7 @@ import { Sparkles, Loader2, FileText, Wand2, History, Save, AlertTriangle } from
 import type { Spec } from '@/lib/ai/schemas';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
-import { getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR } from '@/lib/ai/org-rubric';
+import { getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 
 interface ResumeDigestSkill {
   name: string;
@@ -88,6 +88,7 @@ const DEFAULT_SPEC: Spec = {
   roleGrade: 'se',
   style: 'practical',
   questionCount: 6,
+  techStacks: [],
 };
 
 export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { interviewId: string; defaultRoleTitle: string }) {
@@ -458,7 +459,29 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
               </div>
 
               <div>
-                <button className="btn btn-primary btn-sm" onClick={handleGenerateFromSpec} disabled={loadingQuestions} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <div className="text-xs" style={{ fontWeight: 700, marginBottom: '0.3rem' }}>Tech stacks for this candidate</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.3rem' }}>
+                  {TECHNICAL_CATEGORIES_BY_TIER[getOrgTier(spec.roleGrade)].map((id) => (
+                    <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={spec.techStacks.includes(id)}
+                        onChange={(e) => setSpec((s) => ({
+                          ...s,
+                          techStacks: e.target.checked ? [...s.techStacks, id] : s.techStacks.filter((t) => t !== id),
+                        }))}
+                      />
+                      {TECHNICAL_CATEGORY_LABEL[id]}
+                    </label>
+                  ))}
+                </div>
+                {spec.techStacks.length === 0 && (
+                  <p className="text-xs text-muted" style={{ margin: '0.3rem 0 0' }}>Select at least one tech stack relevant to this candidate.</p>
+                )}
+              </div>
+
+              <div>
+                <button className="btn btn-primary btn-sm" onClick={handleGenerateFromSpec} disabled={loadingQuestions || spec.techStacks.length === 0} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                   {loadingQuestions ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
                   <span>Generate Questions</span>
                 </button>

@@ -67,6 +67,7 @@ const DEFAULT_SPEC: Spec = {
   roleGrade: 'se',
   style: 'practical',
   questionCount: 6,
+  techStacks: [],
 };
 
 export function fmtElapsed(totalSeconds: number): string {
@@ -259,6 +260,31 @@ export function useRecalibrateSession({
     void patchSession({ notes });
   };
 
+  // Lets the panelist re-weight a question's marks (e.g. worth more if it's the
+  // candidate's specialty) without regenerating — persists via the same edit endpoint
+  // AiCopilotPanel already uses for its own question edits. totalMarks is recomputed
+  // server-side, never trusted from this client update.
+  const updateQuestionMaxMarks = async (questionId: string, maxMarks: number) => {
+    if (!activeRun?.questions) return;
+    const nextQuestions: QuestionSet = {
+      ...activeRun.questions,
+      questions: activeRun.questions.questions.map((q) => (q.id === questionId ? { ...q, maxMarks } : q)),
+    };
+    setActiveRun({ ...activeRun, questions: nextQuestions });
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/ai-runs/${activeRun.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: nextQuestions }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to update marks.');
+      setActiveRun(result);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update marks.');
+    }
+  };
+
   const handleTimerStart = () => {
     const now = Date.now();
 
@@ -317,10 +343,19 @@ export function useRecalibrateSession({
   const questions = activeRun?.questions?.questions || [];
   const orgTier = useMemo(() => getOrgTier(spec.roleGrade), [spec.roleGrade]);
 
-  const technicalDims: RubricDim[] = useMemo(() => TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => ({
-    label: TECHNICAL_CATEGORY_LABEL[id],
-    bands: TECHNICAL_RUBRIC[orgTier][id]!,
-  })), [orgTier]);
+  // Only the tech stacks the panelist flagged as relevant to this candidate — falls back
+  // to the full tier list when nothing's selected yet (e.g. before first generation) or
+  // for runs generated before this selection existed.
+  const technicalDims: RubricDim[] = useMemo(() => {
+    const all = TECHNICAL_CATEGORIES_BY_TIER[orgTier];
+    const selected = spec.techStacks && spec.techStacks.length > 0
+      ? all.filter((id) => spec.techStacks.includes(id))
+      : all;
+    return selected.map((id) => ({
+      label: TECHNICAL_CATEGORY_LABEL[id],
+      bands: TECHNICAL_RUBRIC[orgTier][id]!,
+    }));
+  }, [orgTier, spec.techStacks]);
   const behaviouralDims: RubricDim[] = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({
     label: BEHAVIOURAL_CATEGORY_LABEL[id],
     bands: BEHAVIOURAL_RUBRIC[id],
@@ -370,7 +405,7 @@ export function useRecalibrateSession({
     session, activeRun, spec, setSpec, notes, setNotes,
     questionScores, rubricScores,
     isRunning, startedAt, elapsedSeconds, elapsedLabel,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, 
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,
     questions, orgTier, technicalDims, behaviouralDims, allDims,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, gap, gapIsDiscrepant,

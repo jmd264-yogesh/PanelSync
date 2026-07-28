@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
-import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND } from '@/lib/ai/org-rubric';
+import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateRail';
@@ -40,7 +40,7 @@ export default function RecalibrateWorkspace({
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
     questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur,
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
     questions, orgTier, technicalDims, behaviouralDims,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant,
@@ -214,6 +214,7 @@ export default function RecalibrateWorkspace({
                   <span className="badge">{ROLE_GRADES[spec.roleGrade].label}</span>
                   <span className="badge">{STYLES[spec.style].label}</span>
                   <span className="badge">{spec.questionCount} questions</span>
+                  <span className="badge">{spec.techStacks.length} tech stack{spec.techStacks.length === 1 ? '' : 's'}</span>
                 </div>
                 <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setSpecExpanded(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Pencil size={12} /> Edit
@@ -238,8 +239,42 @@ export default function RecalibrateWorkspace({
                 <div className="text-xs text-muted">
                   Rubric: <strong style={{ color: 'var(--text-main)' }}>{ORG_TIER_LABEL[orgTier]}</strong> — bar: {ORG_TIER_BAR[orgTier]}
                 </div>
+
                 <div>
-                  <button className="btn btn-primary" onClick={handleGenerate} disabled={generating} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <div className="text-xs" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Tech stacks for this candidate</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.4rem' }}>
+                    {TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => {
+                      const checked = spec.techStacks.includes(id);
+                      return (
+                        <label
+                          key={id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', cursor: 'pointer',
+                            padding: '0.4rem 0.55rem', borderRadius: 'var(--radius-md)',
+                            border: checked ? '1px solid var(--rc-brand, #7c3aed)' : '1px solid var(--border-glass)',
+                            background: checked ? 'var(--rc-brand-glow, rgba(124,58,237,0.08))' : 'transparent',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => setSpec((s) => ({
+                              ...s,
+                              techStacks: e.target.checked ? [...s.techStacks, id] : s.techStacks.filter((t) => t !== id),
+                            }))}
+                          />
+                          {TECHNICAL_CATEGORY_LABEL[id]}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {spec.techStacks.length === 0 && (
+                    <p className="text-xs" style={{ margin: '0.4rem 0 0', color: 'var(--warning, #f59e0b)' }}>Select at least one tech stack relevant to this candidate before generating.</p>
+                  )}
+                </div>
+
+                <div>
+                  <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || spec.techStacks.length === 0} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                     {generating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
                     <span>{activeRun ? 'Regenerate Questions' : 'Generate Questions'}</span>
                   </button>
@@ -270,6 +305,20 @@ export default function RecalibrateWorkspace({
                       </span>
                       <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>{q.category}</span>
                       <span className="badge" style={{ fontSize: '0.65rem', background: dStyle.bg, color: dStyle.color, border: 'none' }}>{q.difficulty}</span>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Marks
+                        <input
+                          key={q.maxMarks}
+                          type="number" min={1} max={10}
+                          className="form-input"
+                          style={{ width: '3.2rem', padding: '0.15rem 0.35rem', fontSize: '0.72rem', textAlign: 'center' }}
+                          defaultValue={q.maxMarks}
+                          onBlur={(e) => {
+                            const next = Math.min(10, Math.max(1, Number(e.target.value) || q.maxMarks));
+                            if (next !== q.maxMarks) updateQuestionMaxMarks(q.id, next);
+                          }}
+                        />
+                      </label>
                     </div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 0.65rem', lineHeight: 1.55 }}>{q.question}</p>
                     {q.modelAnswer && (

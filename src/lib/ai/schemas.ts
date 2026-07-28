@@ -36,14 +36,22 @@ export const CriteriaSchema = z.object({
 export type Criteria = z.infer<typeof CriteriaSchema>;
 
 // Spec-driven generation: an alternative to Criteria that needs no resume/candidate at
-// all — the panelist scopes the question set directly. Role grade alone now determines
-// the question/rubric category taxonomy (the organization's technical + behavioural
-// rubric, keyed by role grade — see src/lib/ai/org-rubric.ts); there is no separate
-// tracks/platforms/topics selection.
+// all — the panelist scopes the question set directly. Role grade determines the
+// organization's technical + behavioural rubric taxonomy (see src/lib/ai/org-rubric.ts);
+// "techStacks" narrows the technical half of that taxonomy to what's actually relevant
+// to this candidate (e.g. a Snowflake-only candidate shouldn't get Azure Databricks
+// questions or an unratable Databricks row in the rubric). Behavioural categories are
+// always all included — they're role-agnostic, not stack-specific. The literal id list
+// here duplicates org-rubric.ts's TechnicalCategoryId union (same convention as
+// "roleGrade" above duplicating spec-catalog.ts's RoleGrade keys) rather than importing
+// it, to keep this schema file dependency-free.
 export const SpecSchema = z.object({
   roleGrade: z.enum(['intern', 'se', 'sse', 'enabler', 'sc', 'ssc', 'architect']),
   style: z.enum(['foundational', 'practical']),
   questionCount: z.number().int().min(3).max(12),
+  techStacks: z.array(z.enum([
+    'azureDatabricks', 'microsoftFabric', 'snowflake', 'pyspark', 'sql', 'dataPipeline', 'awsGcp', 'dbt',
+  ])).min(1, 'Select at least one tech stack for this candidate.'),
 });
 export type Spec = z.infer<typeof SpecSchema>;
 
