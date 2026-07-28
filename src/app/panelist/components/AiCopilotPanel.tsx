@@ -124,7 +124,9 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
           setFocusAreasInput(latestCompleted.criteria.focusAreas.join(', '));
           setMode('resume');
         } else if (latestCompleted.spec) {
-          setSpec(latestCompleted.spec);
+          // Runs generated before tech-stack selection existed have no `techStacks` in
+          // their stored spec — normalize so the checkbox list can rely on it being an array.
+          setSpec({ ...latestCompleted.spec, techStacks: latestCompleted.spec.techStacks || [] });
           setMode('spec');
         }
         if (latestCompleted.questions) setEditableQuestions(latestCompleted.questions.questions);

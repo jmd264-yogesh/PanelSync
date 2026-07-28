@@ -146,7 +146,9 @@ export function useRecalibrateSession({
         }
         if (chosenRun) {
           setActiveRun(chosenRun);
-          if (chosenRun.spec) setSpec(chosenRun.spec);
+          // Runs generated before tech-stack selection existed have no `techStacks` in
+          // their stored spec — normalize so every consumer can rely on it being an array.
+          if (chosenRun.spec) setSpec({ ...chosenRun.spec, techStacks: chosenRun.spec.techStacks || [] });
         } else if (roleGrade) {
           setSpec((s) => ({ ...s, roleGrade }));
         }
