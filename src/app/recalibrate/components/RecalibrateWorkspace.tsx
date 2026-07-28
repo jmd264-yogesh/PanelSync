@@ -11,7 +11,7 @@ import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
-import type { CandidateStatus } from './CandidateRail';
+import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
 

@@ -1140,6 +1140,10 @@ body::after {
   background: var(--bg-card-hover);
 }
 
+.candidate-card:hover .candidate-card-cta {
+  opacity: 1;
+}
+
 .btn {
   min-height: 38px;
   border-radius: 10px;

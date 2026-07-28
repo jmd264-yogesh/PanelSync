@@ -10,6 +10,7 @@ import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } fro
 import { verifyQuestionSet, recomputeTotalMarks, QuestionSetVerificationError } from '@/lib/ai/verify';
 import { sortByDifficulty } from '@/lib/ai/spec-catalog';
 import { deriveFocusAreas } from '@/lib/ai/org-rubric';
+import { getInterviewInfo } from '@/lib/interview-role';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,7 +75,12 @@ export async function POST(
       try {
         specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
         const focusAreas = deriveFocusAreas(spec.roleGrade, spec.techStacks);
-        const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas);
+        // Derived from the interview's own role string server-side (never trusted from
+        // the client) so L1 vs L2 rounds get calibrated differently — L1 stays
+        // foundational, L2 goes deeper technically and probes delivery/ownership.
+        const interview = await db.getInterview(id);
+        const round = interview ? getInterviewInfo(interview.role).round : 'GENERAL';
+        const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas, round === 'GENERAL' ? null : round);
         const questionResult = await specProvider.generateStructured({
           systemPrompt,
           userPrompt,
