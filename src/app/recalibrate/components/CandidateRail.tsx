@@ -6,13 +6,13 @@ import type { PanelistInterview } from '@/lib/db';
 
 export type CandidateStatus = 'not_started' | 'in_progress' | 'submitted';
 
-const STATUS_META: Record<CandidateStatus, { label: string; color: string; icon: React.ComponentType<{ size?: number }> }> = {
+export const STATUS_META: Record<CandidateStatus, { label: string; color: string; icon: React.ComponentType<{ size?: number }> }> = {
   not_started: { label: 'Not started', color: 'var(--text-muted)', icon: CircleDot },
   in_progress: { label: 'In progress', color: 'var(--warning, #f59e0b)', icon: Clock3 },
   submitted: { label: 'Submitted', color: 'var(--success, #10b981)', icon: CheckCircle2 },
 };
 
-function initials(name: string): string {
+export function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
 }

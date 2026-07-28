@@ -21,6 +21,7 @@ interface ReportQuestion {
   question: string;
   difficulty: 'easy' | 'medium' | 'hard';
   maxMarks: number;
+  modelAnswer: string;
   rubric: RubricBand[];
 }
 
@@ -142,8 +143,10 @@ export default function RecalibrateReportModal({
 
   const technicalDims = useMemo(() => {
     if (!orgTier) return [];
-    return TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
-  }, [orgTier]);
+    const all = TECHNICAL_CATEGORIES_BY_TIER[orgTier];
+    const selected = spec?.techStacks && spec.techStacks.length > 0 ? all.filter((id) => spec.techStacks.includes(id)) : all;
+    return selected.map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
+  }, [orgTier, spec]);
   const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({ label: BEHAVIOURAL_CATEGORY_LABEL[id], bands: BEHAVIOURAL_RUBRIC[id] })), []);
   const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
 
@@ -173,7 +176,7 @@ export default function RecalibrateReportModal({
       styleLabel: STYLES[spec.style].label,
       panelistName: activeRound.session.submittedBy || '—',
       date: new Date().toISOString().slice(0, 10),
-      questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, rubric: q.rubric })),
+      questions: questions.map((q) => ({ id: q.id, category: q.category, question: q.question, difficulty: q.difficulty, maxMarks: q.maxMarks, modelAnswer: q.modelAnswer, rubric: q.rubric })),
       questionScores,
       rubricDimensions: allDims.map((d) => d.label),
       rubricScores,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { db, AiRun } from '@/lib/db';
 import { QuestionSetSchema, Spec } from '@/lib/ai/schemas';
-import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
+import { verifyQuestionSet, recomputeTotalMarks, QuestionSetVerificationError } from '@/lib/ai/verify';
 import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
 export const dynamic = 'force-dynamic';
@@ -43,10 +43,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid questions payload', details: parsed.error.issues }, { status: 400 });
     }
 
+    const recomputed = recomputeTotalMarks(parsed.data);
+
     if (run.criteria || run.spec) {
       try {
-        const focusAreas = run.criteria ? (run.criteria as any).focusAreas : deriveFocusAreas((run.spec as Spec).roleGrade);
-        verifyQuestionSet(parsed.data, focusAreas);
+        const focusAreas = run.criteria
+          ? (run.criteria as any).focusAreas
+          : deriveFocusAreas((run.spec as Spec).roleGrade, (run.spec as Spec).techStacks);
+        verifyQuestionSet(recomputed, focusAreas);
       } catch (err) {
         if (err instanceof QuestionSetVerificationError) {
           return NextResponse.json({ error: err.message }, { status: 422 });
@@ -55,7 +59,7 @@ export async function PATCH(
       }
     }
 
-    const updated = await db.updateAiRun(runId, { questions: parsed.data });
+    const updated = await db.updateAiRun(runId, { questions: recomputed });
     await db.addAuditLog(session.user.email, 'QUESTIONS_EDITED', 'AiRun', runId, {});
 
     return NextResponse.json(sanitizeRun(updated));

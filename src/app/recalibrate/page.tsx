@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { Gauge, LogOut } from 'lucide-react';
 import RecalibrateWorkspaceClient from './RecalibrateWorkspaceClient';
+import HelpGuide from './components/HelpGuide';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export default async function RecalibratePage() {
           </div>
 
           <div className="header-actions">
+            <HelpGuide />
             <a href="/panelist" className="header-signout" style={{ textDecoration: 'none' }}>
               <span>Panelist Portal</span>
             </a>

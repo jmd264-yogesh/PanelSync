@@ -267,21 +267,35 @@ export function getTechnicalCategoriesForRoleGrade(roleGrade: RoleGrade): Techni
   return TECHNICAL_CATEGORIES_BY_TIER[getOrgTier(roleGrade)];
 }
 
+// Narrows a tier's technical category list to a panelist-selected subset (the tech
+// stacks actually relevant to a given candidate) — ignored/dropped ids (wrong tier, or
+// stale from a role-grade change) are filtered out defensively. Undefined/empty selection
+// falls back to the full tier list, so callers with no selection yet (or pre-existing data
+// from before this feature existed) keep today's "everything" behaviour.
+function selectedOrAllTechnical(tier: OrgRubricTier, selectedTechStacks?: TechnicalCategoryId[]): TechnicalCategoryId[] {
+  const all = TECHNICAL_CATEGORIES_BY_TIER[tier];
+  if (!selectedTechStacks || selectedTechStacks.length === 0) return all;
+  const selected = new Set(selectedTechStacks);
+  return all.filter((id) => selected.has(id));
+}
+
 // The full list of valid question/rubric category labels for a role grade — technical
-// (tier-specific) + the shared behavioural set. Used both as the AI prompt's allowed
-// "category" list and as verifyQuestionSet's focusAreas.
-export function deriveFocusAreas(roleGrade: RoleGrade): string[] {
+// (tier-specific, optionally narrowed to `selectedTechStacks`) + the shared behavioural
+// set (always all — behavioural categories are role-agnostic, not stack-specific). Used
+// both as the AI prompt's allowed "category" list and as verifyQuestionSet's focusAreas.
+export function deriveFocusAreas(roleGrade: RoleGrade, selectedTechStacks?: TechnicalCategoryId[]): string[] {
   const tier = getOrgTier(roleGrade);
-  const technical = TECHNICAL_CATEGORIES_BY_TIER[tier].map((c) => TECHNICAL_CATEGORY_LABEL[c]);
+  const technical = selectedOrAllTechnical(tier, selectedTechStacks).map((c) => TECHNICAL_CATEGORY_LABEL[c]);
   const behavioural = BEHAVIOURAL_CATEGORIES.map((c) => BEHAVIOURAL_CATEGORY_LABEL[c]);
   return [...technical, ...behavioural];
 }
 
 // The Overall Scoring Rubric grid's dimensions for a role grade, each with its org-defined
-// 1-4 band text (technical bands are tier-specific; behavioural bands are shared).
-export function rubricDimensionsWithBands(roleGrade: RoleGrade): { label: string; bands: Bands }[] {
+// 1-4 band text (technical bands are tier-specific and optionally narrowed to
+// `selectedTechStacks`; behavioural bands are shared and always all included).
+export function rubricDimensionsWithBands(roleGrade: RoleGrade, selectedTechStacks?: TechnicalCategoryId[]): { label: string; bands: Bands }[] {
   const tier = getOrgTier(roleGrade);
-  const technical = TECHNICAL_CATEGORIES_BY_TIER[tier].map((c) => ({
+  const technical = selectedOrAllTechnical(tier, selectedTechStacks).map((c) => ({
     label: TECHNICAL_CATEGORY_LABEL[c],
     bands: TECHNICAL_RUBRIC[tier][c] as Bands,
   }));

@@ -7,7 +7,7 @@ import { redactPII } from '@/lib/ai/redact';
 import { getAiProvider } from '@/lib/ai/provider';
 import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
 import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
-import { verifyQuestionSet, QuestionSetVerificationError } from '@/lib/ai/verify';
+import { verifyQuestionSet, recomputeTotalMarks, QuestionSetVerificationError } from '@/lib/ai/verify';
 import { sortByDifficulty } from '@/lib/ai/spec-catalog';
 import { deriveFocusAreas } from '@/lib/ai/org-rubric';
 
@@ -73,7 +73,7 @@ export async function POST(
 
       try {
         specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
-        const focusAreas = deriveFocusAreas(spec.roleGrade);
+        const focusAreas = deriveFocusAreas(spec.roleGrade, spec.techStacks);
         const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas);
         const questionResult = await specProvider.generateStructured({
           systemPrompt,
@@ -81,8 +81,9 @@ export async function POST(
           zodSchema: QuestionSetSchema,
         });
 
-        verifyQuestionSet(questionResult.data, focusAreas);
-        const ordered = { ...questionResult.data, questions: sortByDifficulty(questionResult.data.questions) };
+        const recomputed = recomputeTotalMarks(questionResult.data);
+        verifyQuestionSet(recomputed, focusAreas);
+        const ordered = { ...recomputed, questions: sortByDifficulty(recomputed.questions) };
 
         specRun = await db.updateAiRun(specRun.id, {
           status: 'COMPLETED',
@@ -165,11 +166,12 @@ export async function POST(
         zodSchema: QuestionSetSchema,
       });
 
-      verifyQuestionSet(questionResult.data, criteria.focusAreas);
+      const recomputed = recomputeTotalMarks(questionResult.data);
+      verifyQuestionSet(recomputed, criteria.focusAreas);
 
       run = await db.updateAiRun(run.id, {
         status: 'COMPLETED',
-        questions: questionResult.data,
+        questions: recomputed,
         model: questionResult.model,
         promptVersion: PROMPT_VERSION,
         completedAt: new Date(),
