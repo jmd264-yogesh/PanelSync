@@ -270,7 +270,7 @@ export default function PanelistClient({
   // 1. Active drive first
   // 2. Chronologically by slot timing (earliest scheduledSlotStart first)
   // 3. Alphabetically by college name
-  // This portal is Campus Hiring only — /panelist/page.tsx already excludes Lateral
+  // This portal is Campus Hiring only — /panelist/campus/page.tsx already excludes Lateral
   // Hiring rows server-side, but these memos defensively re-exclude them too (Lateral
   // Hiring lives entirely at /recalibrate now).
   const hiringInterviews = React.useMemo(() => {
