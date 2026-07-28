@@ -49,13 +49,22 @@ Respond with JSON only, matching the required schema exactly.`;
 // category. Feeding those bands to the model (rather than a generic topic label) is
 // what lets it write a question whose answer actually reveals where the candidate sits
 // on the organization's scale, and a per-question rubric that reflects it.
-export function buildSpecQuestionPrompt(spec: Spec, focusAreas: string[]): { systemPrompt: string; userPrompt: string } {
+export function buildSpecQuestionPrompt(spec: Spec, focusAreas: string[], round?: 'L1' | 'L2' | null): { systemPrompt: string; userPrompt: string } {
   const tier = ROLE_GRADES[spec.roleGrade].tier;
   const calibration = CALIBRATION[tier];
   const styleGuidance = STYLES[spec.style].promptGuidance;
   const orgTier = getOrgTier(spec.roleGrade);
   const dims = rubricDimensionsWithBands(spec.roleGrade, spec.techStacks);
   const behaviouralLabels = new Set(Object.values(BEHAVIOURAL_CATEGORY_LABEL) as string[]);
+
+  // L1/L2 is a round axis, independent of role grade — same candidate, same grade, but
+  // the two rounds should feel different: L1 stays foundational, L2 goes deeper
+  // technically and also probes how they actually plan/deliver/lead work, not just code.
+  const roundGuidance = round === 'L1'
+    ? `\n\nThis is an L1 (first) round. Keep every question foundational and hands-on — core concepts, everyday implementation tasks, straightforward debugging a solid practitioner should breeze through. Skew difficulty toward easy/medium; avoid deep system-design, multi-service architecture trade-offs, or organizational/delivery topics — those belong in L2, not here. Any behavioural question should stay introductory (how they organize their own work), not about managing or leading others.`
+    : round === 'L2'
+      ? `\n\nThis is an L2 (second) round for a candidate who has already cleared L1 fundamentals. Go noticeably deeper than a first-round screen: architecture trade-offs, scaling and production concerns, ambiguous or multi-constraint problems. Skew difficulty toward medium/hard. Also dedicate at least 1-2 questions to how the candidate actually plans, delivers, or leads project work — timelines, stakeholder communication, prioritizing under constraints, handling delays or scope changes — L2 is evaluating delivery ownership and seniority signal, not just technical depth.`
+      : '';
 
   const categoryBriefs = dims.map(({ label, bands }) => {
     const kind = behaviouralLabels.has(label) ? 'behavioural' : 'technical';
@@ -86,12 +95,12 @@ Rules:
 
 Calibration for this role grade: ${calibration}
 
-Question style: ${styleGuidance}
+Question style: ${styleGuidance}${roundGuidance}
 
 Respond with JSON only, matching the required schema exactly.`;
 
   const userPrompt = `Role grade: ${ROLE_GRADES[spec.roleGrade].label} (${ORG_TIER_LABEL[orgTier]} rubric, bar: ${ORG_TIER_BAR[orgTier]})
-Valid question categories: ${focusAreas.join(', ')}`;
+Valid question categories: ${focusAreas.join(', ')}${round ? `\nInterview round: ${round}` : ''}`;
 
   return { systemPrompt, userPrompt };
 }

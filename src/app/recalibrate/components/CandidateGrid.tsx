@@ -46,7 +46,10 @@ export default function CandidateGrid({
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.85rem' }}>
+    // auto-fit (not auto-fill) matters here: auto-fill would reserve as many 260px
+    // tracks as the container is wide enough for even when most stay empty, so a lone
+    // card ends up squeezed into one narrow track instead of stretching to fill the row.
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
       {interviews.map((interview) => {
         const active = interview.interviewId === selectedId;
         const status = statuses[interview.interviewId] || 'not_started';
@@ -60,31 +63,32 @@ export default function CandidateGrid({
             key={interview.interviewId}
             type="button"
             onClick={() => onSelect(interview.interviewId)}
-            className="glass-card"
+            className="glass-card candidate-card"
             style={{
               display: 'flex',
               alignItems: 'flex-start',
-              gap: '0.75rem',
-              padding: '1rem',
+              gap: '0.85rem',
+              padding: '1.25rem',
               cursor: 'pointer',
               textAlign: 'left',
               transition: 'var(--transition-fast, all 0.15s ease)',
               border: active ? '1px solid var(--rc-brand, #7c3aed)' : '1px solid var(--border-glass)',
               background: active ? 'var(--rc-brand-glow, rgba(124,58,237,0.08))' : 'var(--bg-card)',
+              boxShadow: active ? '0 4px 16px -4px rgba(124,58,237,0.25)' : 'none',
             }}
             onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-card-hover)'; }}
             onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-card)'; }}
           >
             <span style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              width: '42px', height: '42px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 700,
+              width: '48px', height: '48px', borderRadius: '13px', fontSize: '0.95rem', fontWeight: 700,
               background: 'linear-gradient(145deg, #a855f7, #7c3aed 70%)', color: '#fff',
             }}>
               {initials(interview.candidateName)}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <span style={{ fontSize: '0.92rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.98rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {interview.candidateName}
                 </span>
                 {round && (
@@ -98,12 +102,17 @@ export default function CandidateGrid({
                   </span>
                 )}
               </div>
-              <div className="text-muted" style={{ fontSize: '0.76rem', marginTop: '0.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {position}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.4rem', color: meta.color }}>
-                <Icon size={12} />
-                <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{meta.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginTop: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: meta.color }}>
+                  <Icon size={12} />
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>{meta.label}</span>
+                </div>
+                <span className="candidate-card-cta text-muted" style={{ fontSize: '0.72rem', fontWeight: 600, opacity: 0, transition: 'opacity 0.15s ease' }}>
+                  Open →
+                </span>
               </div>
             </div>
           </button>
