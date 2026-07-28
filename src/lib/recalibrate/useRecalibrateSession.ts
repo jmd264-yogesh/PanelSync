@@ -71,8 +71,12 @@ const DEFAULT_SPEC: Spec = {
 };
 
 export function fmtElapsed(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
+  // Guards against NaN/negative propagating into the displayed clock (e.g. a legacy
+  // session whose timerEndedAt was stored as something non-numeric) — always renders a
+  // real mm:ss instead of "NaN:NaN".
+  const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 0;
+  const m = Math.floor(safe / 60);
+  const s = Math.floor(safe % 60);
   return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
@@ -140,7 +144,8 @@ export function useRecalibrateSession({
           setQuestionScores(loadedSession.questionScores || {});
           setRubricScores(loadedSession.rubricScores || {});
           setNotes(loadedSession.notes || '');
-          setElapsedSeconds(loadedSession.timerEndedAt != null ? Number(loadedSession.timerEndedAt) : 0);
+          const parsedElapsed = loadedSession.timerEndedAt != null ? Number(loadedSession.timerEndedAt) : 0;
+          setElapsedSeconds(Number.isFinite(parsedElapsed) ? parsedElapsed : 0);
           setStartedAt(loadedSession.timerStartedAt ? new Date(loadedSession.timerStartedAt).getTime() : null);
           setIsRunning(!!loadedSession.timerStartedAt);
         }
@@ -195,6 +200,13 @@ export function useRecalibrateSession({
   };
 
   const handleGenerate = async () => {
+    // Belt-and-suspenders: the Generate/Regenerate button is already disabled in this
+    // state, but guard here too so a stale render or programmatic call can't slip an
+    // empty selection past the button and surface an opaque server-side "Invalid spec".
+    if (!spec.techStacks || spec.techStacks.length === 0) {
+      toast.error('Select at least one tech stack for this candidate before generating.');
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
@@ -204,7 +216,7 @@ export function useRecalibrateSession({
         body: JSON.stringify({ spec }),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to generate questions.');
+      if (!res.ok) throw new Error(result.details?.[0]?.message || result.error || 'Failed to generate questions.');
       setActiveRun(result);
       setQuestionScores({});
       setRubricScores({});
@@ -371,6 +383,39 @@ export function useRecalibrateSession({
   const gap = avgQuestionScore !== null && avgRubricScore !== null ? avgRubricScore - avgQuestionScore : null;
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
 
+  // A question's "category" is the same string as its matching rubric dimension's label
+  // (both technical and behavioural — see org-rubric.ts), so this groups scored questions
+  // by category to get a per-dimension question average, comparable to that dimension's
+  // rubric score. This is what actually explains a gap ("Snowflake rubric is a 4, but the
+  // Snowflake questions only averaged 2.0") instead of just flagging that one exists.
+  const avgQuestionScoreByCategory = useMemo(() => {
+    const scoresByCategory: Record<string, number[]> = {};
+    for (const q of questions) {
+      const score = questionScores[q.id];
+      if (typeof score !== 'number') continue;
+      (scoresByCategory[q.category] ||= []).push(score);
+    }
+    const result: Record<string, number> = {};
+    for (const category of Object.keys(scoresByCategory)) {
+      result[category] = avgOf(scoresByCategory[category])!;
+    }
+    return result;
+  }, [questions, questionScores]);
+
+  // Every dimension with both a rubric score and at least one scored question in that
+  // same category, ranked by how much it disagrees — the biggest contributors to `gap`.
+  const dimensionGaps = useMemo(() => {
+    return allDims
+      .map((dim) => {
+        const rubricScore = rubricScores[dim.label];
+        const questionAvg = avgQuestionScoreByCategory[dim.label];
+        if (typeof rubricScore !== 'number' || typeof questionAvg !== 'number') return null;
+        return { label: dim.label, rubricScore, questionAvg, gap: rubricScore - questionAvg };
+      })
+      .filter((d): d is { label: string; rubricScore: number; questionAvg: number; gap: number } => d !== null)
+      .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  }, [allDims, rubricScores, avgQuestionScoreByCategory]);
+
   const totalSeconds =
     elapsedSeconds +
     (isRunning && startedAt
@@ -410,7 +455,7 @@ export function useRecalibrateSession({
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,
     questions, orgTier, technicalDims, behaviouralDims, allDims,
-    avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, gap, gapIsDiscrepant,
+    avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, gap, gapIsDiscrepant, dimensionGaps,
     handleDownloadCandidate, handleDownloadPanelist,
   };
 }

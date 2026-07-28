@@ -202,6 +202,13 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
   };
 
   const handleGenerateFromSpec = async () => {
+    // Belt-and-suspenders: the Generate button is already disabled in this state, but
+    // guard here too so a stale render can't slip an empty selection past the button
+    // and surface an opaque server-side "Invalid spec".
+    if (!spec.techStacks || spec.techStacks.length === 0) {
+      toast.error('Select at least one tech stack for this candidate before generating.');
+      return;
+    }
     setLoadingQuestions(true);
     setError(null);
     try {
@@ -211,7 +218,7 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
         body: JSON.stringify({ spec }),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to generate questions.');
+      if (!res.ok) throw new Error(result.details?.[0]?.message || result.error || 'Failed to generate questions.');
       setActiveRun(result);
       setRuns((prev) => [result, ...prev]);
       setEditableQuestions(result.questions?.questions || null);

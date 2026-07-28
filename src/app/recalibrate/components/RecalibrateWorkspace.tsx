@@ -43,7 +43,7 @@ export default function RecalibrateWorkspace({
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
     questions, orgTier, technicalDims, behaviouralDims,
-    avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant,
+    avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant, dimensionGaps,
     handleDownloadCandidate, handleDownloadPanelist,
   } = rc;
 
@@ -424,19 +424,46 @@ export default function RecalibrateWorkspace({
                 </div>
               </div>
               {gap !== null && (
-                gapIsDiscrepant ? (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px', borderLeft: '3px solid var(--danger, #ef4444)', background: 'var(--danger-glow, rgba(239,68,68,0.08))' }}>
-                    <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} />
-                    <span>{Math.abs(gap).toFixed(1)} pt gap — review before finalizing.</span>
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px',
+                  borderLeft: gapIsDiscrepant ? '3px solid var(--danger, #ef4444)' : '3px solid var(--success, #10b981)',
+                  background: gapIsDiscrepant ? 'var(--danger-glow, rgba(239,68,68,0.08))' : 'var(--success-glow, rgba(16,185,129,0.08))',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
+                    {gapIsDiscrepant ? <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} /> : <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />}
+                    <span>
+                      {gapIsDiscrepant
+                        ? `${Math.abs(gap).toFixed(1)} pt gap — review before finalizing.`
+                        : 'Scores consistent (gap under 1.0).'}
+                    </span>
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px', borderLeft: '3px solid var(--success, #10b981)', background: 'var(--success-glow, rgba(16,185,129,0.08))' }}>
-                    <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />
-                    <span>Scores consistent (gap under 1.0).</span>
-                  </div>
-                )
+                  {/* Always shown, regardless of whether the gap crosses the discrepancy
+                      threshold — even a small gap is worth seeing where it comes from. */}
+                  {dimensionGaps.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1.1rem' }}>
+                      <span className="text-muted" style={{ fontSize: '0.68rem' }}>By dimension (biggest disagreement first):</span>
+                      {dimensionGaps.map((d) => (
+                        <div key={d.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.7rem' }}>
+                          <span>{d.label}</span>
+                          <span style={{ fontFamily: 'monospace', color: Math.abs(d.gap) >= 1.0 ? 'var(--danger, #ef4444)' : 'var(--text-muted)', flexShrink: 0 }}>
+                            rubric {d.rubricScore} vs q&nbsp;avg {d.questionAvg.toFixed(1)} ({(d.gap >= 0 ? '+' : '') + d.gap.toFixed(1)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-muted" style={{ fontSize: '0.68rem', paddingLeft: '1.1rem' }}>
+                      No dimension has both a rubric score and a scored question in the same category yet — score at least one question per rubric category to see what’s driving this.
+                    </span>
+                  )}
+                </div>
               )}
               <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
+              {gap !== null && (scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
+                <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
+                  Based on partial scoring so far — this gap may shift as more questions/dimensions are scored.
+                </div>
+              )}
             </div>
 
             {/* notes */}
