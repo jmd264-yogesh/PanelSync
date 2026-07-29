@@ -26,7 +26,7 @@ export function usePanelistFilters(activeDrive: Drive | null) {
   );
 
   // Round Tab state for filtering L1 vs L2 vs Lateral candidates
-  const [activeRoundTab, setActiveRoundTab] = useState<"ALL" | "L1" | "L2">(
+  const [activeRoundTab, setActiveRoundTab] = useState<"ALL" | "L1" | "L2" | "LATERAL">(
     "ALL"
   );
 

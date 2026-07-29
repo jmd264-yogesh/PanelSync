@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { StarRating } from "../ui/StarRating";
+import { RatingField } from "./components/RatingField";
+import { FeedbackComments } from "./components/FeedbackComments";
+import { FeedbackActions } from "./components/FeedbackActions";
 
 export type GenRatingState = {
   technical: number;
@@ -61,173 +62,44 @@ export const GeneralFeedbackForm: React.FC<GeneralFeedbackFormProps> = ({
           gap: "0.75rem",
         }}
       >
-        {/* Technical Depth */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Technical Depth *
-            </span>
-            <StarRating
-              rating={current.technical}
-              onChange={(r) => updateGen("technical", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Technical skill assessment, technical expertise, coding depth..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.techNotes}
-            onChange={(e) => updateGen("techNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+        <RatingField
+          label="Technical Depth"
+          rating={current.technical}
+          notes={current.techNotes}
+          placeholder="Technical skill assessment, technical expertise, coding depth..."
+          onRatingChange={(r) => updateGen("technical", r)}
+          onNotesChange={(v) => updateGen("techNotes", v)}
+          disabled={isSubmitting}
+        />
 
-        {/* Communication */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Communication *
-            </span>
-            <StarRating
-              rating={current.communication}
-              onChange={(r) => updateGen("communication", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Communication skills, explanations structure, discussion..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.commNotes}
-            onChange={(e) => updateGen("commNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+        <RatingField
+          label="Communication"
+          rating={current.communication}
+          notes={current.commNotes}
+          placeholder="Communication skills, explanations structure, discussion..."
+          onRatingChange={(r) => updateGen("communication", r)}
+          onNotesChange={(v) => updateGen("commNotes", v)}
+          disabled={isSubmitting}
+        />
 
-        {/* Collaboration & Teamwork */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Collaboration &amp; Teamwork *
-            </span>
-            <StarRating
-              rating={current.collaboration}
-              onChange={(r) => updateGen("collaboration", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Collaborative problem solving, feedback receipt, ownership..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.collabNotes}
-            onChange={(e) => updateGen("collabNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
-      </div>
-
-      {/* Overall Comments */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.4rem",
-        }}
-      >
-        <label
-          style={{
-            fontSize: "0.8rem",
-            fontWeight: 600,
-          }}
-        >
-          Overall Comments / Summary Recommendation
-        </label>
-        <textarea
-          className="form-input"
-          rows={2}
-          placeholder="Summary comments of performance..."
-          style={{
-            fontSize: "0.8rem",
-            resize: "vertical",
-          }}
-          value={current.comments}
-          onChange={(e) => updateGen("comments", e.target.value)}
+        <RatingField
+          label="Collaboration & Teamwork"
+          rating={current.collaboration}
+          notes={current.collabNotes}
+          placeholder="Collaborative problem solving, feedback receipt, ownership..."
+          onRatingChange={(r) => updateGen("collaboration", r)}
+          onNotesChange={(v) => updateGen("collabNotes", v)}
           disabled={isSubmitting}
         />
       </div>
 
-      {/* Error Display */}
+      <FeedbackComments
+        value={current.comments}
+        onChange={(v) => updateGen("comments", v)}
+        disabled={isSubmitting}
+        placeholder="Summary comments of performance..."
+      />
+
       {feedbackError && (
         <p
           style={{
@@ -239,58 +111,14 @@ export const GeneralFeedbackForm: React.FC<GeneralFeedbackFormProps> = ({
         </p>
       )}
 
-      {/* Action Buttons */}
-      <div
-        style={{
-          display: "flex",
-          gap: "0.5rem",
-          marginTop: "0.25rem",
-        }}
-      >
-        <button
-          onClick={() => onSubmit("PASSED")}
-          disabled={isSubmitting}
-          className="btn btn-sm"
-          style={{
-            background: "rgba(16,185,129,0.1)",
-            border: "1px solid rgba(16,185,129,0.3)",
-            color: "var(--success)",
-          }}
-        >
-          {isSubmitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <CheckCircle size={12} />
-          )}
-          Submit &amp; Pass
-        </button>
-        <button
-          onClick={() => onSubmit("REJECTED")}
-          disabled={isSubmitting}
-          className="btn btn-sm"
-          style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.25)",
-            color: "#ef4444",
-          }}
-        >
-          {isSubmitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <XCircle size={12} />
-          )}
-          Submit &amp; Reject
-        </button>
-        {isEditing && (
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            className="btn btn-secondary btn-sm"
-          >
-            Cancel Edit
-          </button>
-        )}
-      </div>
+      <FeedbackActions
+        onPass={() => onSubmit("PASSED")}
+        onReject={() => onSubmit("REJECTED")}
+        onCancelEdit={onCancelEdit}
+        isSubmitting={isSubmitting}
+        isEditing={isEditing}
+        passLabel="Submit & Pass"
+      />
     </div>
   );
 };
