@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { StarRating } from "../ui/StarRating";
+import { RatingField } from "./components/RatingField";
+import { FeedbackComments } from "./components/FeedbackComments";
+import { FeedbackActions } from "./components/FeedbackActions";
 
 export type L2RatingState = {
   design: number;
@@ -63,218 +64,54 @@ export const L2FeedbackForm: React.FC<L2FeedbackFormProps> = ({
           gap: "0.75rem",
         }}
       >
-        {/* System Design & Scalability */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              System Design &amp; Scalability *
-            </span>
-            <StarRating
-              rating={current.design}
-              onChange={(r) => updateL2("design", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Architecture, API design, trade-offs, database choices..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.designNotes}
-            onChange={(e) => updateL2("designNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+        <RatingField
+          label="System Design & Scalability"
+          rating={current.design}
+          notes={current.designNotes}
+          placeholder="Architecture, API design, trade-offs, database choices..."
+          onRatingChange={(r) => updateL2("design", r)}
+          onNotesChange={(v) => updateL2("designNotes", v)}
+          disabled={isSubmitting}
+        />
 
-        {/* Technical Depth & Experience */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Technical Depth &amp; Experience *
-            </span>
-            <StarRating
-              rating={current.depth}
-              onChange={(r) => updateL2("depth", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Past project complexity, deep tech troubleshooting, domain knowledge..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.depthNotes}
-            onChange={(e) => updateL2("depthNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+        <RatingField
+          label="Technical Depth & Experience"
+          rating={current.depth}
+          notes={current.depthNotes}
+          placeholder="Past project complexity, deep tech troubleshooting, domain knowledge..."
+          onRatingChange={(r) => updateL2("depth", r)}
+          onNotesChange={(v) => updateL2("depthNotes", v)}
+          disabled={isSubmitting}
+        />
 
-        {/* Leadership & Ownership */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Leadership &amp; Ownership *
-            </span>
-            <StarRating
-              rating={current.leadership}
-              onChange={(r) => updateL2("leadership", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Ownership mindset, problem driving, initiative, peer support..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.leadNotes}
-            onChange={(e) => updateL2("leadNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+        <RatingField
+          label="Leadership & Ownership"
+          rating={current.leadership}
+          notes={current.leadNotes}
+          placeholder="Ownership mindset, problem driving, initiative, peer support..."
+          onRatingChange={(r) => updateL2("leadership", r)}
+          onNotesChange={(v) => updateL2("leadNotes", v)}
+          disabled={isSubmitting}
+        />
 
-        {/* Cultural Fit & MS Values */}
-        <div
-          style={{
-            background: "var(--bg-main)",
-            border: "1px solid var(--border-glass)",
-            padding: "0.75rem",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                fontWeight: 600,
-              }}
-            >
-              Cultural Fit &amp; MS Values *
-            </span>
-            <StarRating
-              rating={current.fit}
-              onChange={(r) => updateL2("fit", r)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <textarea
-            className="form-input"
-            rows={2}
-            placeholder="Growth mindset, customer obsession, inclusion, alignment..."
-            style={{
-              fontSize: "0.78rem",
-              resize: "vertical",
-            }}
-            value={current.fitNotes}
-            onChange={(e) => updateL2("fitNotes", e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
-      </div>
-
-      {/* Overall Comments */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.4rem",
-        }}
-      >
-        <label
-          style={{
-            fontSize: "0.8rem",
-            fontWeight: 600,
-          }}
-        >
-          Overall Comments / Summary Recommendation
-        </label>
-        <textarea
-          className="form-input"
-          rows={2}
-          placeholder="Summary comments of L2 performance..."
-          style={{
-            fontSize: "0.8rem",
-            resize: "vertical",
-          }}
-          value={current.comments}
-          onChange={(e) => updateL2("comments", e.target.value)}
+        <RatingField
+          label="Cultural Fit & MS Values"
+          rating={current.fit}
+          notes={current.fitNotes}
+          placeholder="Growth mindset, customer obsession, inclusion, alignment..."
+          onRatingChange={(r) => updateL2("fit", r)}
+          onNotesChange={(v) => updateL2("fitNotes", v)}
           disabled={isSubmitting}
         />
       </div>
 
-      {/* Error Display */}
+      <FeedbackComments
+        value={current.comments}
+        onChange={(v) => updateL2("comments", v)}
+        disabled={isSubmitting}
+        placeholder="Summary comments of L2 performance..."
+      />
+
       {feedbackError && (
         <p
           style={{
@@ -286,58 +123,17 @@ export const L2FeedbackForm: React.FC<L2FeedbackFormProps> = ({
         </p>
       )}
 
-      {/* Action Buttons */}
-      <div
-        style={{
-          display: "flex",
-          gap: "0.5rem",
-          marginTop: "0.25rem",
-        }}
-      >
-        <button
-          onClick={() => onSubmit("PASSED")}
-          disabled={isSubmitting}
-          className="btn btn-sm"
-          style={{
-            background: "rgba(124,58,237,0.15)",
-            border: "1px solid rgba(124,58,237,0.3)",
-            color: "#c084fc",
-          }}
-        >
-          {isSubmitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <CheckCircle size={12} />
-          )}
-          Submit &amp; Pass L2
-        </button>
-        <button
-          onClick={() => onSubmit("REJECTED")}
-          disabled={isSubmitting}
-          className="btn btn-sm"
-          style={{
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid rgba(239,68,68,0.25)",
-            color: "#ef4444",
-          }}
-        >
-          {isSubmitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <XCircle size={12} />
-          )}
-          Submit &amp; Reject
-        </button>
-        {isEditing && (
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            className="btn btn-secondary btn-sm"
-          >
-            Cancel Edit
-          </button>
-        )}
-      </div>
+      <FeedbackActions
+        onPass={() => onSubmit("PASSED")}
+        onReject={() => onSubmit("REJECTED")}
+        onCancelEdit={onCancelEdit}
+        isSubmitting={isSubmitting}
+        isEditing={isEditing}
+        passLabel="Submit & Pass L2"
+        passColor="#c084fc"
+        passBg="rgba(124,58,237,0.15)"
+        passBorder="1px solid rgba(124,58,237,0.3)"
+      />
     </div>
   );
 };

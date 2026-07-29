@@ -38,7 +38,7 @@ export function useInterviewSorting(
   activeHiringTab: "CAMPUS" | "LATERAL",
   filterActiveDrive: boolean,
   filterDate: string | null,
-  activeRoundTab: "ALL" | "L1" | "L2"
+  activeRoundTab: "ALL" | "L1" | "L2" | "LATERAL"
 ) {
 
   // Stage 1: Filter by hiring type, active drive, and date
