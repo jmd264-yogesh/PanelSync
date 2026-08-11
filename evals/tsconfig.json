@@ -1,0 +1,19 @@
+{
+  "//": "Standalone build for the eval runner. The app's own tsconfig targets the Next.js bundler (which resolves extensionless relative imports for us); plain Node ESM does not, so evals are compiled to CommonJS in a temp dir and run from there. Keeps evals dependency-free and leaves app source untouched.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "..",
+    "outDir": "../.evals-dist",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts"]
+}
