@@ -104,3 +104,33 @@ Valid question categories: ${focusAreas.join(', ')}${round ? `\nInterview round:
 
   return { systemPrompt, userPrompt };
 }
+
+/**
+ * Turns a rejected draft plus the reasons it was rejected into a corrective prompt.
+ *
+ * Asks for the complete corrected set rather than a patch: partial edits invite id drift
+ * and half-applied fixes, and the full set gets re-validated from scratch anyway, so
+ * there's no safety gained by the more fragile option. Questions that were fine are
+ * explicitly to be returned byte-identical, which keeps repair from regressing the parts
+ * that already passed.
+ */
+export function buildRepairPrompt(
+  original: { systemPrompt: string; userPrompt: string },
+  previousDraft: unknown,
+  issues: string,
+): { systemPrompt: string; userPrompt: string } {
+  const userPrompt = `${original.userPrompt}
+
+You previously produced this question set:
+${JSON.stringify(previousDraft, null, 2)}
+
+It was rejected by automated review for the following reasons:
+${issues}
+
+Return the COMPLETE corrected question set as JSON.
+- Fix every issue listed above.
+- Leave questions that were not flagged exactly as they were, including their "id".
+- Do not introduce new problems: the same rules from your original instructions still apply in full.`;
+
+  return { systemPrompt: original.systemPrompt, userPrompt };
+}

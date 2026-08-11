@@ -5,12 +5,13 @@ import { blob } from '@/lib/blob';
 import { extractResumeText, ResumeUnreadableError } from '@/lib/ai/extract-text';
 import { redactPII } from '@/lib/ai/redact';
 import { getAiProvider } from '@/lib/ai/provider';
-import { buildDigestPrompt, buildQuestionPrompt, buildSpecQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
+import { buildDigestPrompt, buildQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
 import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
 import { verifyQuestionSet, recomputeTotalMarks, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { sortByDifficulty } from '@/lib/ai/spec-catalog';
-import { deriveFocusAreas } from '@/lib/ai/org-rubric';
+import { deriveFocusAreas, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { getInterviewInfo } from '@/lib/interview-role';
+import { generateQuestionSetAgentic } from '@/lib/ai/generate';
+import { AiError, classifyProviderError } from '@/lib/ai/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,6 @@ export async function POST(
       const spec = parsedSpec.data;
 
       let specRun = await db.createAiRun({ interviewId: id, candidateId: null, triggeredByEmail: session.user.email });
-      const specProvider = getAiProvider();
 
       try {
         specRun = await db.updateAiRun(specRun.id, { status: 'GENERATING', spec });
@@ -80,31 +80,62 @@ export async function POST(
         // foundational, L2 goes deeper technically and probes delivery/ownership.
         const interview = await db.getInterview(id);
         const round = interview ? getInterviewInfo(interview.role).round : 'GENERAL';
-        const { systemPrompt, userPrompt } = buildSpecQuestionPrompt(spec, focusAreas, round === 'GENERAL' ? null : round);
-        const questionResult = await specProvider.generateStructured({
-          systemPrompt,
-          userPrompt,
-          zodSchema: QuestionSetSchema,
-        });
 
-        const recomputed = recomputeTotalMarks(questionResult.data);
-        verifyQuestionSet(recomputed, focusAreas);
-        const ordered = { ...recomputed, questions: sortByDifficulty(recomputed.questions) };
+        const { questionSet, diagnostics, model, tokenUsage } = await generateQuestionSetAgentic({
+          spec,
+          focusAreas,
+          behaviouralCategories: BEHAVIOURAL_CATEGORIES.map((c) => BEHAVIOURAL_CATEGORY_LABEL[c]),
+          round: round === 'GENERAL' ? null : round,
+        });
 
         specRun = await db.updateAiRun(specRun.id, {
           status: 'COMPLETED',
-          questions: ordered,
-          model: questionResult.model,
+          questions: questionSet,
+          model,
           promptVersion: PROMPT_VERSION,
+          tokenUsage,
           completedAt: new Date(),
+        });
+
+        // Observability: one durable record per run of what the pipeline actually did —
+        // retries, guardrail findings, whether the critic asked for (and got) a revision.
+        // Without this, "the AI feels unreliable" stays unfalsifiable; with it, failure
+        // rates and quality drift are queryable.
+        await db.addAuditLog(session.user.email, 'AI_RUN_COMPLETED', 'AiRun', specRun.id, {
+          interviewId: id,
+          ...diagnostics,
+          // The full finding objects are verbose; codes are what you aggregate on.
+          finalFindings: diagnostics.finalFindings.map((f) => ({ code: f.code, severity: f.severity, questionId: f.questionId })),
         });
 
         return NextResponse.json(sanitizeRun(specRun));
       } catch (err) {
-        const message = err instanceof QuestionSetVerificationError ? err.message : 'AI run failed. Please try again.';
-        console.error(`AI run ${specRun.id} failed:`, err);
-        await db.updateAiRun(specRun.id, { status: 'FAILED', error: message, completedAt: new Date() });
-        return NextResponse.json({ error: message }, { status: 422 });
+        const aiErr = err instanceof QuestionSetVerificationError
+          ? new AiError('GUARDRAIL', err.message)
+          : classifyProviderError(err);
+
+        console.error(`AI run ${specRun.id} failed [${aiErr.kind}]:`, aiErr.message);
+        await db.updateAiRun(specRun.id, { status: 'FAILED', error: `${aiErr.kind}: ${aiErr.message}`, completedAt: new Date() });
+        await db.addAuditLog(session.user.email, 'AI_RUN_FAILED', 'AiRun', specRun.id, {
+          interviewId: id,
+          kind: aiErr.kind,
+          status: aiErr.status,
+          retryable: aiErr.retryable,
+          message: aiErr.message.slice(0, 500),
+        });
+
+        // 429/503 are the caller's cue that retrying later is worthwhile; 422 means the
+        // output was genuinely unusable and a retry may well produce the same thing.
+        const httpStatus = aiErr.kind === 'RATE_LIMIT' ? 429
+          : aiErr.kind === 'OVERLOADED' || aiErr.kind === 'SERVER' ? 503
+            : aiErr.kind === 'TIMEOUT' ? 504
+              : aiErr.kind === 'AUTH' ? 500
+                : 422;
+
+        return NextResponse.json(
+          { error: aiErr.userMessage, kind: aiErr.kind, retryable: aiErr.retryable },
+          { status: httpStatus },
+        );
       }
     }
 

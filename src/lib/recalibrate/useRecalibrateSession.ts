@@ -216,7 +216,13 @@ export function useRecalibrateSession({
         body: JSON.stringify({ spec }),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.details?.[0]?.message || result.error || 'Failed to generate questions.');
+      if (!res.ok) {
+        // The server classifies failures (overload/rate-limit/timeout vs. a genuinely
+        // unusable result) and marks the retryable ones, so the panelist is told whether
+        // trying again is actually worth their time mid-interview.
+        const base = result.details?.[0]?.message || result.error || 'Failed to generate questions.';
+        throw new Error(result.retryable ? `${base} (Retrying usually works.)` : base);
+      }
       setActiveRun(result);
       setQuestionScores({});
       setRubricScores({});

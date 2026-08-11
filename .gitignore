@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# compiled output of the eval harness (see evals/README.md)
+/.evals-dist/
+
 # local databases and sessions
 sessions.json
 db.json

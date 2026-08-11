@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "eval:build": "tsc -p evals/tsconfig.json",
+    "eval": "npm run eval:build && node .evals-dist/evals/run.js",
+    "eval:live": "npm run eval:build && node --env-file=.env .evals-dist/evals/run.js --live"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
