@@ -14,6 +14,7 @@ import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICUL
 import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
+import TranscriptPanel from './TranscriptPanel';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -392,6 +393,8 @@ export default function RecalibrateWorkspace({
         {/* Column 3 — Interview */}
         <div className="rc-interview-col">
           {isL2Round && <L1ReferencePanel interviewId={interviewId} />}
+
+          <TranscriptPanel interviewId={interviewId} />
 
           <InterviewStopwatch
             elapsedLabel={elapsedLabel}

@@ -37,6 +37,9 @@ export async function POST(request: NextRequest) {
         name: p.displayName,
         email: p.mail || p.userPrincipalName,
       })),
+      // Recorded so the Teams transcript can be pulled later (Graph exposes
+      // transcripts only under the meeting organizer).
+      organizerUserId: session.user.id,
     });
 
     // Also update candidate status in bulk upload queue to MAPPED

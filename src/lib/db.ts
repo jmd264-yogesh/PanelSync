@@ -247,6 +247,88 @@ export const db = {
   },
 
   // Get a single interview
+  // ── Teams meeting transcripts ─────────────────────────────────────────────
+
+  /** Raw meeting-identity fields, which the Interview type deliberately doesn't expose. */
+  getInterviewMeetingIdentity: async (id: string): Promise<{
+    organizerUserId: string | null;
+    onlineMeetingId: string | null;
+    teamsMeetingUrl: string | null;
+  } | null> => {
+    const [row] = await dbClient
+      .select({
+        organizerUserId: schema.interviews.organizerUserId,
+        onlineMeetingId: schema.interviews.onlineMeetingId,
+        teamsMeetingUrl: schema.interviews.teamsMeetingUrl,
+      })
+      .from(schema.interviews)
+      .where(eq(schema.interviews.id, id))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /** Caches the resolved Graph meeting id so later syncs skip the lookup. */
+  setInterviewOnlineMeetingId: async (id: string, onlineMeetingId: string): Promise<void> => {
+    await dbClient
+      .update(schema.interviews)
+      .set({ onlineMeetingId })
+      .where(eq(schema.interviews.id, id));
+  },
+
+  /**
+   * Idempotent upsert: re-syncing the same meeting overwrites the stored VTT rather than
+   * accumulating duplicates, keyed on (interviewId, graphTranscriptId).
+   */
+  saveInterviewTranscript: async (params: {
+    interviewId: string;
+    graphTranscriptId: string;
+    contentVtt: string;
+    transcriptCreatedAt: Date | null;
+    fetchedByEmail: string;
+  }): Promise<void> => {
+    await dbClient
+      .insert(schema.interviewTranscripts)
+      .values({
+        id: crypto.randomUUID(),
+        interviewId: params.interviewId,
+        graphTranscriptId: params.graphTranscriptId,
+        contentVtt: params.contentVtt,
+        transcriptCreatedAt: params.transcriptCreatedAt,
+        fetchedAt: new Date(),
+        fetchedByEmail: params.fetchedByEmail,
+      })
+      .onConflictDoUpdate({
+        target: [schema.interviewTranscripts.interviewId, schema.interviewTranscripts.graphTranscriptId],
+        set: {
+          contentVtt: params.contentVtt,
+          transcriptCreatedAt: params.transcriptCreatedAt,
+          fetchedAt: new Date(),
+          fetchedByEmail: params.fetchedByEmail,
+        },
+      });
+  },
+
+  getInterviewTranscripts: async (interviewId: string): Promise<{
+    id: string;
+    graphTranscriptId: string;
+    contentVtt: string | null;
+    transcriptCreatedAt: string | null;
+    fetchedAt: string | null;
+  }[]> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.interviewTranscripts)
+      .where(eq(schema.interviewTranscripts.interviewId, interviewId))
+      .orderBy(schema.interviewTranscripts.transcriptCreatedAt);
+    return rows.map((r) => ({
+      id: r.id,
+      graphTranscriptId: r.graphTranscriptId,
+      contentVtt: r.contentVtt,
+      transcriptCreatedAt: r.transcriptCreatedAt ? r.transcriptCreatedAt.toISOString() : null,
+      fetchedAt: r.fetchedAt ? r.fetchedAt.toISOString() : null,
+    }));
+  },
+
   getInterview: async (id: string): Promise<Interview | null> => {
     const [intv] = await dbClient.select().from(schema.interviews).where(and(eq(schema.interviews.id, id), isNull(schema.interviews.deletedAt))).limit(1);
     if (!intv) return null;
@@ -327,6 +409,9 @@ export const db = {
     startDate: string;
     endDate: string;
     panels: { userId: string; name: string; email: string }[];
+    /** Graph id of whoever creates the Teams meeting — Graph only exposes a meeting's
+     *  transcripts under its organizer, so this has to be captured up front. */
+    organizerUserId?: string;
   }): Promise<Interview> => {
     const interviewId = crypto.randomUUID();
     const now = new Date();
@@ -341,6 +426,7 @@ export const db = {
       endDate: new Date(params.endDate),
       status: 'PENDING',
       hiringType: params.hiringType,
+      organizerUserId: params.organizerUserId ?? null,
       createdAt: now,
       updatedAt: now,
     });

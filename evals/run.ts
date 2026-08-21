@@ -14,6 +14,7 @@ import { GUARDRAIL_CASES, ERROR_CASES } from './cases';
 import { computePanelistLoads, byFairnessThenName } from '../src/lib/panelist-load';
 import { LOAD_CASES, PANELISTS, NOW } from './load-cases';
 import { PIPELINE_CASES } from './pipeline-cases';
+import { TRANSCRIPT_CASES } from './transcript-cases';
 
 interface Result { name: string; passed: boolean; detail?: string }
 
@@ -231,7 +232,17 @@ function runPipelineCases() {
   }
 }
 
-// ── Suite 6 (opt-in): live pipeline ──────────────────────────────────────────
+// ── Suite 6: transcript parsing ──────────────────────────────────────────────
+
+function runTranscriptCases() {
+  suite('Teams transcript parsing');
+  for (const testCase of TRANSCRIPT_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
+// ── Suite 7 (opt-in): live pipeline ──────────────────────────────────────────
 
 async function runLiveCases() {
   suite('Live pipeline (Gemini)');
@@ -305,6 +316,7 @@ async function main() {
   await runRetryCases();
   runLoadCases();
   runPipelineCases();
+  runTranscriptCases();
   if (live) await runLiveCases();
 
   const failed = results.filter((r) => !r.passed);

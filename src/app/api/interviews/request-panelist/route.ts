@@ -151,6 +151,9 @@ export async function POST(request: NextRequest) {
             email: p.email || p.mail,
           },
         ],
+        // Recorded so the Teams transcript can be pulled later (Graph exposes
+        // transcripts only under the meeting organizer).
+        organizerUserId: session.user.id,
       });
 
       if (isLateral) {
