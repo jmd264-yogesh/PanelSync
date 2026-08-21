@@ -4,6 +4,8 @@ import { db, dbClient } from "@/lib/db";
 import { graph } from "@/lib/graph";
 import { eq } from "drizzle-orm";
 import * as schema from "@/lib/schema";
+import { getInterviewInfo } from "@/lib/interview-role";
+import { advanceStage } from "@/lib/lateral-pipeline";
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -152,11 +154,19 @@ export async function POST(request: NextRequest) {
       });
 
       if (isLateral) {
+        // Stage follows the round actually scheduled, and only ever moves forward —
+        // re-running an L1 for someone already at MANAGER must not demote them.
+        const scheduledRound = getInterviewInfo(interview.role).round;
+        const existing = await db.getLateralCandidate(lateralCandidateId);
+        const nextStatus = existing && scheduledRound !== 'GENERAL'
+          ? advanceStage(existing.status, scheduledRound)
+          : existing?.status;
+
         await dbClient
           .update(schema.lateralCandidates)
           .set({
             mappedInterviewId: interview.id,
-            status: "WAITING_FOR_INTERVIEW",
+            ...(nextStatus ? { status: nextStatus } : {}),
           })
           .where(eq(schema.lateralCandidates.id, lateralCandidateId));
       }

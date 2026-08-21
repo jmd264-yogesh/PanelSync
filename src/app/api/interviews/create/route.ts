@@ -4,6 +4,7 @@ import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
 import { sql } from 'drizzle-orm';
+import { getInterviewInfo } from '@/lib/interview-role';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -58,7 +59,14 @@ export async function POST(request: NextRequest) {
     // Link the interview back to the lateral candidate row and advance their pipeline status
     if (lateralCandidateId) {
       try {
-        await db.setLateralCandidateInterview(lateralCandidateId, interview.id);
+        // Stage follows the round actually scheduled (L1/L2), derived from the role
+        // string server-side rather than trusted from the client.
+        const scheduledRound = getInterviewInfo(interview.role).round;
+        await db.setLateralCandidateInterview(
+          lateralCandidateId,
+          interview.id,
+          scheduledRound === 'GENERAL' ? undefined : scheduledRound,
+        );
       } catch (dbErr) {
         console.error('Failed to link interview to lateral candidate:', dbErr);
       }

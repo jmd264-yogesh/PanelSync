@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as schema from './schema';
+import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
 
 export interface PanelAvailability {
   id: string;
@@ -81,7 +82,7 @@ export interface LateralCandidate {
   expectedCtc?: string;
   noticePeriodDays?: number;
   source?: string;
-  status: 'NEW' | 'SCREENING' | 'WAITING_FOR_INTERVIEW' | 'INTERVIEW_SCHEDULED' | 'INTERVIEW_COMPLETED' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  status: LateralStage;
   resumeFileKey?: string;
   resumeSha256?: string;
   resumeUploadedAt?: string;
@@ -1525,7 +1526,7 @@ export const db = {
     expectedCtc: row.expectedCtc || undefined,
     noticePeriodDays: row.noticePeriodDays ?? undefined,
     source: row.source || undefined,
-    status: row.status as LateralCandidate['status'],
+    status: normalizeStage(row.status),
     roleGrade: row.roleGrade || undefined,
     resumeFileKey: row.resumeFileKey || undefined,
     resumeSha256: row.resumeSha256 || undefined,
@@ -1618,13 +1619,13 @@ export const db = {
     return true;
   },
 
-  // Links a newly scheduled interview to the lateral candidate and advances their
-  // pipeline status out of NEW/SCREENING, without clobbering a status the
-  // recruiter already moved forward manually (e.g. OFFERED).
-  setLateralCandidateInterview: async (id: string, interviewId: string): Promise<boolean> => {
+  // Links a newly scheduled interview to the lateral candidate and moves their stage to
+  // the round just scheduled. advanceStage() keeps this from ever moving someone
+  // backwards or reviving a finished outcome — see lateral-pipeline.ts.
+  setLateralCandidateInterview: async (id: string, interviewId: string, round?: LateralStage): Promise<boolean> => {
     const candidate = await db.getLateralCandidate(id);
     if (!candidate) return false;
-    const nextStatus = (candidate.status === 'NEW' || candidate.status === 'SCREENING') ? 'INTERVIEWING' : candidate.status;
+    const nextStatus = round ? advanceStage(candidate.status, round) : candidate.status;
     await dbClient
       .update(schema.lateralCandidates)
       .set({ mappedInterviewId: interviewId, status: nextStatus })
