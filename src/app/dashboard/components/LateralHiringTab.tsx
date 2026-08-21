@@ -10,6 +10,7 @@ import {
   CalendarPlus,
   Search,
   ClipboardCheck,
+  Flame,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LateralCandidate, Interview, Panelist } from "@/lib/db";
@@ -17,6 +18,8 @@ import { GraphUser } from "@/lib/graph";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 import RecalibrateReportModal from './RecalibrateReportModal';
+import PanelistLoadHeatmap from './PanelistLoadHeatmap';
+import { BAND_STYLE, byFairnessThenName, computePanelistLoads } from '@/lib/panelist-load';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -129,6 +132,20 @@ export default function LateralHiringTab({
   const [isSearchingPanels, setIsSearchingPanels] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [showLoadHeatmap, setShowLoadHeatmap] = useState(false);
+
+  // Only panelists carrying the designation for the round being scheduled, ordered
+  // least-used-first so the fair pick is the first one a recruiter sees. Load is scoped
+  // to lateral interviews so a busy campus drive doesn't make everyone look overloaded.
+  const eligiblePanelistLoads = React.useMemo(
+    () =>
+      computePanelistLoads(panelists, interviews, {
+        weeks: 6,
+        hiringType: 'LATERAL',
+        round: roundType,
+      }).sort(byFairnessThenName),
+    [panelists, interviews, roundType],
+  );
 
   useEffect(() => {
     if (panelSearchQuery.trim().length < 2) {
@@ -1074,60 +1091,110 @@ export default function LateralHiringTab({
                 </div>
               )}
 
-              {panelists.length > 0 && (
-                <div>
-                  <div
-                    className="text-xs text-muted"
-                    style={{ marginBottom: "0.3rem" }}
-                  >
-                    Or pick from the registered panelist directory:
-                  </div>
-                  <div
-                    style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}
-                  >
-                    {panelists.map((p) => {
-                      const isChosen = selectedPanels.some(
-                        (sp) => sp.id === p.id,
-                      );
+              <div>
+                <div
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.35rem", flexWrap: "wrap" }}
+                >
+                  <span className="text-xs text-muted">
+                    {eligiblePanelistLoads.length > 0
+                      ? `${roundType}-designated panelists (least used first):`
+                      : `No panelists are registered with an ${roundType} designation.`}
+                  </span>
+                  {eligiblePanelistLoads.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowLoadHeatmap((v) => !v)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                        background: "transparent", border: "1px solid var(--border-glass)",
+                        borderRadius: "8px", padding: "0.15rem 0.45rem", cursor: "pointer",
+                        fontSize: "0.68rem", fontWeight: 600, color: "var(--text-muted)",
+                      }}
+                    >
+                      <Flame size={10} />
+                      {showLoadHeatmap ? "Hide load" : "Show load"}
+                    </button>
+                  )}
+                </div>
+
+                {eligiblePanelistLoads.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                    {eligiblePanelistLoads.map((load) => {
+                      const isChosen = selectedPanels.some((sp) => sp.id === load.panelistId);
+                      const band = BAND_STYLE[load.band];
+                      const idle = load.daysSinceLast === null
+                        ? "not called recently"
+                        : load.daysSinceLast === 0
+                          ? "called today"
+                          : `last called ${load.daysSinceLast}d ago`;
                       return (
                         <button
-                          key={p.id}
+                          key={load.panelistId}
                           type="button"
+                          title={`${load.totalAssigned} lateral interview${load.totalAssigned === 1 ? "" : "s"} in the last 6 weeks · ${idle} · ${band.label}`}
                           onClick={() => {
                             if (isChosen)
-                              setSelectedPanels((prev) =>
-                                prev.filter((sp) => sp.id !== p.id),
-                              );
+                              setSelectedPanels((prev) => prev.filter((sp) => sp.id !== load.panelistId));
                             else
                               setSelectedPanels((prev) => [
                                 ...prev,
                                 {
-                                  id: p.id,
-                                  displayName: p.displayName,
-                                  mail: p.email,
-                                  userPrincipalName: p.email,
+                                  id: load.panelistId,
+                                  displayName: load.displayName,
+                                  mail: load.email,
+                                  userPrincipalName: load.email,
                                 },
                               ]);
                           }}
                           className="badge"
                           style={{
                             cursor: "pointer",
-                            background: isChosen
-                              ? "var(--primary-glow)"
-                              : undefined,
-                            border: isChosen
-                              ? "1px solid var(--primary)"
-                              : undefined,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.3rem",
+                            textTransform: "none",
+                            background: isChosen ? "var(--primary-glow)" : undefined,
+                            border: isChosen ? "1px solid var(--primary)" : `1px solid color-mix(in srgb, ${band.color} 35%, transparent)`,
                             color: isChosen ? "var(--primary)" : undefined,
                           }}
                         >
-                          {p.displayName}
+                          {load.displayName}
+                          <span
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: "0.15rem",
+                              fontFamily: "monospace", fontSize: "0.62rem", fontWeight: 700,
+                              padding: "0 0.28rem", borderRadius: "4px",
+                              background: band.bg, color: band.color,
+                            }}
+                          >
+                            {load.totalAssigned}
+                            {load.band === "heavy" && <Flame size={9} />}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
+                )}
+
+                {showLoadHeatmap && (
+                  <div
+                    style={{
+                      marginTop: "0.6rem", padding: "0.75rem",
+                      border: "1px solid var(--border-glass)", borderRadius: "10px",
+                      background: "var(--bg-card-hover)",
+                    }}
+                  >
+                    <PanelistLoadHeatmap
+                      panelists={panelists}
+                      interviews={interviews}
+                      round={roundType}
+                      hiringType="LATERAL"
+                      compact
+                      selectedPanelistIds={selectedPanels.map((sp) => sp.id)}
+                    />
+                  </div>
+                )}
+              </div>
 
               {scheduleError && (
                 <div style={{ color: "#ef4444", fontSize: "0.8rem" }}>

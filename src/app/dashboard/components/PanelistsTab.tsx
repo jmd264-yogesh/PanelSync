@@ -7,6 +7,7 @@ import {
 import { Panelist, Interview, College, Drive } from '@/lib/db';
 import { GraphUser } from '@/lib/graph';
 import { toast } from 'sonner';
+import PanelistLoadHeatmap from './PanelistLoadHeatmap';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
   Select,
@@ -857,6 +858,16 @@ export default function PanelistsTab({
               <div className="stat-value">{l2ScheduledTotal}</div>
               <div className="stat-label" style={{ fontSize: '11px', color: 'var(--fg-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '6px' }}>Scheduled</div>
             </button>
+          </div>
+
+          {/* Rotation fairness: who has been leaned on, and who has been forgotten.
+              Scoped to the L1/L2 tab below so the numbers match the list being viewed. */}
+          <div style={{ padding: '14px', border: '1px solid var(--border-glass)', borderRadius: '12px', background: 'var(--surface-hover)', marginBottom: '24px' }}>
+            <PanelistLoadHeatmap
+              panelists={panelists}
+              interviews={interviews}
+              round={activeRoleTab}
+            />
           </div>
 
           {filteredPanelists.length === 0 ? (

@@ -24,6 +24,7 @@ import {
   TrendingUp,
   AlertCircle,
   Compass,
+  Flame,
 } from "lucide-react";
 import {
   Interview,
@@ -44,6 +45,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getInterviewInfo } from "@/lib/interview-role";
+import PanelistLoadHeatmap from "./PanelistLoadHeatmap";
+import { BAND_STYLE, byFairnessThenName, computePanelistLoads } from "@/lib/panelist-load";
 
 interface InterviewsTabProps {
   interviews: Interview[];
@@ -209,6 +212,7 @@ export default function InterviewsTab({
   const [isUpdatingDates, setIsUpdatingDates] = useState(false);
   const [selectedInterviewForConfig, setSelectedInterviewForConfig] =
     useState<Interview | null>(null);
+  const [showLoadHeatmap, setShowLoadHeatmap] = useState(false);
 
   // ── Derived Values ────────────────────────────────────────────────────────
 
@@ -220,17 +224,18 @@ export default function InterviewsTab({
   );
   const pendingInterviews = interviews.filter((i) => i.status === "PENDING");
 
-  const recommendedPanelists = panelists.filter((p) => {
-    if (interviewType === "General") return true;
-    return p.roles.includes(interviewType as "L1" | "L2");
-  });
-
-  const activePanelistInterviewCount = (panelistId: string) =>
-    interviews.filter(
-      (i) =>
-        (i.status === "PENDING" || i.status === "COLLECTED") &&
-        i.panels.some((p) => p.userId === panelistId),
-    ).length;
+  // Panelists eligible for the round being created, ordered least-used-first so the
+  // fair pick is the first one a recruiter sees. Load is scoped to campus interviews so
+  // a busy lateral pipeline doesn't make everyone here look overloaded.
+  const recommendedPanelistLoads = React.useMemo(
+    () =>
+      computePanelistLoads(panelists, interviews, {
+        weeks: 6,
+        hiringType: "CAMPUS",
+        round: interviewType === "General" ? null : (interviewType as "L1" | "L2"),
+      }).sort(byFairnessThenName),
+    [panelists, interviews, interviewType],
+  );
 
   // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -306,7 +311,9 @@ export default function InterviewsTab({
     setSearchResults([]);
   };
 
-  const handleToggleRecommendedPanelist = (p: Panelist) => {
+  // Structural param rather than a full Panelist: callers include the load-analytics
+  // rows, which carry identity but not the directory record's other fields.
+  const handleToggleRecommendedPanelist = (p: { id: string; displayName: string; email: string }) => {
     const isChosen = selectedPanels.some((sp) => sp.id === p.id);
     if (isChosen) {
       setSelectedPanels(selectedPanels.filter((sp) => sp.id !== p.id));
@@ -2266,27 +2273,68 @@ export default function InterviewsTab({
                     )}
                   </div>
 
-                  {recommendedPanelists.length > 0 && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}
+                  >
+                    <span style={{ fontSize: "11px", color: "var(--fg-secondary)" }}>
+                      {recommendedPanelistLoads.length > 0
+                        ? interviewType === "General"
+                          ? "All panelists (least used first):"
+                          : `${interviewType}-designated panelists (least used first):`
+                        : `No panelists are registered with an ${interviewType} designation.`}
+                    </span>
+                    {recommendedPanelistLoads.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowLoadHeatmap((v) => !v)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: "4px",
+                          background: "transparent", border: "1px solid var(--border)",
+                          borderRadius: "8px", padding: "3px 8px", cursor: "pointer",
+                          fontSize: "11px", fontWeight: 600, color: "var(--fg-secondary)",
+                        }}
+                      >
+                        <Flame size={10} />
+                        {showLoadHeatmap ? "Hide load" : "Show load"}
+                      </button>
+                    )}
+                  </div>
+
+                  {recommendedPanelistLoads.length > 0 && (
                     <div
                       style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}
                     >
-                      {recommendedPanelists.map((p) => {
+                      {recommendedPanelistLoads.map((load) => {
                         const isChosen = selectedPanels.some(
-                          (sp) => sp.id === p.id,
+                          (sp) => sp.id === load.panelistId,
                         );
+                        const band = BAND_STYLE[load.band];
+                        const idle = load.daysSinceLast === null
+                          ? "not called recently"
+                          : load.daysSinceLast === 0
+                            ? "called today"
+                            : `last called ${load.daysSinceLast}d ago`;
                         return (
                           <button
-                            key={p.id}
+                            key={load.panelistId}
                             type="button"
-                            onClick={() => handleToggleRecommendedPanelist(p)}
+                            title={`${load.totalAssigned} campus interview${load.totalAssigned === 1 ? "" : "s"} in the last 6 weeks · ${idle} · ${band.label}`}
+                            onClick={() => handleToggleRecommendedPanelist({
+                              id: load.panelistId,
+                              displayName: load.displayName,
+                              email: load.email,
+                            })}
                             aria-pressed={isChosen}
                             style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
                               fontSize: "11px",
-                              padding: "4px 10px",
+                              padding: "4px 8px 4px 10px",
                               borderRadius: "999px",
                               border: isChosen
                                 ? "1px solid var(--accent)"
-                                : "1px solid var(--border)",
+                                : `1px solid color-mix(in srgb, ${band.color} 35%, var(--border))`,
                               background: isChosen
                                 ? "var(--accent-light)"
                                 : "var(--surface-muted)",
@@ -2296,10 +2344,45 @@ export default function InterviewsTab({
                               cursor: "pointer",
                             }}
                           >
-                            {p.displayName}
+                            {load.displayName}
+                            <span
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: "2px",
+                                fontFamily: "monospace", fontSize: "10px", fontWeight: 700,
+                                padding: "0 4px", borderRadius: "4px",
+                                background: band.bg, color: band.color,
+                              }}
+                            >
+                              {load.totalAssigned}
+                              {load.band === "heavy" && <Flame size={9} />}
+                            </span>
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {showLoadHeatmap && (
+                    <div
+                      style={{
+                        padding: "10px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "10px",
+                        background: "var(--bg-elevated)",
+                      }}
+                    >
+                      <PanelistLoadHeatmap
+                        panelists={panelists}
+                        interviews={interviews}
+                        round={interviewType === "General" ? null : (interviewType as "L1" | "L2")}
+                        hiringType="CAMPUS"
+                        compact
+                        selectedPanelistIds={selectedPanels.map((sp) => sp.id)}
+                        onSelectPanelist={(panelistId) => {
+                          const match = panelists.find((p) => p.id === panelistId);
+                          if (match) handleToggleRecommendedPanelist(match);
+                        }}
+                      />
                     </div>
                   )}
                 </div>
