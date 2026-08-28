@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pgPool } from '@/lib/db';
+import { dbClient } from '@/lib/db';
+import { sql } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
     const dbStartTime = Date.now();
     try {
       // 3-second timeout for DB check
-      const queryPromise = pgPool.query('SELECT 1');
+      const queryPromise = dbClient.execute(sql`SELECT 1`);
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Database query timed out after 3000ms')), 3000)
       );
