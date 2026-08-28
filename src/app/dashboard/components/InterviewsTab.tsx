@@ -158,12 +158,9 @@ export default function InterviewsTab({
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterThisWeek, setFilterThisWeek] = useState(false);
-  // Drive the dashboard scopes to. Defaults to the active drive, but the recruiter
-  // can switch to any other drive here without changing the global active drive.
-  const [selectedDriveId, setSelectedDriveId] = useState<string>(
-    activeDrive?.id ?? "all",
-  );
-  const didInitDrive = useRef(false);
+  // Drive the dashboard scopes to. Defaults to "all" (All Drives), but the recruiter
+  // can switch to any specific drive here.
+  const [selectedDriveId, setSelectedDriveId] = useState<string>("all");
   const [showRepliedModal, setShowRepliedModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(
@@ -250,14 +247,6 @@ export default function InterviewsTab({
       setSelectedInterviewForConfig(updated || null);
     }
   }, [interviews]);
-
-  // On first load, default the dashboard's selected drive to the active drive.
-  useEffect(() => {
-    if (!didInitDrive.current && activeDrive) {
-      setSelectedDriveId(activeDrive.id);
-      didInitDrive.current = true;
-    }
-  }, [activeDrive]);
 
   // When the selected drive changes, scope the college filter and create-form
   // default dates to that drive (a range spanning start → end).

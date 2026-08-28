@@ -43,9 +43,6 @@ export default async function Home(props: PageProps) {
               Panel<span className="gradient-accent-text">Sync</span>
             </span>
           </div>
-          <a href="/api/auth/signin" className="btn btn-secondary btn-sm" style={{ minHeight: '36px' }}>
-            Recruiter Sign In
-          </a>
         </div>
       </header>
 

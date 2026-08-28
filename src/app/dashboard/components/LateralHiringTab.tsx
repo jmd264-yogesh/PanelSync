@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   Flame,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LateralCandidate, Interview, Panelist } from "@/lib/db";
@@ -427,14 +428,28 @@ export default function LateralHiringTab({
     .enhanced-table tr:hover td {
       background: rgba(255, 255, 255, 0.03); /* Subtle row hover feedback */
     }
+    .status-badge-container {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-width: 140px;
+    }
     .status-select {
       appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
       cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s ease;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+      width: 100%;
+      min-width: 140px;
+      outline: none;
     }
     .status-select:hover:not(:disabled) {
-      filter: brightness(0.95);
+      filter: brightness(1.1);
+    }
+    .status-select:focus {
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
     .row-action-button {
       border-radius: 6px;
@@ -458,7 +473,7 @@ export default function LateralHiringTab({
         <th>Experience</th>
         <th>Current Company</th>
         <th>Notice</th>
-        <th>Stage</th>
+        <th style={{ minWidth: "150px" }}>Stage</th>
         <th>Rounds</th>
         <th style={{ textAlign: "right" }}>Action</th>
       </tr>
@@ -522,33 +537,63 @@ export default function LateralHiringTab({
             </td>
             
             {/* Status Dropdown Badge */}
-            <td>
-              <select
-                className="form-input status-select"
-                style={{
-                  padding: "0.35rem 0.75rem", /* slightly wider padding */
-                  height: "32px",
-                  fontSize: "0.75rem",
-                  background: statusStyle.bg,
-                  border: statusStyle.border,
-                  color: statusStyle.color,
-                  fontWeight: 600,
-                }}
-                value={candidate.status}
-                disabled={updatingStatusId === candidate.id}
-                onChange={(e) =>
-                  handleStatusChange(
-                    candidate.id,
-                    e.target.value as LateralCandidate["status"],
-                  )
-                }
-              >
-                {LATERAL_STAGES.map((stage) => (
-                  <option key={stage} value={stage}>
-                    {STAGE_LABEL[stage]}
-                  </option>
-                ))}
-              </select>
+            <td style={{ minWidth: "150px" }}>
+              <div className="status-badge-container">
+                <select
+                  className="status-select"
+                  style={{
+                    padding: "0.4rem 1.75rem 0.4rem 0.75rem",
+                    height: "32px",
+                    fontSize: "0.75rem",
+                    background: statusStyle.bg,
+                    border: statusStyle.border,
+                    color: statusStyle.color,
+                    fontWeight: 650,
+                    whiteSpace: "nowrap",
+                  }}
+                  value={candidate.status}
+                  disabled={updatingStatusId === candidate.id}
+                  onChange={(e) =>
+                    handleStatusChange(
+                      candidate.id,
+                      e.target.value as LateralCandidate["status"],
+                    )
+                  }
+                >
+                  {LATERAL_STAGES.map((stage) => (
+                    <option
+                      key={stage}
+                      value={stage}
+                      style={{
+                        background: "#1e293b",
+                        color: "#f8fafc",
+                        padding: "8px",
+                      }}
+                    >
+                      {STAGE_LABEL[stage]}
+                    </option>
+                  ))}
+                </select>
+                <div
+                  style={{
+                    position: "absolute",
+                    right: "0.6rem",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    pointerEvents: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    color: statusStyle.color,
+                    opacity: 0.8,
+                  }}
+                >
+                  {updatingStatusId === candidate.id ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <ChevronDown size={12} />
+                  )}
+                </div>
+              </div>
             </td>
             
             {/* Interview Rounds Column */}
@@ -726,7 +771,7 @@ export default function LateralHiringTab({
               compete for a column of its own; none of it is needed to scan the list. */}
           {isExpanded && (
             <tr>
-              <td colSpan={7} style={{ padding: "0 0 0.75rem 1.6rem", borderTop: "none" }}>
+              <td colSpan={8} style={{ padding: "0 0 0.75rem 1.6rem", borderTop: "none" }}>
                 <div
                   style={{
                     display: "grid",

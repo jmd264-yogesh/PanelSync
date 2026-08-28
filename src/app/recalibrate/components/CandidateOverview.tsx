@@ -53,7 +53,7 @@ export default function CandidateOverview({
   }, [interviews, query]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1200px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
       <div className="glass-card" style={{
         padding: '1.75rem 2rem', position: 'relative', overflow: 'hidden',
         background: 'linear-gradient(135deg, var(--rc-brand-glow, rgba(124,58,237,0.1)) 0%, transparent 65%), var(--bg-card)',
