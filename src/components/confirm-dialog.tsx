@@ -36,9 +36,11 @@ export function ConfirmDialog({
   onConfirm,
   destructive = true,
 }: ConfirmDialogProps) {
+  const content = triggerChildren ?? (React.isValidElement(trigger) ? (trigger.props as any)?.children : undefined);
+
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={trigger}>{triggerChildren}</AlertDialogTrigger>
+      <AlertDialogTrigger render={trigger}>{content}</AlertDialogTrigger>
       <AlertDialogContent className="p-6!">
         <AlertDialogHeader className="space-y-2">
           <AlertDialogTitle>{title}</AlertDialogTitle>
