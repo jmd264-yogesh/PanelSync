@@ -10,6 +10,7 @@ import {
   TECHNICAL_RUBRIC, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC,
 } from '@/lib/ai/org-rubric';
 import { buildCandidateSheetHtml, buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
+import type { RecalibrateSession, AiTranscriptEvaluation, TranscriptDialogueTurn } from '@/lib/db';
 
 export interface RubricBand {
   band: string;
@@ -40,22 +41,12 @@ export interface AiRun {
   id: string;
   interviewId: string;
   status: 'QUEUED' | 'PARSING' | 'EXTRACTING' | 'GENERATING' | 'COMPLETED' | 'FAILED';
-  spec: Spec | null;
-  questions: QuestionSet | null;
+  spec?: Spec | null;
+  questions?: QuestionSet | null;
+  model?: string | null;
+  error?: string | null;
   createdAt: string;
-}
-
-export interface RecalibrateSession {
-  id: string;
-  interviewId: string;
-  aiRunId: string | null;
-  questionScores: Record<string, number>;
-  rubricScores: Record<string, number>;
-  notes: string | null;
-  timerStartedAt: string | null;
-  timerEndedAt: string | null;
-  submittedAt: string | null;
-  submittedBy: string | null;
+  completedAt?: string | null;
 }
 
 export interface RubricDim {
@@ -108,6 +99,14 @@ export function useRecalibrateSession({
   const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState('');
 
+  // Meeting Transcript and AI Evaluation state
+  const [transcriptText, setTranscriptText] = useState<string | null>(null);
+  const [transcriptTurns, setTranscriptTurns] = useState<TranscriptDialogueTurn[] | null>(null);
+  const [aiEvaluation, setAiEvaluation] = useState<AiTranscriptEvaluation | null>(null);
+  const [transcriptFetchedAt, setTranscriptFetchedAt] = useState<string | null>(null);
+  const [transcriptSource, setTranscriptSource] = useState<string | null>(null);
+  const [isProcessingTranscript, setIsProcessingTranscript] = useState(false);
+
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -144,6 +143,11 @@ export function useRecalibrateSession({
           setQuestionScores(loadedSession.questionScores || {});
           setRubricScores(loadedSession.rubricScores || {});
           setNotes(loadedSession.notes || '');
+          setTranscriptText(loadedSession.transcriptText || null);
+          setTranscriptTurns(loadedSession.transcriptTurns || null);
+          setAiEvaluation(loadedSession.aiEvaluation || null);
+          setTranscriptFetchedAt(loadedSession.transcriptFetchedAt || null);
+          setTranscriptSource(loadedSession.transcriptSource || null);
           const parsedElapsed = loadedSession.timerEndedAt != null ? Number(loadedSession.timerEndedAt) : 0;
           setElapsedSeconds(Number.isFinite(parsedElapsed) ? parsedElapsed : 0);
           setStartedAt(loadedSession.timerStartedAt ? new Date(loadedSession.timerStartedAt).getTime() : null);
@@ -186,6 +190,7 @@ export function useRecalibrateSession({
     timerStartedAt: string | null;
     timerEndedAt: string | null;
     submitted: boolean;
+    aiEvaluation: AiTranscriptEvaluation | null;
   }>) => {
     try {
       const res = await fetch(`/api/interviews/${interviewId}/recalibrate`, {
@@ -226,7 +231,13 @@ export function useRecalibrateSession({
       setActiveRun(result);
       setQuestionScores({});
       setRubricScores({});
-      await patchSession({ aiRunId: result.id, questionScores: {}, rubricScores: {} });
+      setAiEvaluation(null);
+      await patchSession({
+        aiRunId: result.id,
+        questionScores: {},
+        rubricScores: {},
+        aiEvaluation: null,
+      });
       toast.success('Questions and rubric generated.');
 
       // Start scoring the clock the moment questions are ready — resume rather than
@@ -453,10 +464,242 @@ export function useRecalibrateSession({
   const handleDownloadCandidate = () => printHtmlDocument(buildCandidateSheetHtml(buildPrintInput()));
   const handleDownloadPanelist = () => printHtmlDocument(buildPanelistReportHtml(buildPrintInput()));
 
+  const handleFetchTranscriptFromTeams = async () => {
+    setIsProcessingTranscript(true);
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/transcript`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'graph' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch transcript from Teams.');
+
+      if (data.session) {
+        setSession(data.session);
+        setTranscriptText(data.session.transcriptText || null);
+        setTranscriptTurns(data.session.transcriptTurns || null);
+        setAiEvaluation(data.session.aiEvaluation || null);
+        setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
+        setTranscriptSource(data.session.transcriptSource || 'graph_api');
+      }
+      if (data.evaluation) {
+        setAiEvaluation(data.evaluation);
+        toast.success('Teams transcript fetched and AI evaluation complete!');
+      } else {
+        toast.success('Teams transcript saved.');
+      }
+    } catch (err: any) {
+      console.error('Error fetching Teams transcript:', err);
+      toast.error(err.message || 'Failed to fetch transcript from Teams.');
+    } finally {
+      setIsProcessingTranscript(false);
+    }
+  };
+
+  const handleUploadTranscript = async (rawTranscript: string) => {
+    if (!rawTranscript || !rawTranscript.trim()) {
+      toast.error('Please enter or upload a non-empty transcript.');
+      return;
+    }
+    setIsProcessingTranscript(true);
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/transcript`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'manual', rawTranscript }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to process transcript.');
+
+      if (data.session) {
+        setSession(data.session);
+        setTranscriptText(data.session.transcriptText || null);
+        setTranscriptTurns(data.session.transcriptTurns || null);
+        setAiEvaluation(data.session.aiEvaluation || null);
+        setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
+        setTranscriptSource(data.session.transcriptSource || 'manual_upload');
+      }
+      if (data.evaluation) {
+        setAiEvaluation(data.evaluation);
+        toast.success('Transcript uploaded and AI evaluation complete!');
+      } else {
+        toast.success('Transcript uploaded successfully.');
+      }
+    } catch (err: any) {
+      console.error('Error uploading transcript:', err);
+      toast.error(err.message || 'Failed to upload transcript.');
+    } finally {
+      setIsProcessingTranscript(false);
+    }
+  };
+
+  const handleUploadAudio = async (
+    audioOrAudios: string | Array<{ audioBase64: string; mimeType: string }>,
+    mimeTypeOrSourceType?: string,
+    sourceTypeParam: 'live_recording' | 'audio_upload' = 'audio_upload',
+  ) => {
+    setIsProcessingTranscript(true);
+    try {
+      const body: any = { source: 'audio' };
+      if (Array.isArray(audioOrAudios)) {
+        body.audios = audioOrAudios;
+        body.sourceType = (mimeTypeOrSourceType as 'live_recording' | 'audio_upload') || 'live_recording';
+      } else {
+        body.audioBase64 = audioOrAudios;
+        body.mimeType = mimeTypeOrSourceType || 'audio/webm';
+        body.sourceType = sourceTypeParam;
+      }
+
+      const res = await fetch(`/api/interviews/${interviewId}/transcript`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to transcribe and evaluate audio.');
+
+      if (data.session) {
+        setSession(data.session);
+        setTranscriptText(data.session.transcriptText || null);
+        setTranscriptTurns(data.session.transcriptTurns || null);
+        setAiEvaluation(data.session.aiEvaluation || null);
+        setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
+        setTranscriptSource(data.session.transcriptSource || body.sourceType);
+      }
+      if (data.evaluation) {
+        setAiEvaluation(data.evaluation);
+        toast.success(
+          body.sourceType === 'live_recording'
+            ? 'Live recording(s) transcribed and AI evaluation complete!'
+            : 'Audio(s) transcribed and AI evaluation complete!',
+        );
+      } else {
+        toast.success('Audio transcribed successfully.');
+      }
+    } catch (err: any) {
+      console.error('Error processing audio:', err);
+      toast.error(err.message || 'Failed to process audio recording.');
+    } finally {
+      setIsProcessingTranscript(false);
+    }
+  };
+
+  const handleAcceptAllAiScores = async () => {
+    if (!aiEvaluation) {
+      toast.error('No AI evaluation available to apply.');
+      return;
+    }
+
+    // 1. Map Question Scores
+    const nextQuestionScores: Record<string, number> = { ...questionScores };
+    for (const qEval of aiEvaluation.questionEvaluations) {
+      nextQuestionScores[qEval.questionId] = qEval.suggestedScore;
+    }
+
+    // 2. Map Rubric Scores (matching exact, question categories, normalized, and aliases)
+    const nextRubricScores: Record<string, number> = { ...rubricScores };
+
+    // Build lookup of question categories to their AI scores
+    const categoryScores: Record<string, number[]> = {};
+    for (const qEval of aiEvaluation.questionEvaluations) {
+      const q = questions.find((item) => item.id === qEval.questionId);
+      if (q && q.category) {
+        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      }
+    }
+
+    for (const dim of allDims) {
+      const label = dim.label;
+
+      // Strategy A: Direct key match in aiEvaluation.rubricEvaluations
+      if (aiEvaluation.rubricEvaluations && aiEvaluation.rubricEvaluations[label]) {
+        nextRubricScores[label] = aiEvaluation.rubricEvaluations[label].suggestedScore;
+        continue;
+      }
+
+      // Strategy B: Match based on question evaluations for this exact dimension category
+      if (categoryScores[label] && categoryScores[label].length > 0) {
+        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
+        nextRubricScores[label] = Math.min(4, Math.max(1, avg));
+        continue;
+      }
+
+      // Strategy C: Normalized/Fuzzy match in rubricEvaluations
+      if (aiEvaluation.rubricEvaluations) {
+        const normalizedTarget = label.toLowerCase().replace(/[^a-z0-9]/g, '');
+        let matched = false;
+        for (const [key, evalData] of Object.entries(aiEvaluation.rubricEvaluations)) {
+          const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (
+            normalizedKey === normalizedTarget ||
+            normalizedKey.includes(normalizedTarget) ||
+            normalizedTarget.includes(normalizedKey)
+          ) {
+            nextRubricScores[label] = evalData.suggestedScore;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+
+        // Strategy D: Common aliases
+        if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
+          nextRubricScores[label] = aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore;
+          continue;
+        }
+        if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
+          const commsEval = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
+          nextRubricScores[label] = commsEval.suggestedScore;
+          continue;
+        }
+        if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
+          const peopleEval = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
+          nextRubricScores[label] = peopleEval.suggestedScore;
+          continue;
+        }
+      }
+    }
+
+    // 3. Populate Notes if empty
+    let nextNotes = notes;
+    if ((!nextNotes || !nextNotes.trim()) && aiEvaluation.overallSummary) {
+      nextNotes = aiEvaluation.overallSummary;
+      setNotes(nextNotes);
+    }
+
+    setQuestionScores(nextQuestionScores);
+    setRubricScores(nextRubricScores);
+    await patchSession({
+      questionScores: nextQuestionScores,
+      rubricScores: nextRubricScores,
+      notes: nextNotes,
+    });
+    toast.success('All AI-suggested scores and notes applied!');
+  };
+
+  const handleApplyAiSummaryToNotes = () => {
+    if (!aiEvaluation?.overallSummary) {
+      toast.error('No AI assessment summary available.');
+      return;
+    }
+    setNotes(aiEvaluation.overallSummary);
+    void patchSession({ notes: aiEvaluation.overallSummary });
+    toast.success('Applied AI assessment summary to notes.');
+  };
+
+  const handleAcceptSingleQuestionScore = (questionId: string, score: number) => {
+    scoreQuestion(questionId, score);
+    toast.success(`Applied AI score (${score}) to question.`);
+  };
+
   return {
     loading, generating, submitting, error,
     session, activeRun, spec, setSpec, notes, setNotes,
     questionScores, rubricScores,
+    transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
+    handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
+    handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
     isRunning, startedAt, elapsedSeconds, elapsedLabel,
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,

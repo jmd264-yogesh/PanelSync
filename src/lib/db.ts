@@ -90,6 +90,34 @@ export interface LateralCandidate {
   createdAt: string;
   roleGrade?:string;
 }
+export interface TranscriptDialogueTurn {
+  speaker: string;
+  timestamp?: string;
+  text: string;
+}
+
+export interface QuestionEvaluation {
+  questionId: string;
+  suggestedScore: number;
+  candidateAnswerSummary: string;
+  verbatimQuote: string | null;
+  reasoning: string;
+  strengths: string[];
+  gaps: string[];
+}
+
+export interface RubricDimensionEvaluation {
+  suggestedScore: number;
+  reasoning: string;
+}
+
+export interface AiTranscriptEvaluation {
+  overallSummary: string;
+  questionEvaluations: QuestionEvaluation[];
+  rubricEvaluations: Record<string, RubricDimensionEvaluation>;
+  confidence: 'high' | 'medium' | 'low';
+  evaluatedAt: string;
+}
 
 export interface RecalibrateSession {
   id: string;
@@ -102,6 +130,11 @@ export interface RecalibrateSession {
   timerEndedAt: string | null;
   submittedAt: string | null;
   submittedBy: string | null;
+  transcriptText: string | null;
+  transcriptTurns: TranscriptDialogueTurn[] | null;
+  aiEvaluation: AiTranscriptEvaluation | null;
+  transcriptFetchedAt: string | null;
+  transcriptSource: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1740,6 +1773,11 @@ export const db = {
     timerEndedAt: row.timerEndedAt ? row.timerEndedAt.toISOString() : null,
     submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
     submittedBy: row.submittedBy ?? null,
+    transcriptText: row.transcriptText ?? null,
+    transcriptTurns: (row.transcriptTurns as TranscriptDialogueTurn[]) ?? null,
+    aiEvaluation: (row.aiEvaluation as AiTranscriptEvaluation) ?? null,
+    transcriptFetchedAt: row.transcriptFetchedAt ? row.transcriptFetchedAt.toISOString() : null,
+    transcriptSource: row.transcriptSource ?? null,
     createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: row.updatedAt ? row.updatedAt.toISOString() : new Date().toISOString(),
   }),
@@ -1790,6 +1828,11 @@ export const db = {
     timerEndedAt: Date | null;
     submittedAt: Date | null;
     submittedBy: string | null;
+    transcriptText: string | null;
+    transcriptTurns: TranscriptDialogueTurn[] | null;
+    aiEvaluation: AiTranscriptEvaluation | null;
+    transcriptFetchedAt: Date | null;
+    transcriptSource: string | null;
   }>): Promise<RecalibrateSession> => {
     await db.getOrCreateRecalibrateSession(interviewId); // ensure a row exists first
     await dbClient

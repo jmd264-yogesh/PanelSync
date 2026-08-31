@@ -398,6 +398,184 @@ class GraphService {
 
     return { downloadUrl, name: item.name || 'resume', size: item.size || 0 };
   }
+
+  // 7. Get online meeting by Join URL
+  async getOnlineMeetingByJoinUrl(joinUrl: string, accessToken: string): Promise<{ id: string; subject?: string } | null> {
+    try {
+      const escapedUrl = joinUrl.replace(/'/g, "''");
+      const endpoint = `/me/onlineMeetings?$filter=JoinWebUrl eq '${encodeURIComponent(escapedUrl)}'`;
+      const result = await this.fetchGraph(endpoint, accessToken);
+      if (result.value && result.value.length > 0) {
+        return result.value[0];
+      }
+      return null;
+    } catch (err) {
+      console.warn('Failed to query online meeting by filter, trying list scan fallback...', err);
+      return null;
+    }
+  }
+
+  // 8. List transcripts for an online meeting
+  async listMeetingTranscripts(meetingId: string, accessToken: string): Promise<{ id: string; createdDateTime: string }[]> {
+    const endpoint = `/me/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`;
+    const result = await this.fetchGraph(endpoint, accessToken);
+    return result.value || [];
+  }
+
+  // 9. Fetch transcript content (WebVTT text)
+  async getTranscriptContent(meetingId: string, transcriptId: string, accessToken: string): Promise<string> {
+    const endpoint = `/me/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts/${encodeURIComponent(transcriptId)}/content?$format=text/vtt`;
+    
+    const response = await fetch(`https://graph.microsoft.com/v1.0${endpoint}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'text/vtt',
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Graph API Error fetching transcript content:`, errText);
+      throw new Error(`Graph API error: ${response.status} ${response.statusText} - ${errText}`);
+    }
+
+    return await response.text();
+  }
+
+  // 10. Parse WebVTT, audio transcription, or plain transcript text into structured dialogue turns
+  parseTranscript(rawText: string): {
+    turns: { speaker: string; timestamp?: string; text: string }[];
+    formattedText: string;
+  } {
+    if (!rawText || !rawText.trim()) {
+      return { turns: [], formattedText: '' };
+    }
+
+    const normalizeTimestamp = (raw: string): string => {
+      if (!raw) return '';
+      const cleaned = raw.replace(/[\[\]]/g, '').trim().replace(',', '.');
+      const parts = cleaned.split(':');
+      if (parts.length === 2) {
+        const mm = parts[0].padStart(2, '0');
+        const [sec, ms] = parts[1].split('.');
+        const ss = (sec || '00').padStart(2, '0');
+        const mss = (ms || '000').padEnd(3, '0').slice(0, 3);
+        return `00:${mm}:${ss}.${mss}`;
+      } else if (parts.length === 3) {
+        const hh = parts[0].padStart(2, '0');
+        const mm = parts[1].padStart(2, '0');
+        const [sec, ms] = parts[2].split('.');
+        const ss = (sec || '00').padStart(2, '0');
+        const mss = (ms || '000').padEnd(3, '0').slice(0, 3);
+        return `${hh}:${mm}:${ss}.${mss}`;
+      }
+      return cleaned;
+    };
+
+    const lines = rawText.split(/\r?\n/);
+    const turns: { speaker: string; timestamp?: string; text: string }[] = [];
+    let currentTimestamp = '';
+    let currentSpeaker = 'Speaker';
+    let currentTextLines: string[] = [];
+
+    const flushTurn = () => {
+      if (currentTextLines.length > 0) {
+        const text = currentTextLines.join(' ').trim();
+        if (text) {
+          // If the last turn was from the same speaker and without a distinct timestamp, append text
+          if (turns.length > 0 && turns[turns.length - 1].speaker === currentSpeaker && !currentTimestamp) {
+            turns[turns.length - 1].text += ' ' + text;
+          } else {
+            turns.push({
+              speaker: currentSpeaker,
+              timestamp: currentTimestamp || undefined,
+              text,
+            });
+          }
+        }
+        currentTextLines = [];
+      }
+    };
+
+    const vttTimecodeRegex = /(?:(\d{2}:)?\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(?:(\d{2}:)?\d{2}:\d{2}[\.,]\d{3})/;
+    const cueIdRegex = /^(?:[0-9a-fA-F-]{8,}\/\d+-\d+|\d+)$/;
+    let insideVoiceTag = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+      if (!line || line.startsWith('WEBVTT') || line.startsWith('NOTE')) continue;
+
+      // Ignore Teams Cue identifiers (e.g. "ab63e3ef-3eb1-4326-9173-04c3b677e69b/5-0" or simple numbers)
+      if (cueIdRegex.test(line)) {
+        continue;
+      }
+
+      // Ignore audio part headers (e.g. "--- Audio Part 2 ---" or "--- Live Recording Part 1 ---")
+      if (/^---\s*(?:Audio|Live Recording|Recording)\s*Part\s*\d+\s*---$/i.test(line)) {
+        flushTurn();
+        continue;
+      }
+
+      // WebVTT arrow cue "00:00:01.000 --> 00:00:05.000"
+      if (vttTimecodeRegex.test(line)) {
+        flushTurn();
+        const match = line.match(vttTimecodeRegex);
+        currentTimestamp = match ? normalizeTimestamp(match[0].split('-->')[0].trim()) : '';
+        insideVoiceTag = false;
+        continue;
+      }
+
+      // Check for voice tag opening <v Speaker>
+      const voiceOpenMatch = line.match(/^<v\s+([^>]+)>(.*)$/i);
+      if (voiceOpenMatch) {
+        flushTurn();
+        currentSpeaker = voiceOpenMatch[1].trim();
+        const speech = voiceOpenMatch[2].replace(/<\/v>/gi, '').replace(/<[^>]+>/g, '').trim();
+        if (speech) currentTextLines.push(speech);
+        insideVoiceTag = !line.includes('</v>');
+        continue;
+      }
+
+      // If we're inside a multiline voice tag
+      if (insideVoiceTag) {
+        const speech = line.replace(/<\/v>/gi, '').replace(/<[^>]+>/g, '').trim();
+        if (speech) currentTextLines.push(speech);
+        if (line.includes('</v>')) insideVoiceTag = false;
+        continue;
+      }
+
+      // Check for speaker declaration with optional leading timestamp and markdown bolding
+      // Examples: "**[00:00] Interviewer:**", "[00:00:01.000] Candidate:", "**Interviewer:**", "Candidate:"
+      const speakerPattern = /^(?:\*\*)?(?:\[?(\d{1,2}:\d{2}(?::\d{2})?(?:[\.,]\d{1,3})?)\]?)?\s*(?:\*\*)?\s*(?:\*\*)?([A-Za-z0-9\s._\-()]+?)(?:\*\*)?:\s*(.*)$/;
+      const speakerMatch = line.match(speakerPattern);
+      if (speakerMatch && speakerMatch[2].length < 60 && !/^(?:https?|note|vtt|here is the)/i.test(speakerMatch[2])) {
+        flushTurn();
+        currentTimestamp = normalizeTimestamp(speakerMatch[1]) || currentTimestamp;
+        currentSpeaker = speakerMatch[2].replace(/\*\*/g, '').trim();
+        const speech = speakerMatch[3].replace(/\*\*/g, '').replace(/<[^>]+>/g, '').trim();
+        if (speech) currentTextLines.push(speech);
+        continue;
+      }
+
+      // Plain continuation text
+      const cleaned = line.replace(/\*\*/g, '').replace(/<[^>]+>/g, '').trim();
+      if (cleaned) {
+        currentTextLines.push(cleaned);
+      }
+    }
+
+    flushTurn();
+
+    // Build unified formatted text string matching the manual upload format
+    const formattedText = turns
+      .map((t) => {
+        const timePrefix = t.timestamp ? `[${t.timestamp}] ` : '';
+        return `${timePrefix}${t.speaker}: ${t.text}`;
+      })
+      .join('\n\n');
+
+    return { turns, formattedText: formattedText || rawText };
+  }
 }
 
 export const graph = new GraphService();

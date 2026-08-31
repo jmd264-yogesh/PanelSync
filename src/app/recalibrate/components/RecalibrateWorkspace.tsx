@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Wand2, Loader2, Download, AlertTriangle, Send, Undo2, CheckCircle2,
   Gauge, ListChecks, SlidersHorizontal, StickyNote, TrendingUp, TrendingDown, Minus, Pencil, ChevronDown,
-  Clock3,
+  Clock3, Sparkles, FileText, CheckCheck, Upload, Quote, RefreshCw, Eye, X, Check, Mic, Radio,
 } from 'lucide-react';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
+import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
@@ -41,6 +42,9 @@ export default function RecalibrateWorkspace({
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
     questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
+    handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
+    handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
     questions, orgTier, technicalDims, behaviouralDims,
@@ -49,6 +53,64 @@ export default function RecalibrateWorkspace({
   } = rc;
 
   const [specExpanded, setSpecExpanded] = useState(true);
+
+  const suggestedRubricScores = useMemo(() => {
+    if (!aiEvaluation) return {};
+    const result: Record<string, { score: number; reasoning?: string }> = {};
+
+    const categoryScores: Record<string, number[]> = {};
+    for (const qEval of aiEvaluation.questionEvaluations || []) {
+      const q = questions.find((item) => item.id === qEval.questionId);
+      if (q && q.category) {
+        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      }
+    }
+
+    for (const dim of allDims) {
+      const label = dim.label;
+      // 1. Direct match
+      if (aiEvaluation.rubricEvaluations && aiEvaluation.rubricEvaluations[label]) {
+        result[label] = {
+          score: aiEvaluation.rubricEvaluations[label].suggestedScore,
+          reasoning: aiEvaluation.rubricEvaluations[label].reasoning,
+        };
+        continue;
+      }
+      // 2. Question category match
+      if (categoryScores[label] && categoryScores[label].length > 0) {
+        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
+        result[label] = { score: Math.min(4, Math.max(1, avg)) };
+        continue;
+      }
+      // 3. Normalized / Fuzzy match
+      if (aiEvaluation.rubricEvaluations) {
+        const target = label.toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const [key, evalData] of Object.entries(aiEvaluation.rubricEvaluations)) {
+          const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normKey === target || normKey.includes(target) || target.includes(normKey)) {
+            result[label] = { score: evalData.suggestedScore, reasoning: evalData.reasoning };
+            break;
+          }
+        }
+        if (result[label]) continue;
+
+        // 4. Aliases
+        if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
+          result[label] = {
+            score: aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore,
+            reasoning: aiEvaluation.rubricEvaluations['Problem Solving'].reasoning,
+          };
+        } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
+          const comms = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
+          result[label] = { score: comms.suggestedScore, reasoning: comms.reasoning };
+        } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
+          const people = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
+          result[label] = { score: people.suggestedScore, reasoning: people.reasoning };
+        }
+      }
+    }
+    return result;
+  }, [aiEvaluation, questions, allDims]);
 
   // A session "has started" once there's recorded elapsed time or it's actively running —
   // this covers the resumed-after-refresh case where isRunning is true but elapsedSeconds
@@ -283,6 +345,45 @@ export default function RecalibrateWorkspace({
               </div>
             )}
           </div>
+          {/* AI Assessment Summary Banner (only when evaluation is available) */}
+          {aiEvaluation && (
+            <div className="glass-card" style={{
+              padding: '1.15rem 1.35rem',
+              borderRadius: '12px',
+              background: 'rgba(124, 58, 237, 0.06)',
+              border: '1px solid rgba(124, 58, 237, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <Sparkles size={15} style={{ color: '#a855f7' }} />
+                  <strong style={{ fontSize: '0.9rem', color: '#c084fc' }}>AI Calibration Assessment Ready</strong>
+                  <span className="badge badge-info" style={{ fontSize: '0.65rem', textTransform: 'capitalize' }}>
+                    {aiEvaluation.confidence} confidence
+                  </span>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleAcceptAllAiScores}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem',
+                    fontWeight: 700, padding: '0.35rem 0.85rem',
+                    boxShadow: '0 0 16px rgba(124, 58, 237, 0.35)',
+                  }}
+                >
+                  <CheckCheck size={14} />
+                  <span>Apply All AI Scores & Notes</span>
+                </button>
+              </div>
+              {aiEvaluation.overallSummary && (
+                <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: 1.55, color: 'var(--text-main)' }}>
+                  {aiEvaluation.overallSummary}
+                </p>
+              )}
+            </div>
+          )}
 
           {questions.length > 0 && (
             <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -294,6 +395,8 @@ export default function RecalibrateWorkspace({
               <ProgressBar value={scoredQuestionCount} max={questions.length} color="var(--success, #10b981)" />
               {questions.map((q, i) => {
                 const dStyle = DIFFICULTY_STYLE[q.difficulty];
+                const qEval = aiEvaluation?.questionEvaluations?.find((e: QuestionEvaluation) => e.questionId === q.id);
+                const isAiScoreApplied = qEval && questionScores[q.id] === qEval.suggestedScore;
                 return (
                   <div key={q.id} className="glass-card" style={{ padding: '1.1rem', border: '1px solid var(--border-glass)' }}>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem', alignItems: 'center' }}>
@@ -306,6 +409,36 @@ export default function RecalibrateWorkspace({
                       </span>
                       <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>{q.category}</span>
                       <span className="badge" style={{ fontSize: '0.65rem', background: dStyle.bg, color: dStyle.color, border: 'none' }}>{q.difficulty}</span>
+
+                      {/* AI Suggested Score Badge on Question Header */}
+                      {qEval && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.2rem' }}>
+                          <span
+                            className="badge"
+                            style={{
+                              fontSize: '0.68rem', fontWeight: 700,
+                              background: 'rgba(124, 58, 237, 0.15)', color: '#c084fc', border: '1px solid rgba(124, 58, 237, 0.3)',
+                              display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                            }}
+                          >
+                            <Sparkles size={10} />
+                            AI Suggested: {qEval.suggestedScore}/4
+                          </span>
+                          {!isAiScoreApplied ? (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleAcceptSingleQuestionScore(q.id, qEval.suggestedScore)}
+                              style={{ padding: '0.15rem 0.45rem', fontSize: '0.65rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                            >
+                              <Check size={10} /> Apply
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '0.65rem', color: 'var(--success, #10b981)', display: 'inline-flex', alignItems: 'center', gap: '0.15rem' }}>
+                              <Check size={10} /> Applied
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                         Marks
                         <input
@@ -322,9 +455,55 @@ export default function RecalibrateWorkspace({
                       </label>
                     </div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 0.65rem', lineHeight: 1.55 }}>{q.question}</p>
+
+                    {/* AI Transcript Evidence & Reasoning */}
+                    {qEval && (
+                      <details style={{ marginBottom: '0.65rem' }} open>
+                        <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: '#c084fc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <Sparkles size={11} /> Candidate Response & Transcript Evidence
+                        </summary>
+                        <div style={{
+                          marginTop: '0.45rem', padding: '0.65rem 0.8rem', borderRadius: '8px',
+                          background: 'rgba(124, 58, 237, 0.04)', border: '1px solid rgba(124, 58, 237, 0.15)',
+                          fontSize: '0.78rem', lineHeight: 1.55, display: 'flex', flexDirection: 'column', gap: '0.4rem',
+                        }}>
+                          <div>
+                            <strong style={{ color: 'var(--text-main)' }}>Candidate's Answer: </strong>
+                            <span>{qEval.candidateAnswerSummary}</span>
+                          </div>
+
+                          {qEval.verbatimQuote && (
+                            <div style={{
+                              padding: '0.4rem 0.6rem', borderLeft: '2px solid #a855f7',
+                              background: 'rgba(124, 58, 237, 0.08)', fontStyle: 'italic',
+                              borderRadius: '0 6px 6px 0', fontSize: '0.75rem',
+                            }}>
+                              "{qEval.verbatimQuote}"
+                            </div>
+                          )}
+
+                          <div style={{ color: 'var(--text-muted)' }}>
+                            <strong>AI Reasoning: </strong>
+                            <span>{qEval.reasoning}</span>
+                          </div>
+
+                          {(qEval.strengths.length > 0 || qEval.gaps.length > 0) && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.2rem' }}>
+                              {qEval.strengths.map((s: string, si: number) => (
+                                <span key={si} className="badge badge-success" style={{ fontSize: '0.64rem' }}>+ {s}</span>
+                              ))}
+                              {qEval.gaps.map((g: string, gi: number) => (
+                                <span key={gi} className="badge badge-danger" style={{ fontSize: '0.64rem' }}>- {g}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    )}
+
                     {q.modelAnswer && (
-                      <details style={{ marginBottom: '0.6rem' }} open>
-                        <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model answer (panelist reference only)</summary>
+                      <details style={{ marginBottom: '0.6rem' }}>
+                        <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model answer guidance (panelist reference)</summary>
                         <p style={{
                           marginTop: '0.45rem', marginBottom: 0, fontSize: '0.82rem', lineHeight: 1.55,
                           padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)',
@@ -363,7 +542,15 @@ export default function RecalibrateWorkspace({
         {questions.length > 0 && (
           <div className="rc-rubric-col">
             <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
+                {aiEvaluation && (
+                  <span className="badge" style={{ fontSize: '0.65rem', background: 'rgba(124, 58, 237, 0.12)', color: '#c084fc', border: 'none' }}>
+                    <Sparkles size={9} style={{ display: 'inline', marginRight: '3px' }} />
+                    AI Evaluated
+                  </span>
+                )}
+              </div>
               <ScoreLegend compact />
 
               <div style={{
@@ -372,7 +559,16 @@ export default function RecalibrateWorkspace({
               }}>
                 <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Technical</div>
                 {technicalDims.map((dim) => (
-                  <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+                  <RubricRow
+                    key={dim.label}
+                    label={dim.label}
+                    bands={dim.bands}
+                    score={rubricScores[dim.label]}
+                    suggestedScore={suggestedRubricScores[dim.label]?.score}
+                    aiReasoning={suggestedRubricScores[dim.label]?.reasoning}
+                    onScore={(n) => scoreRubric(dim.label, n)}
+                    dialSize={22}
+                  />
                 ))}
               </div>
 
@@ -383,7 +579,16 @@ export default function RecalibrateWorkspace({
                 <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success, #10b981)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Behavioural</div>
                 <div className="text-xs text-muted" style={{ marginBottom: '0.3rem' }}>Expected for {ORG_TIER_LABEL[orgTier]}: <strong>{BEHAVIOURAL_EXPECTED_BAND[orgTier]}</strong></div>
                 {behaviouralDims.map((dim) => (
-                  <RubricRow key={dim.label} label={dim.label} bands={dim.bands} score={rubricScores[dim.label]} onScore={(n) => scoreRubric(dim.label, n)} dialSize={22} />
+                  <RubricRow
+                    key={dim.label}
+                    label={dim.label}
+                    bands={dim.bands}
+                    score={rubricScores[dim.label]}
+                    suggestedScore={suggestedRubricScores[dim.label]?.score}
+                    aiReasoning={suggestedRubricScores[dim.label]?.reasoning}
+                    onScore={(n) => scoreRubric(dim.label, n)}
+                    dialSize={22}
+                  />
                 ))}
               </div>
             </div>
@@ -394,7 +599,24 @@ export default function RecalibrateWorkspace({
         <div className="rc-interview-col">
           {isL2Round && <L1ReferencePanel interviewId={interviewId} />}
 
-          <TranscriptPanel interviewId={interviewId} />
+          <TranscriptPanel
+            interviewId={interviewId}
+            candidateName={candidateName}
+            roleTitle={positionTitle}
+            transcriptText={transcriptText}
+            transcriptTurns={transcriptTurns}
+            aiEvaluation={aiEvaluation}
+            transcriptFetchedAt={transcriptFetchedAt}
+            transcriptSource={transcriptSource}
+            isProcessingTranscript={isProcessingTranscript}
+            onFetchFromTeams={handleFetchTranscriptFromTeams}
+            onUploadTranscript={handleUploadTranscript}
+            onUploadAudio={handleUploadAudio}
+            onAcceptAllAiScores={handleAcceptAllAiScores}
+            onAcceptSingleQuestionScore={handleAcceptSingleQuestionScore}
+            onApplyAiSummaryToNotes={handleApplyAiSummaryToNotes}
+            questions={questions}
+          />
 
           <InterviewStopwatch
             elapsedLabel={elapsedLabel}
@@ -471,7 +693,11 @@ export default function RecalibrateWorkspace({
 
             {/* notes */}
             <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <SectionHeader icon={<StickyNote size={14} />} title="Notes" />
+              <SectionHeader
+                icon={<StickyNote size={14} />}
+                title="Panel Notes"
+                right={<span className="text-xs text-muted">Auto-saves</span>}
+              />
               <textarea
                 className="form-input"
                 rows={3}

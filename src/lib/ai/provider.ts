@@ -34,11 +34,20 @@ export interface GenerateStructuredResult<T> {
   };
 }
 
+export interface TranscribeAudioArgs {
+  audioBase64: string;
+  mimeType: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  temperature?: number;
+}
+
 // Single seam between the app and whichever LLM backs the copilot today.
 // Swap this file's implementation to move to the internal AI later — every
 // caller only ever depends on this interface, never on the Gemini SDK directly.
 export interface StructuredAiProvider {
   generateStructured<T>(args: GenerateStructuredArgs<T>): Promise<GenerateStructuredResult<T>>;
+  transcribeAudio(args: TranscribeAudioArgs): Promise<{ transcriptText: string; model: string }>;
 }
 
 function emptyUsage(): TokenUsage {
@@ -152,6 +161,45 @@ class GeminiProvider implements StructuredAiProvider {
       tokenUsage: usage,
       telemetry: { transportAttempts, schemaRepairUsed: true, latencyMs: Date.now() - startedAt },
     };
+  }
+
+  async transcribeAudio({
+    audioBase64,
+    mimeType,
+    systemPrompt,
+    userPrompt,
+    temperature = 0.0,
+  }: TranscribeAudioArgs): Promise<{ transcriptText: string; model: string }> {
+    try {
+      const response = await this.client.models.generateContent({
+        model: this.model,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: audioBase64,
+                },
+              },
+              {
+                text: userPrompt || 'Transcribe the audio of this technical interview recording completely and accurately. Label speakers clearly (Interviewer: / Candidate:) and include timestamps [MM:SS] where possible.',
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: systemPrompt || 'You are an accurate technical speech-to-text transcriptionist for engineering interviews. Transcribe every technical discussion, coding explanation, and dialogue faithfully with speaker tags.',
+          temperature,
+        },
+      });
+
+      const transcriptText = response.text || '';
+      return { transcriptText, model: this.model };
+    } catch (err) {
+      throw classifyProviderError(err);
+    }
   }
 }
 

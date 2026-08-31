@@ -68,7 +68,12 @@ export async function PATCH(
       timerEndedAt: Date | null;
       submittedAt: Date | null;
       submittedBy: string | null;
+      aiEvaluation: any;
     }> = {};
+
+    if (body.aiEvaluation !== undefined) {
+      patch.aiEvaluation = body.aiEvaluation;
+    }
 
     if (body.aiRunId !== undefined) {
       if (body.aiRunId !== null && typeof body.aiRunId !== 'string') {
