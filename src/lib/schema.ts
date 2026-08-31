@@ -40,6 +40,14 @@ export const interviews = pgTable("interviews", {
   hiringType: hiringTypeEnum("hiring_type").notNull(),
   teamsMeetingUrl: text("teams_meeting_url"),
   calendarEventId: varchar("calendar_event_id", { length: 255 }),
+  // Graph identity of the meeting, needed to pull the Teams transcript afterwards.
+  // organizerUserId is captured at creation (the recruiter who created the event, since
+  // Graph only exposes a meeting's transcripts under its organizer). onlineMeetingId is
+  // resolved lazily from the join URL on first transcript sync and cached here — doing it
+  // lazily avoids adding a delegated Graph scope, which would break login until an admin
+  // consents to it.
+  organizerUserId: varchar("organizer_user_id", { length: 255 }),
+  onlineMeetingId: varchar("online_meeting_id", { length: 512 }),
   scheduledSlotStart: timestamp("scheduled_slot_start"),
   scheduledSlotEnd: timestamp("scheduled_slot_end"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -156,6 +164,28 @@ export const aiRuns = pgTable("ai_runs", {
   createdAt: timestamp('created_at').defaultNow(),
   completedAt: timestamp('completed_at'),
 });
+
+// 10b. Teams meeting transcripts pulled from Graph after an interview.
+// Teams can produce several transcripts for one meeting (transcription stopped and
+// restarted), so this is one row per Graph transcript, uniquely keyed so re-syncing is
+// idempotent. Raw VTT is stored verbatim rather than pre-parsed: parsing is cheap, and
+// keeping the original means a parser fix doesn't require re-fetching from Graph.
+export const interviewTranscripts = pgTable(
+  "interview_transcripts",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    interviewId: varchar("interview_id", { length: 255 })
+      .references(() => interviews.id, { onDelete: "cascade" })
+      .notNull(),
+    graphTranscriptId: varchar("graph_transcript_id", { length: 512 }).notNull(),
+    contentVtt: text("content_vtt"),
+    // When Teams created the transcript, as opposed to when we pulled it.
+    transcriptCreatedAt: timestamp("transcript_created_at"),
+    fetchedAt: timestamp("fetched_at").defaultNow(),
+    fetchedByEmail: varchar("fetched_by_email", { length: 255 }),
+  },
+  (t) => [unique("unique_interview_graph_transcript").on(t.interviewId, t.graphTranscriptId)],
+);
 
 // 11. Audit Log
 export const auditLogs = pgTable("audit_logs", {

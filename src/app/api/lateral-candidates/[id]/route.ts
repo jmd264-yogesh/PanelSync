@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { db } from '@/lib/db';
 import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
+import { LATERAL_STAGES, isLateralStage } from '@/lib/lateral-pipeline';
 
 export const dynamic = 'force-dynamic';
-
-const VALID_STATUSES = ['NEW', 'SCREENING', 'INTERVIEWING', 'OFFERED', 'HIRED', 'REJECTED', 'WITHDRAWN'];
 
 // PATCH edit a lateral candidate / advance their pipeline status
 export async function PATCH(
@@ -53,8 +52,8 @@ export async function PATCH(
       updateParams.roleGrade = trimmed || null;
     }
     if (body.status !== undefined) {
-      if (!VALID_STATUSES.includes(body.status)) {
-        return NextResponse.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 });
+      if (!isLateralStage(body.status)) {
+        return NextResponse.json({ error: `status must be one of: ${LATERAL_STAGES.join(', ')}` }, { status: 400 });
       }
       updateParams.status = body.status;
     }

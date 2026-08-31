@@ -10,6 +10,9 @@ import {
   CalendarPlus,
   Search,
   ClipboardCheck,
+  Flame,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LateralCandidate, Interview, Panelist } from "@/lib/db";
@@ -17,6 +20,9 @@ import { GraphUser } from "@/lib/graph";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ROLE_GRADES } from '@/lib/ai/spec-catalog';
 import RecalibrateReportModal from './RecalibrateReportModal';
+import PanelistLoadHeatmap from './PanelistLoadHeatmap';
+import { BAND_STYLE, byFairnessThenName, computePanelistLoads } from '@/lib/panelist-load';
+import { advanceStage, LATERAL_STAGES, STAGE_LABEL, STAGE_STYLE } from '@/lib/lateral-pipeline';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -26,69 +32,6 @@ interface LateralHiringTabProps {
   panelists: Panelist[];
   todayStr: string;
 }
-
-const STATUS_OPTIONS: LateralCandidate["status"][] = [
-  "NEW",
-  "SCREENING",
-  "WAITING_FOR_INTERVIEW",
-  "INTERVIEW_SCHEDULED",
-  "INTERVIEW_COMPLETED",
-  "OFFERED",
-  "HIRED",
-  "REJECTED",
-  "WITHDRAWN",
-];
-
-const STATUS_BADGE_STYLE: Record<
-  LateralCandidate["status"],
-  { bg: string; border: string; color: string }
-> = {
-  NEW: {
-    bg: "rgba(148,163,184,0.1)",
-    border: "1px solid rgba(148,163,184,0.25)",
-    color: "#94a3b8",
-  },
-  SCREENING: {
-    bg: "rgba(59,130,246,0.1)",
-    border: "1px solid rgba(59,130,246,0.25)",
-    color: "#3b82f6",
-  },
-  WAITING_FOR_INTERVIEW: {
-    bg: "rgba(245,158,11,0.1)",
-    border: "1px solid rgba(245,158,11,0.25)",
-    color: "#f59e0b",
-  },
-  INTERVIEW_SCHEDULED: {
-    bg: "rgba(99,102,241,0.1)",
-    border: "1px solid rgba(99,102,241,0.25)",
-    color: "#6366f1",
-  },
-  INTERVIEW_COMPLETED: {
-    bg: "rgba(14,165,233,0.1)",
-    border: "1px solid rgba(14,165,233,0.25)",
-    color: "#0ea5e9",
-  },
-  OFFERED: {
-    bg: "rgba(139,92,246,0.1)",
-    border: "1px solid rgba(139,92,246,0.25)",
-    color: "#8b5cf6",
-  },
-  HIRED: {
-    bg: "rgba(16,185,129,0.1)",
-    border: "1px solid rgba(16,185,129,0.25)",
-    color: "#10b981",
-  },
-  REJECTED: {
-    bg: "rgba(239,68,68,0.1)",
-    border: "1px solid rgba(239,68,68,0.25)",
-    color: "#ef4444",
-  },
-  WITHDRAWN: {
-    bg: "rgba(107,114,128,0.1)",
-    border: "1px solid rgba(107,114,128,0.25)",
-    color: "#6b7280",
-  },
-};
 
 export default function LateralHiringTab({
   candidates,
@@ -112,6 +55,8 @@ export default function LateralHiringTab({
     null,
   );
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  // Which row has its secondary details (source, CTC, contact) opened.
+  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
 
   // ── Schedule Interview modal state ──────────────────────────────────────
   const [schedulingFor, setSchedulingFor] = useState<LateralCandidate | null>(
@@ -129,6 +74,20 @@ export default function LateralHiringTab({
   const [isSearchingPanels, setIsSearchingPanels] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [showLoadHeatmap, setShowLoadHeatmap] = useState(false);
+
+  // Only panelists carrying the designation for the round being scheduled, ordered
+  // least-used-first so the fair pick is the first one a recruiter sees. Load is scoped
+  // to lateral interviews so a busy campus drive doesn't make everyone look overloaded.
+  const eligiblePanelistLoads = React.useMemo(
+    () =>
+      computePanelistLoads(panelists, interviews, {
+        weeks: 6,
+        hiringType: 'LATERAL',
+        round: roundType,
+      }).sort(byFairnessThenName),
+    [panelists, interviews, roundType],
+  );
 
   useEffect(() => {
     if (panelSearchQuery.trim().length < 2) {
@@ -316,7 +275,9 @@ export default function LateralHiringTab({
             ? {
                 ...c,
                 mappedInterviewId: result.interview.id,
-                status: "WAITING_FOR_INTERVIEW",
+                // Mirrors the server's advanceStage(): forward-only, never out of a
+                // finished outcome.
+                status: advanceStage(c.status, roundType),
               }
             : c,
         ),
@@ -467,14 +428,28 @@ export default function LateralHiringTab({
     .enhanced-table tr:hover td {
       background: rgba(255, 255, 255, 0.03); /* Subtle row hover feedback */
     }
+    .status-badge-container {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-width: 140px;
+    }
     .status-select {
       appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
       cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s ease;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+      width: 100%;
+      min-width: 140px;
+      outline: none;
     }
     .status-select:hover:not(:disabled) {
-      filter: brightness(0.95);
+      filter: brightness(1.1);
+    }
+    .status-select:focus {
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
     .row-action-button {
       border-radius: 6px;
@@ -498,28 +473,47 @@ export default function LateralHiringTab({
         <th>Experience</th>
         <th>Current Company</th>
         <th>Notice</th>
-        <th>Source</th>
-        <th>Status</th>
-        <th>Interviews</th>
+        <th style={{ minWidth: "150px" }}>Stage</th>
+        <th>Rounds</th>
         <th style={{ textAlign: "right" }}>Action</th>
       </tr>
     </thead>
     <tbody>
       {candidates.map((candidate) => {
         const candidateInterviews = getCandidateInterviews(candidate.email);
-        const statusStyle = STATUS_BADGE_STYLE[candidate.status] ?? {
-          bg: "rgba(148,163,184,0.1)",
-          border: "1px solid rgba(148,163,184,0.25)",
-          color: "#94a3b8",
-        };
+        const statusStyle = STAGE_STYLE[candidate.status];
+        const isExpanded = expandedCandidateId === candidate.id;
         return (
-          <tr key={candidate.id}>
-            {/* Candidate Identity */}
+          <React.Fragment key={candidate.id}>
+          <tr>
+            {/* Candidate Identity — doubles as the expand toggle for the detail row */}
             <td>
-              <div style={{ fontWeight: 600, color: "inherit", marginBottom: "2px" }}>{candidate.name}</div>
-              <div className="text-muted text-xs" style={{ opacity: 0.8 }}>
-                {candidate.email}
-              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedCandidateId(isExpanded ? null : candidate.id)}
+                title={isExpanded ? "Hide details" : "Show source, CTC and contact details"}
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.4rem", width: "100%",
+                  background: "transparent", border: "none", padding: 0, cursor: "pointer",
+                  textAlign: "left", color: "inherit", font: "inherit",
+                }}
+              >
+                <ChevronRight
+                  size={13}
+                  style={{
+                    flexShrink: 0,
+                    color: "var(--text-muted)",
+                    transform: isExpanded ? "rotate(90deg)" : "none",
+                    transition: "transform 0.15s ease",
+                  }}
+                />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontWeight: 600, marginBottom: "2px" }}>{candidate.name}</span>
+                  <span className="text-muted text-xs" style={{ display: "block", opacity: 0.8 }}>
+                    {candidate.email}
+                  </span>
+                </span>
+              </button>
             </td>
             
             {/* Position */}
@@ -542,37 +536,64 @@ export default function LateralHiringTab({
                 : "—"}
             </td>
             
-            {/* Source */}
-            <td>{candidate.source || "—"}</td>
-            
             {/* Status Dropdown Badge */}
-            <td>
-              <select
-                className="form-input status-select"
-                style={{
-                  padding: "0.35rem 0.75rem", /* slightly wider padding */
-                  height: "32px",
-                  fontSize: "0.75rem",
-                  background: statusStyle.bg,
-                  border: statusStyle.border,
-                  color: statusStyle.color,
-                  fontWeight: 600,
-                }}
-                value={candidate.status}
-                disabled={updatingStatusId === candidate.id}
-                onChange={(e) =>
-                  handleStatusChange(
-                    candidate.id,
-                    e.target.value as LateralCandidate["status"],
-                  )
-                }
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+            <td style={{ minWidth: "150px" }}>
+              <div className="status-badge-container">
+                <select
+                  className="status-select"
+                  style={{
+                    padding: "0.4rem 1.75rem 0.4rem 0.75rem",
+                    height: "32px",
+                    fontSize: "0.75rem",
+                    background: statusStyle.bg,
+                    border: statusStyle.border,
+                    color: statusStyle.color,
+                    fontWeight: 650,
+                    whiteSpace: "nowrap",
+                  }}
+                  value={candidate.status}
+                  disabled={updatingStatusId === candidate.id}
+                  onChange={(e) =>
+                    handleStatusChange(
+                      candidate.id,
+                      e.target.value as LateralCandidate["status"],
+                    )
+                  }
+                >
+                  {LATERAL_STAGES.map((stage) => (
+                    <option
+                      key={stage}
+                      value={stage}
+                      style={{
+                        background: "#1e293b",
+                        color: "#f8fafc",
+                        padding: "8px",
+                      }}
+                    >
+                      {STAGE_LABEL[stage]}
+                    </option>
+                  ))}
+                </select>
+                <div
+                  style={{
+                    position: "absolute",
+                    right: "0.6rem",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    pointerEvents: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    color: statusStyle.color,
+                    opacity: 0.8,
+                  }}
+                >
+                  {updatingStatusId === candidate.id ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <ChevronDown size={12} />
+                  )}
+                </div>
+              </div>
             </td>
             
             {/* Interview Rounds Column */}
@@ -580,52 +601,39 @@ export default function LateralHiringTab({
               {candidateInterviews.length === 0 ? (
                 <span className="text-muted text-xs">—</span>
               ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "4px", /* Spaced out stacked interview badges */
-                  }}
-                >
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {/* One compact chip per round. The round label and interview status
+                      used to be spelled out per row, which is what made this column the
+                      noisiest thing in the table — status now reads as a coloured dot
+                      with the detail in the tooltip. */}
                   {candidateInterviews.map((intv) => {
                     const roleLower = intv.role.toLowerCase();
                     const round = roleLower.includes("l2") ? "L2" : roleLower.includes("l1") ? "L1" : null;
                     const label = intv.role.replace(/^(L1|L2)\s*-\s*/i, "").replace(/^LATERAL - /i, "");
+                    const dot = intv.status === "SCHEDULED"
+                      ? "var(--success, #10b981)"
+                      : intv.status === "CANCELLED"
+                        ? "var(--danger, #ef4444)"
+                        : "var(--warning, #f59e0b)";
                     return (
                       <span
                         key={intv.id}
-                        className="text-xs"
-                        style={{ color: "var(--text-muted)", display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: "4px" }}
+                        title={`${round ?? "Round"} — ${label} · ${intv.status}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontSize: "0.62rem",
+                          fontWeight: 700,
+                          padding: "1px 6px",
+                          borderRadius: "4px",
+                          background: round === "L2" ? "var(--badge-l2-bg)" : "var(--badge-l1-bg)",
+                          border: round === "L2" ? "1px solid var(--badge-l2-border)" : "1px solid var(--badge-l1-border)",
+                          color: round === "L2" ? "var(--badge-l2-text)" : "var(--badge-l1-text)",
+                        }}
                       >
-                        {round && (
-                          <span
-                            className="badge"
-                            style={{
-                              fontSize: "0.62rem",
-                              padding: "1px 5px",
-                              borderRadius: "4px",
-                              background: round === "L1" ? "var(--badge-l1-bg)" : "var(--badge-l2-bg)",
-                              border: round === "L1" ? "1px solid var(--badge-l1-border)" : "1px solid var(--badge-l2-border)",
-                              color: round === "L1" ? "var(--badge-l1-text)" : "var(--badge-l2-text)",
-                              fontWeight: 700,
-                            }}
-                          >
-                            {round}
-                          </span>
-                        )}
-                        {label}{" "}
-                        <span
-                          className="badge"
-                          style={{
-                            fontSize: "0.65rem",
-                            padding: "1px 4px",
-                            borderRadius: "4px",
-                            background: "rgba(255,255,255,0.06)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                          }}
-                        >
-                          {intv.status}
-                        </span>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                        {round ?? label}
                       </span>
                     );
                   })}
@@ -758,6 +766,53 @@ export default function LateralHiringTab({
               </div>
             </td>
           </tr>
+
+          {/* Secondary details, opened from the candidate name. Everything here used to
+              compete for a column of its own; none of it is needed to scan the list. */}
+          {isExpanded && (
+            <tr>
+              <td colSpan={8} style={{ padding: "0 0 0.75rem 1.6rem", borderTop: "none" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                    gap: "0.75rem 1.25rem",
+                    padding: "0.75rem 1rem",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border-glass)",
+                    background: "var(--bg-card-hover)",
+                  }}
+                >
+                  {[
+                    { label: "Source", value: candidate.source },
+                    { label: "Phone", value: candidate.phone },
+                    { label: "Current CTC", value: candidate.currentCtc },
+                    { label: "Expected CTC", value: candidate.expectedCtc },
+                    {
+                      label: "Role grade",
+                      value: candidate.roleGrade
+                        ? (ROLE_GRADES[candidate.roleGrade as keyof typeof ROLE_GRADES]?.label ?? candidate.roleGrade)
+                        : undefined,
+                    },
+                    { label: "Resume", value: candidate.resumeFileKey ? "Attached" : undefined },
+                  ].map((field) => (
+                    <div key={field.label}>
+                      <div
+                        className="text-muted"
+                        style={{ fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.15rem" }}
+                      >
+                        {field.label}
+                      </div>
+                      <div style={{ fontSize: "0.78rem", fontWeight: 500 }}>
+                        {field.value || <span className="text-muted">—</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+          </React.Fragment>
         );
       })}
     </tbody>
@@ -1074,60 +1129,110 @@ export default function LateralHiringTab({
                 </div>
               )}
 
-              {panelists.length > 0 && (
-                <div>
-                  <div
-                    className="text-xs text-muted"
-                    style={{ marginBottom: "0.3rem" }}
-                  >
-                    Or pick from the registered panelist directory:
-                  </div>
-                  <div
-                    style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}
-                  >
-                    {panelists.map((p) => {
-                      const isChosen = selectedPanels.some(
-                        (sp) => sp.id === p.id,
-                      );
+              <div>
+                <div
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.35rem", flexWrap: "wrap" }}
+                >
+                  <span className="text-xs text-muted">
+                    {eligiblePanelistLoads.length > 0
+                      ? `${roundType}-designated panelists (least used first):`
+                      : `No panelists are registered with an ${roundType} designation.`}
+                  </span>
+                  {eligiblePanelistLoads.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowLoadHeatmap((v) => !v)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "0.25rem",
+                        background: "transparent", border: "1px solid var(--border-glass)",
+                        borderRadius: "8px", padding: "0.15rem 0.45rem", cursor: "pointer",
+                        fontSize: "0.68rem", fontWeight: 600, color: "var(--text-muted)",
+                      }}
+                    >
+                      <Flame size={10} />
+                      {showLoadHeatmap ? "Hide load" : "Show load"}
+                    </button>
+                  )}
+                </div>
+
+                {eligiblePanelistLoads.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                    {eligiblePanelistLoads.map((load) => {
+                      const isChosen = selectedPanels.some((sp) => sp.id === load.panelistId);
+                      const band = BAND_STYLE[load.band];
+                      const idle = load.daysSinceLast === null
+                        ? "not called recently"
+                        : load.daysSinceLast === 0
+                          ? "called today"
+                          : `last called ${load.daysSinceLast}d ago`;
                       return (
                         <button
-                          key={p.id}
+                          key={load.panelistId}
                           type="button"
+                          title={`${load.totalAssigned} lateral interview${load.totalAssigned === 1 ? "" : "s"} in the last 6 weeks · ${idle} · ${band.label}`}
                           onClick={() => {
                             if (isChosen)
-                              setSelectedPanels((prev) =>
-                                prev.filter((sp) => sp.id !== p.id),
-                              );
+                              setSelectedPanels((prev) => prev.filter((sp) => sp.id !== load.panelistId));
                             else
                               setSelectedPanels((prev) => [
                                 ...prev,
                                 {
-                                  id: p.id,
-                                  displayName: p.displayName,
-                                  mail: p.email,
-                                  userPrincipalName: p.email,
+                                  id: load.panelistId,
+                                  displayName: load.displayName,
+                                  mail: load.email,
+                                  userPrincipalName: load.email,
                                 },
                               ]);
                           }}
                           className="badge"
                           style={{
                             cursor: "pointer",
-                            background: isChosen
-                              ? "var(--primary-glow)"
-                              : undefined,
-                            border: isChosen
-                              ? "1px solid var(--primary)"
-                              : undefined,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.3rem",
+                            textTransform: "none",
+                            background: isChosen ? "var(--primary-glow)" : undefined,
+                            border: isChosen ? "1px solid var(--primary)" : `1px solid color-mix(in srgb, ${band.color} 35%, transparent)`,
                             color: isChosen ? "var(--primary)" : undefined,
                           }}
                         >
-                          {p.displayName}
+                          {load.displayName}
+                          <span
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: "0.15rem",
+                              fontFamily: "monospace", fontSize: "0.62rem", fontWeight: 700,
+                              padding: "0 0.28rem", borderRadius: "4px",
+                              background: band.bg, color: band.color,
+                            }}
+                          >
+                            {load.totalAssigned}
+                            {load.band === "heavy" && <Flame size={9} />}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
+                )}
+
+                {showLoadHeatmap && (
+                  <div
+                    style={{
+                      marginTop: "0.6rem", padding: "0.75rem",
+                      border: "1px solid var(--border-glass)", borderRadius: "10px",
+                      background: "var(--bg-card-hover)",
+                    }}
+                  >
+                    <PanelistLoadHeatmap
+                      panelists={panelists}
+                      interviews={interviews}
+                      round={roundType}
+                      hiringType="LATERAL"
+                      compact
+                      selectedPanelistIds={selectedPanels.map((sp) => sp.id)}
+                    />
+                  </div>
+                )}
+              </div>
 
               {scheduleError && (
                 <div style={{ color: "#ef4444", fontSize: "0.8rem" }}>

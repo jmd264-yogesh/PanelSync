@@ -55,8 +55,8 @@ export default async function RecalibratePage() {
         </div>
       </header>
 
-      <main className="app-main" style={{ paddingTop: '1.5rem' }}>
-        <div className="app-container" style={{ maxWidth: 'none' }}>
+      <main className="app-main" style={{ paddingTop: '1.5rem', paddingBottom: '2rem' }}>
+        <div className="app-container" style={{ maxWidth: '1600px' }}>
           <Suspense fallback={null}>
             <RecalibrateWorkspaceClient
               initialInterviews={lateralInterviews}

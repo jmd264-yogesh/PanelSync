@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as schema from './schema';
+import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
 
 export interface PanelAvailability {
   id: string;
@@ -81,7 +82,7 @@ export interface LateralCandidate {
   expectedCtc?: string;
   noticePeriodDays?: number;
   source?: string;
-  status: 'NEW' | 'SCREENING' | 'WAITING_FOR_INTERVIEW' | 'INTERVIEW_SCHEDULED' | 'INTERVIEW_COMPLETED' | 'OFFERED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  status: LateralStage;
   resumeFileKey?: string;
   resumeSha256?: string;
   resumeUploadedAt?: string;
@@ -246,6 +247,88 @@ export const db = {
   },
 
   // Get a single interview
+  // ── Teams meeting transcripts ─────────────────────────────────────────────
+
+  /** Raw meeting-identity fields, which the Interview type deliberately doesn't expose. */
+  getInterviewMeetingIdentity: async (id: string): Promise<{
+    organizerUserId: string | null;
+    onlineMeetingId: string | null;
+    teamsMeetingUrl: string | null;
+  } | null> => {
+    const [row] = await dbClient
+      .select({
+        organizerUserId: schema.interviews.organizerUserId,
+        onlineMeetingId: schema.interviews.onlineMeetingId,
+        teamsMeetingUrl: schema.interviews.teamsMeetingUrl,
+      })
+      .from(schema.interviews)
+      .where(eq(schema.interviews.id, id))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /** Caches the resolved Graph meeting id so later syncs skip the lookup. */
+  setInterviewOnlineMeetingId: async (id: string, onlineMeetingId: string): Promise<void> => {
+    await dbClient
+      .update(schema.interviews)
+      .set({ onlineMeetingId })
+      .where(eq(schema.interviews.id, id));
+  },
+
+  /**
+   * Idempotent upsert: re-syncing the same meeting overwrites the stored VTT rather than
+   * accumulating duplicates, keyed on (interviewId, graphTranscriptId).
+   */
+  saveInterviewTranscript: async (params: {
+    interviewId: string;
+    graphTranscriptId: string;
+    contentVtt: string;
+    transcriptCreatedAt: Date | null;
+    fetchedByEmail: string;
+  }): Promise<void> => {
+    await dbClient
+      .insert(schema.interviewTranscripts)
+      .values({
+        id: crypto.randomUUID(),
+        interviewId: params.interviewId,
+        graphTranscriptId: params.graphTranscriptId,
+        contentVtt: params.contentVtt,
+        transcriptCreatedAt: params.transcriptCreatedAt,
+        fetchedAt: new Date(),
+        fetchedByEmail: params.fetchedByEmail,
+      })
+      .onConflictDoUpdate({
+        target: [schema.interviewTranscripts.interviewId, schema.interviewTranscripts.graphTranscriptId],
+        set: {
+          contentVtt: params.contentVtt,
+          transcriptCreatedAt: params.transcriptCreatedAt,
+          fetchedAt: new Date(),
+          fetchedByEmail: params.fetchedByEmail,
+        },
+      });
+  },
+
+  getInterviewTranscripts: async (interviewId: string): Promise<{
+    id: string;
+    graphTranscriptId: string;
+    contentVtt: string | null;
+    transcriptCreatedAt: string | null;
+    fetchedAt: string | null;
+  }[]> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.interviewTranscripts)
+      .where(eq(schema.interviewTranscripts.interviewId, interviewId))
+      .orderBy(schema.interviewTranscripts.transcriptCreatedAt);
+    return rows.map((r) => ({
+      id: r.id,
+      graphTranscriptId: r.graphTranscriptId,
+      contentVtt: r.contentVtt,
+      transcriptCreatedAt: r.transcriptCreatedAt ? r.transcriptCreatedAt.toISOString() : null,
+      fetchedAt: r.fetchedAt ? r.fetchedAt.toISOString() : null,
+    }));
+  },
+
   getInterview: async (id: string): Promise<Interview | null> => {
     const [intv] = await dbClient.select().from(schema.interviews).where(and(eq(schema.interviews.id, id), isNull(schema.interviews.deletedAt))).limit(1);
     if (!intv) return null;
@@ -326,6 +409,9 @@ export const db = {
     startDate: string;
     endDate: string;
     panels: { userId: string; name: string; email: string }[];
+    /** Graph id of whoever creates the Teams meeting — Graph only exposes a meeting's
+     *  transcripts under its organizer, so this has to be captured up front. */
+    organizerUserId?: string;
   }): Promise<Interview> => {
     const interviewId = crypto.randomUUID();
     const now = new Date();
@@ -340,6 +426,7 @@ export const db = {
       endDate: new Date(params.endDate),
       status: 'PENDING',
       hiringType: params.hiringType,
+      organizerUserId: params.organizerUserId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -1525,7 +1612,7 @@ export const db = {
     expectedCtc: row.expectedCtc || undefined,
     noticePeriodDays: row.noticePeriodDays ?? undefined,
     source: row.source || undefined,
-    status: row.status as LateralCandidate['status'],
+    status: normalizeStage(row.status),
     roleGrade: row.roleGrade || undefined,
     resumeFileKey: row.resumeFileKey || undefined,
     resumeSha256: row.resumeSha256 || undefined,
@@ -1618,13 +1705,13 @@ export const db = {
     return true;
   },
 
-  // Links a newly scheduled interview to the lateral candidate and advances their
-  // pipeline status out of NEW/SCREENING, without clobbering a status the
-  // recruiter already moved forward manually (e.g. OFFERED).
-  setLateralCandidateInterview: async (id: string, interviewId: string): Promise<boolean> => {
+  // Links a newly scheduled interview to the lateral candidate and moves their stage to
+  // the round just scheduled. advanceStage() keeps this from ever moving someone
+  // backwards or reviving a finished outcome — see lateral-pipeline.ts.
+  setLateralCandidateInterview: async (id: string, interviewId: string, round?: LateralStage): Promise<boolean> => {
     const candidate = await db.getLateralCandidate(id);
     if (!candidate) return false;
-    const nextStatus = (candidate.status === 'NEW' || candidate.status === 'SCREENING') ? 'INTERVIEWING' : candidate.status;
+    const nextStatus = round ? advanceStage(candidate.status, round) : candidate.status;
     await dbClient
       .update(schema.lateralCandidates)
       .set({ mappedInterviewId: interviewId, status: nextStatus })

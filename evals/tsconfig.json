@@ -1,8 +1,9 @@
 {
+  "//lib-note": "lib mirrors the app tsconfig: files reachable from the eval graph (db -> graph/session) legitimately use web APIs like fetch and need the DOM lib to typecheck.",
   "//": "Standalone build for the eval runner. The app's own tsconfig targets the Next.js bundler (which resolves extensionless relative imports for us); plain Node ESM does not, so evals are compiled to CommonJS in a temp dir and run from there. Keeps evals dependency-free and leaves app source untouched.",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["dom", "dom.iterable", "ES2022"],
     "module": "commonjs",
     "moduleResolution": "node",
     "rootDir": "..",

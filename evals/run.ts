@@ -11,6 +11,10 @@ import { inspectQuestionSet, blockingFindings, summarizeFindings } from '../src/
 import { classifyProviderError, AiError } from '../src/lib/ai/errors';
 import { withRetry, computeDelayMs, type RetryPolicy } from '../src/lib/ai/retry';
 import { GUARDRAIL_CASES, ERROR_CASES } from './cases';
+import { computePanelistLoads, byFairnessThenName } from '../src/lib/panelist-load';
+import { LOAD_CASES, PANELISTS, NOW } from './load-cases';
+import { PIPELINE_CASES } from './pipeline-cases';
+import { TRANSCRIPT_CASES } from './transcript-cases';
 
 interface Result { name: string; passed: boolean; detail?: string }
 
@@ -169,7 +173,76 @@ async function runRetryCases() {
   }
 }
 
-// ── Suite 4 (opt-in): live pipeline ──────────────────────────────────────────
+// ── Suite 4: panelist load analytics ─────────────────────────────────────────
+
+function runLoadCases() {
+  suite('Panelist load analytics');
+  for (const testCase of LOAD_CASES) {
+    const loads = computePanelistLoads(PANELISTS, testCase.interviews, {
+      ...testCase.options,
+      now: NOW,
+    }).sort(byFairnessThenName);
+    const byEmail = new Map(loads.map((l) => [l.email, l]));
+    const problems: string[] = [];
+
+    for (const [email, want] of Object.entries(testCase.expect)) {
+      const got = byEmail.get(email);
+      if (!got) {
+        problems.push(`${email} missing from results`);
+        continue;
+      }
+      if (want.assigned !== undefined && got.totalAssigned !== want.assigned) {
+        problems.push(`${email} assigned=${got.totalAssigned}, expected ${want.assigned}`);
+      }
+      if (want.conducted !== undefined && got.totalConducted !== want.conducted) {
+        problems.push(`${email} conducted=${got.totalConducted}, expected ${want.conducted}`);
+      }
+      if (want.band !== undefined && got.band !== want.band) {
+        problems.push(`${email} band=${got.band}, expected ${want.band}`);
+      }
+      if (want.daysSinceLast !== undefined && got.daysSinceLast !== want.daysSinceLast) {
+        problems.push(`${email} daysSinceLast=${got.daysSinceLast}, expected ${want.daysSinceLast}`);
+      }
+    }
+
+    for (const email of testCase.expectAbsent ?? []) {
+      if (byEmail.has(email)) problems.push(`${email} should not be eligible for this round`);
+    }
+
+    if (testCase.expectOrder) {
+      const actual = loads.map((l) => l.email);
+      const expected = testCase.expectOrder;
+      const prefix = actual.slice(0, expected.length);
+      if (prefix.join(',') !== expected.join(',')) {
+        problems.push(`order was [${prefix.join(', ')}], expected [${expected.join(', ')}]`);
+      }
+    }
+
+    record(testCase.name, problems.length === 0, problems.join('; '));
+  }
+}
+
+// ── Suite 5: lateral pipeline stages ─────────────────────────────────────────
+
+function runPipelineCases() {
+  suite('Lateral pipeline stages');
+  for (const testCase of PIPELINE_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
+// ── Suite 6: transcript parsing ──────────────────────────────────────────────
+
+function runTranscriptCases() {
+  suite('Teams transcript parsing');
+  for (const testCase of TRANSCRIPT_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
+// ── Suite 7 (opt-in): live pipeline ──────────────────────────────────────────
 
 async function runLiveCases() {
   suite('Live pipeline (Gemini)');
@@ -241,6 +314,9 @@ async function main() {
   runGuardrailCases();
   runErrorCases();
   await runRetryCases();
+  runLoadCases();
+  runPipelineCases();
+  runTranscriptCases();
   if (live) await runLiveCases();
 
   const failed = results.filter((r) => !r.passed);
