@@ -350,7 +350,7 @@ export default function TranscriptPanel({
 
 
           {/* Teams Talk-Time Metrics (if available) */}
-          {graphAnalysis && graphAnalysis.segments.length > 0 && (
+          {/* {graphAnalysis && graphAnalysis.segments.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', padding: '0.5rem 0', borderTop: '1px solid var(--border-glass)' }}>
               <div>
                 <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.65rem' }}>
@@ -377,10 +377,10 @@ export default function TranscriptPanel({
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Directly Embedded Transcript Stream */}
-          {hasTranscript && (
+          {/* {hasTranscript && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid var(--border-glass)', paddingTop: '0.65rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -424,7 +424,7 @@ export default function TranscriptPanel({
                 })}
               </div>
             </div>
-          )}
+          )} */}
         </div>
       )}
     </div>

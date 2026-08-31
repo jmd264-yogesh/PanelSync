@@ -49,15 +49,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
 
     return NextResponse.json({
-      hasTranscript: Boolean(recalSession.transcriptText || combinedVtt),
-      transcriptText: recalSession.transcriptText || combinedVtt || null,
-      transcriptTurns: recalSession.transcriptTurns || null,
-      aiEvaluation: recalSession.aiEvaluation || null,
-      fetchedAt: recalSession.transcriptFetchedAt || stored[0]?.fetchedAt || null,
-      transcriptSource: recalSession.transcriptSource || (stored.length > 0 ? 'graph_api' : null),
-      transcriptCount: stored.length,
-      analysis: combinedVtt ? analysisFor(ctx.interview, combinedVtt) : null,
-      session: recalSession,
+      hasTranscript: false,
+      // transcriptText: recalSession.transcriptText || combinedVtt || null,
+      // transcriptTurns: recalSession.transcriptTurns || null,
+      // aiEvaluation: recalSession.aiEvaluation || null,
+      // fetchedAt: recalSession.transcriptFetchedAt || stored[0]?.fetchedAt || null,
+      // transcriptSource: recalSession.transcriptSource || (stored.length > 0 ? 'graph_api' : null),
+      // transcriptCount: stored.length,
+      // analysis: combinedVtt ? analysisFor(ctx.interview, combinedVtt) : null,
+      // session: recalSession,
     });
   } catch (error) {
     console.error('Failed to read stored transcript:', error);
@@ -170,9 +170,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         session: updatedSession,
-        transcriptText: combinedTranscript,
-        transcriptTurns: turns,
-        evaluation,
+        // transcriptText: combinedTranscript,
+        // transcriptTurns: turns,
+        // evaluation,
       });
     }
 
@@ -218,9 +218,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         session: updatedSession,
-        transcriptText: rawText,
-        transcriptTurns: turns,
-        evaluation,
+        // transcriptText: rawText,
+        // transcriptTurns: turns,
+        // evaluation,
       });
     }
 
@@ -305,14 +305,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       return NextResponse.json({
         success: true,
-        hasTranscript: combinedVtt.length > 0,
-        fetchedAt: stored[0]?.fetchedAt ?? null,
-        transcriptCount: stored.length,
-        analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
-        session: updatedSession,
-        transcriptText: combinedVtt,
-        transcriptTurns: turns,
-        evaluation,
+        hasTranscript: false,
+        // fetchedAt: stored[0]?.fetchedAt ?? null,
+        // transcriptCount: stored.length,
+        // analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
+        // session: updatedSession,
+        // transcriptText: combinedVtt,
+        // transcriptTurns: turns,
+        // evaluation,
       });
     }
 
