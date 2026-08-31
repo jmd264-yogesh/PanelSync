@@ -7,14 +7,15 @@ import {
   listTranscripts,
   resolveOnlineMeetingId,
 } from '@/lib/graph-transcript';
-import { analyseTranscript } from '@/lib/transcript';
+import { analyseTranscript, parseDialogueTurns } from '@/lib/transcript';
+import { transcribeAudioWithAi, evaluateTranscriptWithAi } from '@/lib/ai/transcript-evaluator';
 
 export const dynamic = 'force-dynamic';
 
 // Pulling a 45-minute transcript out of Graph and back is not a fast request.
 export const maxDuration = 60;
 
-/** Shared auth + identity resolution for both verbs. */
+/** Shared auth + identity resolution for both verbs */
 async function loadContext(interviewId: string, email: string) {
   const assigned = await db.isPanelistAssignedToInterview(email, interviewId);
   if (!assigned) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
@@ -33,8 +34,7 @@ function analysisFor(interview: NonNullable<Awaited<ReturnType<typeof db.getInte
   });
 }
 
-// GET — whatever transcript we have already stored. Never calls Graph, so it's cheap
-// enough to load alongside the rest of the Recalibrate workspace.
+// GET — whatever transcript we have stored in the session or Graph DB.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getPanelistSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -44,14 +44,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const ctx = await loadContext(id, session.user.email);
     if (ctx.error) return ctx.error;
 
+    const recalSession = await db.getOrCreateRecalibrateSession(id);
     const stored = await db.getInterviewTranscripts(id);
     const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
 
     return NextResponse.json({
-      hasTranscript: combinedVtt.length > 0,
-      fetchedAt: stored[0]?.fetchedAt ?? null,
+      hasTranscript: Boolean(recalSession.transcriptText || combinedVtt),
+      transcriptText: recalSession.transcriptText || combinedVtt || null,
+      transcriptTurns: recalSession.transcriptTurns || null,
+      aiEvaluation: recalSession.aiEvaluation || null,
+      fetchedAt: recalSession.transcriptFetchedAt || stored[0]?.fetchedAt || null,
+      transcriptSource: recalSession.transcriptSource || (stored.length > 0 ? 'graph_api' : null),
       transcriptCount: stored.length,
       analysis: combinedVtt ? analysisFor(ctx.interview, combinedVtt) : null,
+      session: recalSession,
     });
   } catch (error) {
     console.error('Failed to read stored transcript:', error);
@@ -59,8 +65,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-// POST — sync from Graph, then store. Separate from GET on purpose: this one costs a
-// round trip to Microsoft and should only happen when someone asks for it.
+// POST — multi-source router: Audio transcription, Manual text upload, or Teams Graph sync
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getPanelistSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -72,67 +77,256 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (ctx.error) return ctx.error;
     const interview = ctx.interview;
 
-    const identity = await db.getInterviewMeetingIdentity(id);
-    if (!identity?.organizerUserId) {
-      throw new TranscriptError(
-        'NO_ORGANIZER',
-        'This interview has no recorded meeting organizer, so its transcript cannot be located. Interviews scheduled before transcript support was added are affected — reschedule to enable it.',
-        409,
-      );
-    }
-    if (!identity.teamsMeetingUrl) {
-      throw new TranscriptError('MEETING_NOT_FOUND', 'This interview has no Teams meeting attached.', 409);
-    }
+    const body = await request.json().catch(() => ({}));
+    const rawSource = String(body.source || '').toLowerCase().trim();
 
-    // Resolve once and cache — the lookup is the slowest part of the sync.
-    let onlineMeetingId = identity.onlineMeetingId;
-    if (!onlineMeetingId) {
-      onlineMeetingId = await resolveOnlineMeetingId(identity.organizerUserId, identity.teamsMeetingUrl);
-      await db.setInterviewOnlineMeetingId(id, onlineMeetingId);
-    }
+    // Determine target mode
+    const isAudio =
+      rawSource === 'audio' ||
+      rawSource === 'live_recording' ||
+      rawSource === 'audio_upload' ||
+      Boolean(body.audios) ||
+      Boolean(body.audioBase64);
 
-    const available = await listTranscripts(identity.organizerUserId, onlineMeetingId);
-    if (available.length === 0) {
-      throw new TranscriptError(
-        'NO_TRANSCRIPT',
-        'Teams has no transcript for this meeting. Transcription has to be started during the call — it is not on by default. Ask the panelist to use "Start transcription" in the Teams meeting, or have an admin enable it by policy.',
-        404,
-      );
-    }
+    const isText =
+      rawSource === 'text' ||
+      rawSource === 'manual' ||
+      rawSource === 'manual_upload' ||
+      Boolean(body.transcriptText) ||
+      Boolean(body.rawTranscript);
 
-    for (const transcript of available) {
-      const vtt = await fetchTranscriptVtt(identity.organizerUserId, onlineMeetingId, transcript.id);
-      await db.saveInterviewTranscript({
-        interviewId: id,
-        graphTranscriptId: transcript.id,
-        contentVtt: vtt,
-        transcriptCreatedAt: transcript.createdDateTime ? new Date(transcript.createdDateTime) : null,
-        fetchedByEmail: session.user.email,
+    const isGraph = rawSource === 'graph' || rawSource === 'teams' || rawSource === 'graph_api';
+
+    // 1. AUDIO TRANSCRIPTION (from live recording or uploaded audio file)
+    if (isAudio) {
+      const audios: Array<{ audioBase64: string; mimeType: string }> = Array.isArray(body.audios) && body.audios.length > 0
+        ? body.audios
+        : (body.audioBase64 ? [{ audioBase64: body.audioBase64, mimeType: body.mimeType || 'audio/webm' }] : []);
+
+      if (audios.length === 0) {
+        return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
+      }
+
+      let combinedTranscript = '';
+      for (const audioItem of audios) {
+        const transResult = await transcribeAudioWithAi({
+          audioBase64: audioItem.audioBase64,
+          mimeType: audioItem.mimeType,
+          candidateName: interview.candidateName,
+          roleTitle: interview.role,
+          existingTranscriptText: combinedTranscript || null,
+        });
+
+        if (transResult.transcriptText && !transResult.transcriptText.toLowerCase().includes('no speech detected')) {
+          if (combinedTranscript) {
+            combinedTranscript += '\n\n' + transResult.transcriptText.trim();
+          } else {
+            combinedTranscript = transResult.transcriptText.trim();
+          }
+        }
+      }
+
+      const turns = parseDialogueTurns(combinedTranscript);
+
+      // Fetch AI questions for evaluation
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      let evaluation = null;
+
+      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
+      if (!run) {
+        const runs = await db.getAiRunsForInterview(id);
+        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
+      }
+
+      if (run?.questions && combinedTranscript.trim()) {
+        try {
+          evaluation = await evaluateTranscriptWithAi({
+            transcriptText: combinedTranscript,
+            questionSet: run.questions as any,
+            spec: run.spec as any,
+            candidateName: interview.candidateName,
+            roleTitle: interview.role,
+          });
+        } catch (evalErr) {
+          console.error('Failed to run AI evaluation on transcript:', evalErr);
+        }
+      }
+
+      const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
+      const updatedSession = await db.updateRecalibrateSession(id, {
+        transcriptText: combinedTranscript || null,
+        transcriptTurns: turns.length > 0 ? turns : null,
+        aiEvaluation: evaluation,
+        transcriptFetchedAt: new Date(),
+        transcriptSource: sourceType,
+      });
+
+      await db.addAuditLog(session.user.email, 'AUDIO_TRANSCRIBED', 'Interview', id, {
+        chunksCount: audios.length,
+        characters: combinedTranscript.length,
+        hasEvaluation: Boolean(evaluation),
+      });
+
+      return NextResponse.json({
+        success: true,
+        session: updatedSession,
+        transcriptText: combinedTranscript,
+        transcriptTurns: turns,
+        evaluation,
       });
     }
 
-    const stored = await db.getInterviewTranscripts(id);
-    const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
+    // 2. TEXT TRANSCRIPT UPLOAD
+    if (isText) {
+      const rawText = String(body.transcriptText || body.rawTranscript || '').trim();
+      if (!rawText) {
+        return NextResponse.json({ error: 'Transcript text cannot be empty' }, { status: 400 });
+      }
 
-    await db.addAuditLog(session.user.email, 'TRANSCRIPT_SYNCED', 'Interview', id, {
-      transcriptCount: stored.length,
-      characters: combinedVtt.length,
-    });
+      const turns = parseDialogueTurns(rawText);
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      let evaluation = null;
 
-    return NextResponse.json({
-      hasTranscript: combinedVtt.length > 0,
-      fetchedAt: stored[0]?.fetchedAt ?? null,
-      transcriptCount: stored.length,
-      analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
-    });
+      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
+      if (!run) {
+        const runs = await db.getAiRunsForInterview(id);
+        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
+      }
+
+      if (run?.questions) {
+        try {
+          evaluation = await evaluateTranscriptWithAi({
+            transcriptText: rawText,
+            questionSet: run.questions as any,
+            spec: run.spec as any,
+            candidateName: interview.candidateName,
+            roleTitle: interview.role,
+          });
+        } catch (evalErr) {
+          console.error('Failed to run AI evaluation on text transcript:', evalErr);
+        }
+      }
+
+      const updatedSession = await db.updateRecalibrateSession(id, {
+        transcriptText: rawText,
+        transcriptTurns: turns.length > 0 ? turns : null,
+        aiEvaluation: evaluation,
+        transcriptFetchedAt: new Date(),
+        transcriptSource: 'manual_upload',
+      });
+
+      return NextResponse.json({
+        success: true,
+        session: updatedSession,
+        transcriptText: rawText,
+        transcriptTurns: turns,
+        evaluation,
+      });
+    }
+
+    // 3. TEAMS GRAPH API SYNC (Only when explicitly requested)
+    if (isGraph) {
+      const identity = await db.getInterviewMeetingIdentity(id);
+      if (!identity?.organizerUserId) {
+        throw new TranscriptError(
+          'NO_ORGANIZER',
+          'This interview has no recorded meeting organizer, so its transcript cannot be located. Reschedule or start live audio recording instead.',
+          409,
+        );
+      }
+      if (!identity.teamsMeetingUrl) {
+        throw new TranscriptError('MEETING_NOT_FOUND', 'This interview has no Teams meeting attached.', 409);
+      }
+
+      let onlineMeetingId = identity.onlineMeetingId;
+      if (!onlineMeetingId) {
+        onlineMeetingId = await resolveOnlineMeetingId(identity.organizerUserId, identity.teamsMeetingUrl);
+        await db.setInterviewOnlineMeetingId(id, onlineMeetingId);
+      }
+
+      const available = await listTranscripts(identity.organizerUserId, onlineMeetingId);
+      if (available.length === 0) {
+        throw new TranscriptError(
+          'NO_TRANSCRIPT',
+          'Teams has no transcript for this meeting. Transcription has to be started during the call. Use "Live Record" to record audio directly from your browser.',
+          404,
+        );
+      }
+
+      for (const transcript of available) {
+        const vtt = await fetchTranscriptVtt(identity.organizerUserId, onlineMeetingId, transcript.id);
+        await db.saveInterviewTranscript({
+          interviewId: id,
+          graphTranscriptId: transcript.id,
+          contentVtt: vtt,
+          transcriptCreatedAt: transcript.createdDateTime ? new Date(transcript.createdDateTime) : null,
+          fetchedByEmail: session.user.email,
+        });
+      }
+
+      const stored = await db.getInterviewTranscripts(id);
+      const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
+
+      let evaluation = null;
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
+      if (!run) {
+        const runs = await db.getAiRunsForInterview(id);
+        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
+      }
+
+      if (run?.questions && combinedVtt) {
+        try {
+          evaluation = await evaluateTranscriptWithAi({
+            transcriptText: combinedVtt,
+            questionSet: run.questions as any,
+            spec: run.spec as any,
+            candidateName: interview.candidateName,
+            roleTitle: interview.role,
+          });
+        } catch (evalErr) {
+          console.error('Failed to run AI evaluation on Teams transcript:', evalErr);
+        }
+      }
+
+      const turns = combinedVtt ? parseDialogueTurns(combinedVtt) : [];
+      const updatedSession = await db.updateRecalibrateSession(id, {
+        transcriptText: combinedVtt,
+        transcriptTurns: turns.length > 0 ? turns : null,
+        aiEvaluation: evaluation,
+        transcriptFetchedAt: new Date(),
+        transcriptSource: 'graph_api',
+      });
+
+      await db.addAuditLog(session.user.email, 'TRANSCRIPT_SYNCED', 'Interview', id, {
+        transcriptCount: stored.length,
+        characters: combinedVtt.length,
+      });
+
+      return NextResponse.json({
+        success: true,
+        hasTranscript: combinedVtt.length > 0,
+        fetchedAt: stored[0]?.fetchedAt ?? null,
+        transcriptCount: stored.length,
+        analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
+        session: updatedSession,
+        transcriptText: combinedVtt,
+        transcriptTurns: turns,
+        evaluation,
+      });
+    }
+
+    // Fallback: If source was not recognized, return explicit error instead of triggering Graph sync
+    return NextResponse.json(
+      { error: 'Missing or unsupported transcript source. Supported sources: "audio", "text", or "graph".' },
+      { status: 400 },
+    );
   } catch (error) {
     if (error instanceof TranscriptError) {
-      // The message is written to be actionable — which permission is missing, or that
-      // nobody started transcription — so surface it verbatim rather than flattening it.
       console.error(`Transcript sync failed for ${id} [${error.code}]:`, error.message);
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
-    console.error('Transcript sync failed:', error);
-    return NextResponse.json({ error: 'Failed to sync the transcript.' }, { status: 500 });
+    console.error('Transcript processing failed:', error);
+    return NextResponse.json({ error: 'Failed to process transcript.' }, { status: 500 });
   }
 }

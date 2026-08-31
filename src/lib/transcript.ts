@@ -237,3 +237,38 @@ export function formatTimestamp(ms: number): string {
   const s = total % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+/**
+ * Parses transcript lines into dialogue turns [{ speaker, timestamp, text }].
+ * Handles WebVTT cues, [MM:SS] timestamp formats, and speaker tags.
+ */
+export function parseDialogueTurns(transcript: string): Array<{ speaker: string; timestamp?: string; text: string }> {
+  if (!transcript || !transcript.trim()) return [];
+  const lines = transcript.split('\n').map((l) => l.trim()).filter(Boolean);
+  const turns: Array<{ speaker: string; timestamp?: string; text: string }> = [];
+
+  const turnRegex = /^(?:\[(.*?)\]\s*)?([A-Za-z0-9\s._-]+?):\s*(.+)$/;
+
+  for (const line of lines) {
+    if (line.toLowerCase().includes('no speech detected') || line.startsWith('WEBVTT') || line.startsWith('NOTE')) {
+      continue;
+    }
+    const match = line.match(turnRegex);
+    if (match) {
+      turns.push({
+        timestamp: match[1] ? match[1].trim() : undefined,
+        speaker: match[2].trim(),
+        text: match[3].trim(),
+      });
+    } else if (turns.length > 0) {
+      turns[turns.length - 1].text += ' ' + line;
+    } else {
+      turns.push({
+        speaker: 'Dialogue',
+        text: line,
+      });
+    }
+  }
+
+  return turns;
+}

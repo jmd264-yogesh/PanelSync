@@ -251,6 +251,11 @@ export const recalibrateSessions = pgTable('recalibrate_sessions', {
   timerEndedAt: timestamp('timer_ended_at'),
   submittedAt: timestamp('submitted_at'), // set once the panelist submits — recruiters can only see submitted reports
   submittedBy: varchar('submitted_by', { length: 255 }), // panelist email
+  transcriptText: text('transcript_text'), // raw or formatted transcript text
+  transcriptTurns: jsonb('transcript_turns'), // parsed dialogue turns: { speaker, timestamp, text }[]
+  aiEvaluation: jsonb('ai_evaluation'), // AI evaluation output: { overallSummary, questionEvaluations, rubricEvaluations, confidence }
+  transcriptFetchedAt: timestamp('transcript_fetched_at'),
+  transcriptSource: varchar('transcript_source', { length: 50 }), // 'graph_api' | 'manual_upload' | 'webhook'
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

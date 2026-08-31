@@ -61,13 +61,14 @@ export function SectionHeader({ icon, title, right }: { icon: React.ReactNode; t
   );
 }
 
-export function ScoreDial({ value, selected, onSelect, size = 30 }: { value: number; selected: boolean; onSelect: () => void; size?: number }) {
+export function ScoreDial({ value, selected, suggested, onSelect, size = 30 }: { value: number; selected: boolean; suggested?: boolean; onSelect: () => void; size?: number }) {
   const color = SCORE_COLORS[value] || 'var(--primary)';
+  const isSuggestedOnly = !selected && suggested;
   return (
     <button
       type="button"
       onClick={onSelect}
-      title={`${value} — ${ORG_SCORE_LABELS[value]}`}
+      title={suggested ? `${value} — ${ORG_SCORE_LABELS[value]} (AI Suggested)` : `${value} — ${ORG_SCORE_LABELS[value]}`}
       style={{
         width: `${size}px`,
         height: `${size}px`,
@@ -77,10 +78,10 @@ export function ScoreDial({ value, selected, onSelect, size = 30 }: { value: num
         fontWeight: 700,
         cursor: 'pointer',
         transition: 'transform 0.12s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
-        background: selected ? color : 'transparent',
-        border: selected ? `1px solid ${color}` : '1px solid var(--border-glass)',
-        color: selected ? '#fff' : 'var(--text-muted)',
-        boxShadow: selected ? `0 3px 10px 0 ${color}4d` : 'none',
+        background: selected ? color : isSuggestedOnly ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+        border: selected ? `1px solid ${color}` : isSuggestedOnly ? '2px dashed #a855f7' : '1px solid var(--border-glass)',
+        color: selected ? '#fff' : isSuggestedOnly ? '#c084fc' : 'var(--text-muted)',
+        boxShadow: selected ? `0 3px 10px 0 ${color}4d` : isSuggestedOnly ? '0 0 10px rgba(168, 85, 247, 0.4)' : 'none',
         transform: selected ? 'scale(1.06)' : 'scale(1)',
       }}
       onMouseEnter={(e) => {
@@ -89,7 +90,10 @@ export function ScoreDial({ value, selected, onSelect, size = 30 }: { value: num
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = selected ? 'scale(1.06)' : 'scale(1)';
-        if (!selected) { e.currentTarget.style.borderColor = 'var(--border-glass)'; e.currentTarget.style.color = 'var(--text-muted)'; }
+        if (!selected) {
+          e.currentTarget.style.borderColor = isSuggestedOnly ? '#a855f7' : 'var(--border-glass)';
+          e.currentTarget.style.color = isSuggestedOnly ? '#c084fc' : 'var(--text-muted)';
+        }
       }}
     >
       {value}
@@ -123,22 +127,52 @@ export function ScoreLegend({ compact = false }: { compact?: boolean }) {
 }
 
 export function RubricRow({
-  label, bands, score, onScore, dialSize = 26,
+  label, bands, score, onScore, dialSize = 26, suggestedScore, aiReasoning,
 }: {
   label: string;
   bands: readonly [string, string, string, string];
   score: number | undefined;
+  suggestedScore?: number;
+  aiReasoning?: string;
   onScore: (n: number) => void;
   dialSize?: number;
 }) {
   const selectedBand = typeof score === 'number' ? bands[score - 1] : undefined;
+  const isAiScoreApplied = typeof score === 'number' && score === suggestedScore;
+  const hasAiSuggestion = typeof suggestedScore === 'number';
   return (
     <div style={{ padding: '0.7rem 0', borderBottom: '1px solid var(--border-glass)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
         <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{label}</span>
+          {hasAiSuggestion && (
+            <button
+              type="button"
+              onClick={() => onScore(suggestedScore)}
+              title={aiReasoning ? `AI Suggests ${suggestedScore}/4: ${aiReasoning} (Click to apply)` : `AI Suggests ${suggestedScore}/4 (Click to apply)`}
+              style={{
+                background: isAiScoreApplied ? 'rgba(16, 185, 129, 0.12)' : 'rgba(168, 85, 247, 0.12)',
+                color: isAiScoreApplied ? '#34d399' : '#c084fc',
+                border: isAiScoreApplied ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)',
+                padding: '0.12rem 0.45rem',
+                borderRadius: '999px',
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.2rem',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>AI: {suggestedScore}</span>
+              {!isAiScoreApplied && <span style={{ opacity: 0.7 }}>↵</span>}
+            </button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: '0.3rem' }}>
           {[1, 2, 3, 4].map((n) => (
-            <ScoreDial key={n} value={n} selected={score === n} onSelect={() => onScore(n)} size={dialSize} />
+            <ScoreDial key={n} value={n} selected={score === n} suggested={suggestedScore === n} onSelect={() => onScore(n)} size={dialSize} />
           ))}
         </div>
       </div>
@@ -150,6 +184,16 @@ export function RubricRow({
         }}>
           <span style={{ fontWeight: 700, color: SCORE_COLORS[score as number], flexShrink: 0 }}>{score}/4</span>
           <span>{selectedBand}</span>
+        </div>
+      )}
+      {aiReasoning && !selectedBand && (
+        <div style={{
+          marginTop: '0.35rem', fontSize: '0.74rem', color: '#c084fc',
+          background: 'rgba(168, 85, 247, 0.06)', borderLeft: '2px solid #a855f7',
+          padding: '0.3rem 0.55rem', borderRadius: '0 6px 6px 0',
+          fontStyle: 'italic',
+        }}>
+          AI note: {aiReasoning}
         </div>
       )}
       <details style={{ marginTop: '0.35rem' }}>
