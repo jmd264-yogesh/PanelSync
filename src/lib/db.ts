@@ -1,5 +1,7 @@
 import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http';
+import { Pool } from 'pg';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as schema from './schema';
 import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
@@ -100,7 +102,7 @@ export interface QuestionEvaluation {
   questionId: string;
   suggestedScore: number;
   candidateAnswerSummary: string;
-  verbatimQuote: string | null;
+  verbatimQuote?: string | null;
   reasoning: string;
   strengths: string[];
   gaps: string[];
@@ -193,10 +195,13 @@ export interface PanelistInterview {
 }
 
 
-// 1. Initialize Drizzle Neon HTTP Serverless client
+// 1. Initialize Drizzle Client (Supports both Neon HTTP Serverless and standard/local PostgreSQL via TCP)
 const connectionString = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
-const sql = neon(connectionString);
-export const dbClient = drizzle(sql, { schema });
+const isNeon = connectionString.includes('neon.tech');
+
+export const dbClient = (isNeon
+  ? drizzleNeon(neon(connectionString), { schema })
+  : (drizzlePg(new Pool({ connectionString }), { schema }) as unknown)) as ReturnType<typeof drizzleNeon<typeof schema>>;
 
 // Helper to clean up default mock panelists and ensure database starts clean
 async function ensureSeeded() {
@@ -213,7 +218,8 @@ async function ensureSeeded() {
 export const INITIAL_RECRUITERS = [
   'yogeshwarang@jmangroup.com',
   'jeffringoldwin@jmangroup.com',
-  'vishnuprriya@jmangroup.com'
+  'vishnuprriya@jmangroup.com',
+  'mohammedabrar@jmangroup.com'
 ];
 
 // 2. Database Helper Operations
@@ -1170,8 +1176,12 @@ export const db = {
         role: interview.role,
         hiringType: interview.hiringType,
         duration: interview.duration,
-        scheduledSlotStart: interview.scheduledSlotStart!.toISOString(),
-        scheduledSlotEnd: interview.scheduledSlotEnd!.toISOString(),
+        scheduledSlotStart: interview.scheduledSlotStart
+          ? interview.scheduledSlotStart.toISOString()
+          : (interview.startDate ? interview.startDate.toISOString() : new Date().toISOString()),
+        scheduledSlotEnd: interview.scheduledSlotEnd
+          ? interview.scheduledSlotEnd.toISOString()
+          : (interview.endDate ? interview.endDate.toISOString() : new Date().toISOString()),
         teamsMeetingUrl: interview.teamsMeetingUrl,
         candidateName: interview.candidateName,
         candidateEmail: interview.candidateEmail,

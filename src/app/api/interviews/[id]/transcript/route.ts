@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { db, type AiTranscriptEvaluation } from '@/lib/db';
 import {
   TranscriptError,
   fetchTranscriptVtt,
@@ -138,24 +138,38 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const turns = parseDialogueTurns(fullTranscript);
 
       // Fetch AI questions for evaluation
-      let evaluation = null;
-      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
+      let evaluation: AiTranscriptEvaluation | null = null;
+      let evaluationError: string | null = null;
+      const targetAiRunId = body.aiRunId || recalSession.aiRunId;
+      let run = targetAiRunId ? await db.getAiRun(targetAiRunId) : null;
       if (!run) {
         const runs = await db.getAiRunsForInterview(id);
-        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
+        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || runs[0] || null;
       }
 
-      if (run?.questions && fullTranscript.trim()) {
+      const questionsToUse = run?.questions || body.questionSet || null;
+      const specToUse = run?.spec || body.spec || null;
+
+      if (questionsToUse && fullTranscript.trim()) {
         try {
           evaluation = await evaluateTranscriptWithAi({
             transcriptText: fullTranscript,
-            questionSet: run.questions as any,
-            spec: run.spec as any,
+            questionSet: questionsToUse as any,
+            spec: specToUse as any,
             candidateName: interview.candidateName,
             roleTitle: interview.role,
           });
-        } catch (evalErr) {
+        } catch (evalErr: any) {
           console.error('Failed to run AI evaluation on transcript:', evalErr);
+          evaluationError = evalErr?.message || String(evalErr);
+        }
+      } else {
+        if (!questionsToUse) {
+          console.warn('AI evaluation skipped: No question set found for interview', id);
+          evaluationError = 'No question set found for this interview. Please generate questions first.';
+        } else if (!fullTranscript.trim()) {
+          console.warn('AI evaluation skipped: Empty transcript for interview', id);
+          evaluationError = 'No audible speech was detected in the audio recording.';
         }
       }
 
@@ -164,6 +178,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
       const updatedSession = await db.updateRecalibrateSession(id, {
+        aiRunId: targetAiRunId || run?.id || recalSession.aiRunId || null,
         transcriptText: fullTranscript || null,
         transcriptTurns: turns.length > 0 ? turns : null,
         aiEvaluation: finalEvaluation,
@@ -181,6 +196,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         success: true,
         session: updatedSession,
         evaluation: finalEvaluation,
+        evaluationError,
         // transcriptText and transcriptTurns kept commented out so raw transcript text is not returned
       });
     }
@@ -194,7 +210,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const turns = parseDialogueTurns(rawText);
       const recalSession = await db.getOrCreateRecalibrateSession(id);
-      let evaluation = null;
+      let evaluation: AiTranscriptEvaluation | null = null;
 
       let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
       if (!run) {
@@ -276,7 +292,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const stored = await db.getInterviewTranscripts(id);
       const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
 
-      let evaluation = null;
+      let evaluation: AiTranscriptEvaluation | null = null;
       const recalSession = await db.getOrCreateRecalibrateSession(id);
       let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
       if (!run) {
