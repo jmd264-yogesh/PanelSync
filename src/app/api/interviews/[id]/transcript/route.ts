@@ -107,6 +107,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
       }
 
+      // Fetch existing session and previous transcript so audio takes are cumulative
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      const previousTranscript = recalSession.transcriptText || '';
+
       let combinedTranscript = '';
       for (const audioItem of audios) {
         const transResult = await transcribeAudioWithAi({
@@ -114,7 +118,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           mimeType: audioItem.mimeType,
           candidateName: interview.candidateName,
           roleTitle: interview.role,
-          existingTranscriptText: combinedTranscript || null,
+          existingTranscriptText: combinedTranscript || previousTranscript || null,
         });
 
         if (transResult.transcriptText && !transResult.transcriptText.toLowerCase().includes('no speech detected')) {
@@ -126,22 +130,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
-      const turns = parseDialogueTurns(combinedTranscript);
+      // Build cumulative transcript combining previous takes and new take
+      const fullTranscript = previousTranscript
+        ? (combinedTranscript ? `${previousTranscript}\n\n${combinedTranscript}` : previousTranscript)
+        : combinedTranscript;
+
+      const turns = parseDialogueTurns(fullTranscript);
 
       // Fetch AI questions for evaluation
-      const recalSession = await db.getOrCreateRecalibrateSession(id);
       let evaluation = null;
-
       let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
       if (!run) {
         const runs = await db.getAiRunsForInterview(id);
         run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
       }
 
-      if (run?.questions && combinedTranscript.trim()) {
+      if (run?.questions && fullTranscript.trim()) {
         try {
           evaluation = await evaluateTranscriptWithAi({
-            transcriptText: combinedTranscript,
+            transcriptText: fullTranscript,
             questionSet: run.questions as any,
             spec: run.spec as any,
             candidateName: interview.candidateName,
@@ -152,27 +159,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
+      // Preserve previous evaluation if the new evaluation attempt failed or returned null
+      const finalEvaluation = evaluation || (recalSession.aiEvaluation as any) || null;
+
       const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
       const updatedSession = await db.updateRecalibrateSession(id, {
-        transcriptText: combinedTranscript || null,
+        transcriptText: fullTranscript || null,
         transcriptTurns: turns.length > 0 ? turns : null,
-        aiEvaluation: evaluation,
+        aiEvaluation: finalEvaluation,
         transcriptFetchedAt: new Date(),
         transcriptSource: sourceType,
       });
 
       await db.addAuditLog(session.user.email, 'AUDIO_TRANSCRIBED', 'Interview', id, {
         chunksCount: audios.length,
-        characters: combinedTranscript.length,
-        hasEvaluation: Boolean(evaluation),
+        characters: fullTranscript.length,
+        hasEvaluation: Boolean(finalEvaluation),
       });
 
       return NextResponse.json({
         success: true,
         session: updatedSession,
-        // transcriptText: combinedTranscript,
-        // transcriptTurns: turns,
-        // evaluation,
+        evaluation: finalEvaluation,
+        // transcriptText and transcriptTurns kept commented out so raw transcript text is not returned
       });
     }
 
@@ -218,9 +227,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         session: updatedSession,
+        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
         // transcriptText: rawText,
         // transcriptTurns: turns,
-        // evaluation,
       });
     }
 
@@ -306,13 +315,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         hasTranscript: false,
+        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
         // fetchedAt: stored[0]?.fetchedAt ?? null,
         // transcriptCount: stored.length,
         // analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
         // session: updatedSession,
         // transcriptText: combinedVtt,
         // transcriptTurns: turns,
-        // evaluation,
       });
     }
 

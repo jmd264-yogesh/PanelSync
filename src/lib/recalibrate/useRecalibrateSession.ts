@@ -479,7 +479,9 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        setAiEvaluation(data.session.aiEvaluation || null);
+        if (data.session.aiEvaluation) {
+          setAiEvaluation(data.session.aiEvaluation);
+        }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'graph_api');
       }
@@ -516,7 +518,9 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        setAiEvaluation(data.session.aiEvaluation || null);
+        if (data.session.aiEvaluation) {
+          setAiEvaluation(data.session.aiEvaluation);
+        }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'manual_upload');
       }
@@ -556,14 +560,34 @@ export function useRecalibrateSession({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+
+      const contentType = res.headers.get('content-type') || '';
+      let data: any = {};
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        if (res.status === 404) {
+          throw new Error('Interview transcript endpoint not found (404). Please ensure PanelSync dev server is running on port 3000.');
+        }
+        if (res.status === 413) {
+          throw new Error('Audio payload is too large for the server. Try recording a shorter clip.');
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('Your session has expired. Please sign in again.');
+        }
+        throw new Error(`Server returned HTTP ${res.status}: ${text.slice(0, 100)}`);
+      }
+
       if (!res.ok) throw new Error(data.error || 'Failed to transcribe and evaluate audio.');
 
       if (data.session) {
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        setAiEvaluation(data.session.aiEvaluation || null);
+        if (data.session.aiEvaluation) {
+          setAiEvaluation(data.session.aiEvaluation);
+        }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || body.sourceType);
       }
@@ -574,6 +598,8 @@ export function useRecalibrateSession({
             ? 'Live recording(s) transcribed and AI evaluation complete!'
             : 'Audio(s) transcribed and AI evaluation complete!',
         );
+      } else if (data.session?.aiEvaluation) {
+        toast.success('Audio transcribed and AI evaluation updated!');
       } else {
         toast.success('Audio transcribed successfully.');
       }

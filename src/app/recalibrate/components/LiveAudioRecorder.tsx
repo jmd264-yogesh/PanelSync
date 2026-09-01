@@ -26,6 +26,19 @@ export interface SavedAudioClip {
   base64: string;
   mimeType: string;
 }
+export interface CapturedAudioSummary {
+  totalCount: number;
+  clips: SavedAudioClip[];
+  activeClip: {
+    duration: string;
+    size: string;
+    url: string;
+    base64: string;
+    mimeType: string;
+  } | null;
+  transcribeAll: () => Promise<void>;
+  discardAll: () => void;
+}
 
 interface LiveAudioRecorderProps {
   candidateName: string;
@@ -33,6 +46,7 @@ interface LiveAudioRecorderProps {
   isProcessing: boolean;
   onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string }>) => Promise<void>;
   onRecordingChange?: (isRecording: boolean) => void;
+  onAudioCapturedChange?: (summary: CapturedAudioSummary | null) => void;
   onCancel?: () => void;
 }
 
@@ -42,6 +56,7 @@ export default function LiveAudioRecorder({
   isProcessing,
   onSubmitAudios,
   onRecordingChange,
+  onAudioCapturedChange,
   onCancel,
 }: LiveAudioRecorderProps) {
   const {
@@ -129,6 +144,34 @@ export default function LiveAudioRecorder({
   };
 
   const totalAudioCount = savedClips.length + (audioBlob && audioBase64 ? 1 : 0);
+
+  useEffect(() => {
+    if (!onAudioCapturedChange) return;
+
+    if (totalAudioCount === 0) {
+      onAudioCapturedChange(null);
+      return;
+    }
+
+    const active = (audioBlob && audioBase64 && audioUrl) ? {
+      duration: formattedDuration,
+      size: getFileSizeFormatted(audioBlob),
+      url: audioUrl,
+      base64: audioBase64,
+      mimeType,
+    } : null;
+
+    onAudioCapturedChange({
+      totalCount: totalAudioCount,
+      clips: savedClips,
+      activeClip: active,
+      transcribeAll: handleTranscribeAll,
+      discardAll: () => {
+        setSavedClips([]);
+        resetRecording();
+      },
+    });
+  }, [totalAudioCount, savedClips, audioBlob, audioBase64, audioUrl, formattedDuration, mimeType, onAudioCapturedChange]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
