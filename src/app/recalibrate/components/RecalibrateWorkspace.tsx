@@ -713,11 +713,36 @@ export default function RecalibrateWorkspace({
               <SectionHeader
                 icon={<StickyNote size={14} />}
                 title="Panel Notes"
-                right={<span className="text-xs text-muted">Auto-saves</span>}
+                right={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {aiEvaluation?.overallSummary && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={handleApplyAiSummaryToNotes}
+                        style={{
+                          fontSize: '0.72rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          color: '#c084fc',
+                          padding: '0.15rem 0.5rem',
+                          border: '1px solid rgba(168, 85, 247, 0.25)',
+                          borderRadius: '6px',
+                        }}
+                        title="Copy AI assessment summary to notes"
+                      >
+                        <Sparkles size={11} />
+                        <span>Use AI Summary</span>
+                      </button>
+                    )}
+                    <span className="text-xs text-muted">Auto-saves</span>
+                  </div>
+                }
               />
               <textarea
                 className="form-input"
-                rows={3}
+                rows={4}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={handleNotesBlur}

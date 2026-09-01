@@ -503,6 +503,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success('Teams transcript fetched and AI evaluation complete!');
       } else {
         toast.success('Teams transcript saved.');
@@ -542,6 +548,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success('Transcript uploaded and AI evaluation complete!');
       } else {
         toast.success('Transcript uploaded successfully.');
@@ -614,6 +626,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success(
           body.sourceType === 'live_recording'
             ? 'Live recording(s) transcribed and AI evaluation complete!'
@@ -715,9 +733,9 @@ export function useRecalibrateSession({
       }
     }
 
-    // 3. Populate Notes if empty
+    // 3. Populate Notes with AI summary
     let nextNotes = notes;
-    if ((!nextNotes || !nextNotes.trim()) && aiEvaluation.overallSummary) {
+    if (aiEvaluation.overallSummary) {
       nextNotes = aiEvaluation.overallSummary;
       setNotes(nextNotes);
     }
