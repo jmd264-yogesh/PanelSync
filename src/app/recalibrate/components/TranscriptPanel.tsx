@@ -15,11 +15,13 @@ import {
   CheckCheck,
   Radio,
   FileAudio,
+  Volume2,
+  Trash2,
 } from 'lucide-react';
 import { SectionHeader } from '@/components/recalibrate/primitives';
 import { formatTimestamp, type SpeakerRole, type TranscriptAnalysis } from '@/lib/transcript';
 import type { AiTranscriptEvaluation, TranscriptDialogueTurn } from '@/lib/db';
-import LiveAudioRecorder from './LiveAudioRecorder';
+import LiveAudioRecorder, { type CapturedAudioSummary } from './LiveAudioRecorder';
 import { compressAudio } from '@/lib/recalibrate/audioCompressor';
 
 interface TranscriptPanelProps {
@@ -73,6 +75,7 @@ export default function TranscriptPanel({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [graphAnalysis, setGraphAnalysis] = useState<TranscriptAnalysis | null>(null);
+  const [capturedAudio, setCapturedAudio] = useState<CapturedAudioSummary | null>(null);
 
   // Load any existing Graph VTT analysis on mount
   useEffect(() => {
@@ -199,7 +202,7 @@ export default function TranscriptPanel({
             >
               <Mic size={12} />
               <span>Record Live</span>
-              {isLiveRecording && (
+              {isLiveRecording ? (
                 <span
                   style={{
                     width: '7px',
@@ -210,7 +213,20 @@ export default function TranscriptPanel({
                     boxShadow: '0 0 6px rgba(239, 68, 68, 0.9)',
                   }}
                 />
-              )}
+              ) : (capturedAudio && capturedAudio.totalCount > 0) ? (
+                <span
+                  style={{
+                    background: 'var(--rc-brand, #7c3aed)',
+                    color: '#fff',
+                    borderRadius: '999px',
+                    padding: '0.05rem 0.35rem',
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {capturedAudio.totalCount}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -250,102 +266,97 @@ export default function TranscriptPanel({
             </button>
           </div>
 
-          {/* Tab 1: Live Record */}
-          {activeTab === 'live' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <LiveAudioRecorder
-                candidateName={candidateName}
-                roleTitle={roleTitle}
-                isProcessing={isProcessingTranscript}
-                onRecordingChange={setIsLiveRecording}
-                onSubmitAudios={async (audios) => {
-                  if (onUploadAudio) {
-                    await onUploadAudio(audios, 'live_recording');
-                  }
-                }}
-              />
-            </div>
-          )}
+          {/* Tab 1: Live Record (kept mounted so recording state and clips never disappear on tab switch) */}
+          <div style={{ display: activeTab === 'live' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem' }}>
+            <LiveAudioRecorder
+              candidateName={candidateName}
+              roleTitle={roleTitle}
+              isProcessing={isProcessingTranscript}
+              onRecordingChange={setIsLiveRecording}
+              onAudioCapturedChange={setCapturedAudio}
+              onSubmitAudios={async (audios) => {
+                if (onUploadAudio) {
+                  await onUploadAudio(audios, 'live_recording');
+                }
+              }}
+            />
+          </div>
 
           {/* Tab 2: Upload Audio or Text File */}
-          {activeTab === 'upload' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <div>
-                <label className="text-xs text-muted" style={{ fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
-                  Upload Audio File (.mp3, .m4a, .webm, .wav) or Transcript (.txt, .vtt)
-                </label>
-                <input
-                  type="file"
-                  accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg,.aac,.txt,.vtt"
-                  className="form-input"
-                  onChange={handleFileUpload}
-                  disabled={isProcessingTranscript || isCompressing}
-                  style={{ fontSize: '0.76rem', padding: '0.4rem' }}
-                />
-                {isCompressing && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.72rem', color: '#c084fc' }}>
-                    <Loader2 size={12} className="animate-spin" />
-                    <span>Compressing to 16kHz Mono for speech AI...</span>
-                  </div>
-                )}
-              </div>
-
-              <form onSubmit={handleManualUploadSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
-                <label className="text-xs text-muted" style={{ fontWeight: 600 }}>Or Paste Transcript Text Directly</label>
-                <textarea
-                  className="form-input"
-                  rows={3}
-                  placeholder="Paste interview notes or transcript text here..."
-                  value={manualText}
-                  onChange={(e) => setManualText(e.target.value)}
-                  disabled={isProcessingTranscript}
-                  style={{ fontSize: '0.78rem' }}
-                />
-                <button
-                  type="submit"
-                  className="btn btn-sm btn-primary"
-                  disabled={!manualText.trim() || isProcessingTranscript}
-                  style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                >
-                  {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                  <span>Evaluate Transcript</span>
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* Tab 3: Teams Sync */}
-          {activeTab === 'teams' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <p className="text-xs text-muted" style={{ margin: 0, lineHeight: 1.5 }}>
-                Sync recorded meeting transcript directly from Microsoft Teams via Microsoft Graph API.
-              </p>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handleTeamsSyncClick}
-                disabled={isProcessingTranscript}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', alignSelf: 'flex-start' }}
-              >
-                {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                <span>Fetch from Teams</span>
-              </button>
-
-              {syncError && (
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'flex-start', gap: '0.4rem', padding: '0.55rem 0.7rem',
-                    fontSize: '0.74rem', lineHeight: 1.5, borderRadius: '8px',
-                    borderLeft: '3px solid var(--warning, #f59e0b)',
-                    background: 'var(--warning-glow, rgba(245,158,11,0.08))',
-                  }}
-                >
-                  <AlertTriangle size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
-                  <span>{syncError}</span>
+          <div style={{ display: activeTab === 'upload' ? 'flex' : 'none', flexDirection: 'column', gap: '0.65rem' }}>
+            <div>
+              <label className="text-xs text-muted" style={{ fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
+                Upload Audio File (.mp3, .m4a, .webm, .wav) or Transcript (.txt, .vtt)
+              </label>
+              <input
+                type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg,.aac,.txt,.vtt"
+                className="form-input"
+                onChange={handleFileUpload}
+                disabled={isProcessingTranscript || isCompressing}
+                style={{ fontSize: '0.76rem', padding: '0.4rem' }}
+              />
+              {isCompressing && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.72rem', color: '#c084fc' }}>
+                  <Loader2 size={12} className="animate-spin" />
+                  <span>Compressing to 16kHz Mono for speech AI...</span>
                 </div>
               )}
             </div>
-          )}
+
+            <form onSubmit={handleManualUploadSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
+              <label className="text-xs text-muted" style={{ fontWeight: 600 }}>Or Paste Transcript Text Directly</label>
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder="Paste interview notes or transcript text here..."
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                disabled={isProcessingTranscript}
+                style={{ fontSize: '0.78rem' }}
+              />
+              <button
+                type="submit"
+                className="btn btn-sm btn-primary"
+                disabled={!manualText.trim() || isProcessingTranscript}
+                style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                <span>Evaluate Transcript</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Tab 3: Teams Sync */}
+          <div style={{ display: activeTab === 'teams' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem' }}>
+            <p className="text-xs text-muted" style={{ margin: 0, lineHeight: 1.5 }}>
+              Sync recorded meeting transcript directly from Microsoft Teams via Microsoft Graph API.
+            </p>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleTeamsSyncClick}
+              disabled={isProcessingTranscript}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', alignSelf: 'flex-start' }}
+            >
+              {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              <span>Fetch from Teams</span>
+            </button>
+
+            {syncError && (
+              <div
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '0.4rem', padding: '0.55rem 0.7rem',
+                  fontSize: '0.74rem', lineHeight: 1.5, borderRadius: '8px',
+                  borderLeft: '3px solid var(--warning, #f59e0b)',
+                  background: 'var(--warning-glow, rgba(245,158,11,0.08))',
+                }}
+              >
+                <AlertTriangle size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
+                <span>{syncError}</span>
+              </div>
+            )}
+          </div>
 
 
 
