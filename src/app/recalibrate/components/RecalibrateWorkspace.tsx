@@ -41,7 +41,7 @@ export default function RecalibrateWorkspace({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    questionScores, rubricScores, appliedZeroQuestionIds, isRunning, elapsedSeconds, elapsedLabel,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
@@ -60,9 +60,11 @@ export default function RecalibrateWorkspace({
 
     const categoryScores: Record<string, number[]> = {};
     for (const qEval of aiEvaluation.questionEvaluations || []) {
-      const q = questions.find((item) => item.id === qEval.questionId);
-      if (q && q.category) {
-        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      if (qEval.suggestedScore > 0) {
+        const q = questions.find((item) => item.id === qEval.questionId);
+        if (q && q.category) {
+          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+        }
       }
     }
 
@@ -100,14 +102,23 @@ export default function RecalibrateWorkspace({
             score: aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore,
             reasoning: aiEvaluation.rubricEvaluations['Problem Solving'].reasoning,
           };
+          continue;
         } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
           const comms = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
           result[label] = { score: comms.suggestedScore, reasoning: comms.reasoning };
+          continue;
         } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
           const people = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
           result[label] = { score: people.suggestedScore, reasoning: people.reasoning };
+          continue;
         }
       }
+
+      // 5. Default to 0 for unaddressed or unevidenced dimension
+      result[label] = {
+        score: 0,
+        reasoning: 'No transcript evidence or discussion for this dimension.',
+      };
     }
     return result;
   }, [aiEvaluation, questions, allDims]);
@@ -396,7 +407,11 @@ export default function RecalibrateWorkspace({
               {questions.map((q, i) => {
                 const dStyle = DIFFICULTY_STYLE[q.difficulty];
                 const qEval = aiEvaluation?.questionEvaluations?.find((e: QuestionEvaluation) => e.questionId === q.id);
-                const isAiScoreApplied = qEval && questionScores[q.id] === qEval.suggestedScore;
+                const isAiScoreApplied = qEval && (
+                  qEval.suggestedScore > 0
+                    ? questionScores[q.id] === qEval.suggestedScore
+                    : (questionScores[q.id] === undefined && (appliedZeroQuestionIds?.has(q.id) ?? false))
+                );
                 return (
                   <div key={q.id} className="glass-card" style={{ padding: '1.1rem', border: '1px solid var(--border-glass)' }}>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem', alignItems: 'center' }}>
@@ -417,7 +432,9 @@ export default function RecalibrateWorkspace({
                             className="badge"
                             style={{
                               fontSize: '0.68rem', fontWeight: 700,
-                              background: 'rgba(124, 58, 237, 0.15)', color: '#c084fc', border: '1px solid rgba(124, 58, 237, 0.3)',
+                              background: qEval.suggestedScore === 0 ? 'rgba(156, 163, 175, 0.12)' : 'rgba(124, 58, 237, 0.15)',
+                              color: qEval.suggestedScore === 0 ? 'var(--text-muted)' : '#c084fc',
+                              border: qEval.suggestedScore === 0 ? '1px solid rgba(156, 163, 175, 0.25)' : '1px solid rgba(124, 58, 237, 0.3)',
                               display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                             }}
                           >
