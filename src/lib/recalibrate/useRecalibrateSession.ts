@@ -545,7 +545,12 @@ export function useRecalibrateSession({
   ) => {
     setIsProcessingTranscript(true);
     try {
-      const body: any = { source: 'audio' };
+      const body: any = {
+        source: 'audio',
+        aiRunId: activeRun?.id || session?.aiRunId || null,
+        questionSet: activeRun?.questions || null,
+        spec: activeRun?.spec || null,
+      };
       if (Array.isArray(audioOrAudios)) {
         body.audios = audioOrAudios;
         body.sourceType = (mimeTypeOrSourceType as 'live_recording' | 'audio_upload') || 'live_recording';
@@ -600,6 +605,8 @@ export function useRecalibrateSession({
         );
       } else if (data.session?.aiEvaluation) {
         toast.success('Audio transcribed and AI evaluation updated!');
+      } else if (data.evaluationError) {
+        toast.warning(`Audio transcribed, but: ${data.evaluationError}`);
       } else {
         toast.success('Audio transcribed successfully.');
       }

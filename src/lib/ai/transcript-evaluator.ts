@@ -5,32 +5,32 @@ import { rubricDimensionsWithBands, ORG_TIER_LABEL, getOrgTier } from './org-rub
 
 export const QuestionEvaluationSchema = z.object({
   questionId: z.string(),
-  suggestedScore: z.number().int().min(1).max(4), // 1: Does Not Meet, 2: Approaching, 3: Meets, 4: Exceeds
-  candidateAnswerSummary: z.string().max(800),
-  verbatimQuote: z.string().nullable(),
-  reasoning: z.string().max(600),
-  strengths: z.array(z.string().max(250)).max(5),
-  gaps: z.array(z.string().max(250)).max(5),
+  suggestedScore: z.coerce.number().int().min(1).max(4).catch(1), // 1: Does Not Meet, 2: Approaching, 3: Meets, 4: Exceeds
+  candidateAnswerSummary: z.string().catch('No answer recorded in transcript.'),
+  verbatimQuote: z.string().nullable().optional().default(null),
+  reasoning: z.string().catch(''),
+  strengths: z.array(z.string()).optional().default([]),
+  gaps: z.array(z.string()).optional().default([]),
 });
 export type QuestionEvaluation = z.infer<typeof QuestionEvaluationSchema>;
 
 export const RubricDimensionEvaluationSchema = z.object({
-  suggestedScore: z.number().int().min(1).max(4),
-  reasoning: z.string().max(500),
+  suggestedScore: z.coerce.number().int().min(1).max(4).catch(1),
+  reasoning: z.string().catch(''),
 });
 export type RubricDimensionEvaluation = z.infer<typeof RubricDimensionEvaluationSchema>;
 
 export const TranscriptEvaluationSchema = z.object({
-  overallSummary: z.string().max(1200),
-  questionEvaluations: z.array(QuestionEvaluationSchema),
-  rubricEvaluations: z.record(z.string(), RubricDimensionEvaluationSchema),
-  confidence: z.enum(['high', 'medium', 'low']),
+  overallSummary: z.string().catch(''),
+  questionEvaluations: z.array(QuestionEvaluationSchema).default([]),
+  rubricEvaluations: z.record(z.string(), RubricDimensionEvaluationSchema).default({}),
+  confidence: z.enum(['high', 'medium', 'low']).catch('medium'),
 });
 export type TranscriptEvaluation = z.infer<typeof TranscriptEvaluationSchema>;
 
 export interface EvaluateTranscriptInput {
   transcriptText: string;
-  questionSet: QuestionSet;
+  questionSet: QuestionSet | any;
   spec?: Spec | null;
   candidateName: string;
   roleTitle: string;
@@ -41,16 +41,28 @@ export async function evaluateTranscriptWithAi(input: EvaluateTranscriptInput): 
   const { transcriptText, questionSet, spec, candidateName, roleTitle, signal } = input;
   const provider = getAiProvider();
 
-  const questionsFormatted = questionSet.questions.map((q, idx) => `
+  const qList = Array.isArray(questionSet)
+    ? questionSet
+    : (questionSet?.questions && Array.isArray(questionSet.questions) ? questionSet.questions : []);
+
+  const questionsFormatted = qList.map((q: any, idx: number) => {
+    const rubricList = Array.isArray(q.rubric) ? q.rubric : [];
+    const rubricText = rubricList.map((r: any) => {
+      const signals = Array.isArray(r.exampleSignals) ? r.exampleSignals.join(', ') : (r.exampleSignals || '');
+      return `  - Band ${r.band || '1'}: ${r.description || ''}${signals ? ` (Signals: ${signals})` : ''}`;
+    }).join('\n');
+
+    return `
 Question #${idx + 1} (ID: ${q.id})
-Category: ${q.category}
-Difficulty: ${q.difficulty}
-Max Marks: ${q.maxMarks}
-Prompt: ${q.question}
+Category: ${q.category || 'General'}
+Difficulty: ${q.difficulty || 'medium'}
+Max Marks: ${q.maxMarks || 5}
+Prompt: ${q.question || ''}
 Model Answer Guidance: ${q.modelAnswer || 'N/A'}
 Rubric Bands:
-${q.rubric.map((r) => `  - Band ${r.band}: ${r.description} (Signals: ${r.exampleSignals.join(', ')})`).join('\n')}
-`).join('\n---\n');
+${rubricText || '  - Band 1: Does Not Meet\n  - Band 2: Meets\n  - Band 3: Exceeds'}
+`;
+  }).join('\n---\n');
 
   const roleGrade = spec?.roleGrade || 'se';
   const orgTier = getOrgTier(roleGrade);
