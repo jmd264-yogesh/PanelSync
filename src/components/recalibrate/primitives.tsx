@@ -137,8 +137,10 @@ export function RubricRow({
   onScore: (n: number) => void;
   dialSize?: number;
 }) {
-  const selectedBand = typeof score === 'number' ? bands[score - 1] : undefined;
-  const isAiScoreApplied = typeof score === 'number' && score === suggestedScore;
+  const selectedBand = typeof score === 'number' && score >= 1 && score <= 4 ? bands[score - 1] : undefined;
+  const isAiScoreApplied = suggestedScore === 0
+    ? score === undefined
+    : (typeof score === 'number' && score === suggestedScore);
   const hasAiSuggestion = typeof suggestedScore === 'number';
   return (
     <div style={{ padding: '0.7rem 0', borderBottom: '1px solid var(--border-glass)' }}>
@@ -151,9 +153,15 @@ export function RubricRow({
               onClick={() => onScore(suggestedScore)}
               title={aiReasoning ? `AI Suggests ${suggestedScore}/4: ${aiReasoning} (Click to apply)` : `AI Suggests ${suggestedScore}/4 (Click to apply)`}
               style={{
-                background: isAiScoreApplied ? 'rgba(16, 185, 129, 0.12)' : 'rgba(168, 85, 247, 0.12)',
-                color: isAiScoreApplied ? '#34d399' : '#c084fc',
-                border: isAiScoreApplied ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)',
+                background: isAiScoreApplied
+                  ? 'rgba(16, 185, 129, 0.12)'
+                  : (suggestedScore === 0 ? 'rgba(148, 163, 184, 0.12)' : 'rgba(168, 85, 247, 0.12)'),
+                color: isAiScoreApplied
+                  ? '#34d399'
+                  : (suggestedScore === 0 ? '#94a3b8' : '#c084fc'),
+                border: isAiScoreApplied
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : (suggestedScore === 0 ? '1px solid rgba(148, 163, 184, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)'),
                 padding: '0.12rem 0.45rem',
                 borderRadius: '999px',
                 fontSize: '0.66rem',
@@ -165,14 +173,18 @@ export function RubricRow({
                 transition: 'all 0.15s ease',
               }}
             >
-              <span>AI: {suggestedScore}</span>
-              {!isAiScoreApplied && <span style={{ opacity: 0.7 }}>↵</span>}
+              <span>AI: {suggestedScore}/4</span>
+              {isAiScoreApplied ? (
+                <span style={{ fontSize: '0.6rem', opacity: 0.85 }}>✓</span>
+              ) : (
+                <span style={{ opacity: 0.7 }}>↵</span>
+              )}
             </button>
           )}
         </div>
         <div style={{ display: 'flex', gap: '0.3rem' }}>
           {[1, 2, 3, 4].map((n) => (
-            <ScoreDial key={n} value={n} selected={score === n} suggested={suggestedScore === n} onSelect={() => onScore(n)} size={dialSize} />
+            <ScoreDial key={n} value={n} selected={score === n} suggested={suggestedScore === n && suggestedScore > 0} onSelect={() => onScore(n)} size={dialSize} />
           ))}
         </div>
       </div>

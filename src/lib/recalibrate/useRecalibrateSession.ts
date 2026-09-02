@@ -98,6 +98,7 @@ export function useRecalibrateSession({
   const [questionScores, setQuestionScores] = useState<Record<string, number>>({});
   const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState('');
+  const [appliedZeroQuestionIds, setAppliedZeroQuestionIds] = useState<Set<string>>(new Set());
 
   // Meeting Transcript and AI Evaluation state
   const [transcriptText, setTranscriptText] = useState<string | null>(null);
@@ -276,13 +277,28 @@ export function useRecalibrateSession({
   };
 
   const scoreQuestion = (questionId: string, value: number) => {
-    const next = { ...questionScores, [questionId]: value };
+    const next = { ...questionScores };
+    if (next[questionId] === value) {
+      delete next[questionId];
+    } else {
+      next[questionId] = value;
+    }
     setQuestionScores(next);
+    setAppliedZeroQuestionIds((prev) => {
+      const copy = new Set(prev);
+      copy.delete(questionId);
+      return copy;
+    });
     void patchSession({ questionScores: next });
   };
 
   const scoreRubric = (dimension: string, value: number) => {
-    const next = { ...rubricScores, [dimension]: value };
+    const next = { ...rubricScores };
+    if (value <= 0 || next[dimension] === value) {
+      delete next[dimension];
+    } else {
+      next[dimension] = value;
+    }
     setRubricScores(next);
     void patchSession({ rubricScores: next });
   };
@@ -487,6 +503,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success('Teams transcript fetched and AI evaluation complete!');
       } else {
         toast.success('Teams transcript saved.');
@@ -526,6 +548,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success('Transcript uploaded and AI evaluation complete!');
       } else {
         toast.success('Transcript uploaded successfully.');
@@ -598,6 +626,12 @@ export function useRecalibrateSession({
       }
       if (data.evaluation) {
         setAiEvaluation(data.evaluation);
+        if (data.evaluation.overallSummary) {
+          if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
+            setNotes(data.evaluation.overallSummary);
+            void patchSession({ notes: data.evaluation.overallSummary });
+          }
+        }
         toast.success(
           body.sourceType === 'live_recording'
             ? 'Live recording(s) transcribed and AI evaluation complete!'
@@ -624,44 +658,48 @@ export function useRecalibrateSession({
       return;
     }
 
-    // 1. Map Question Scores
+    // 1. Map Question Scores (only assign score 1-4; if 0, do not select any score)
     const nextQuestionScores: Record<string, number> = { ...questionScores };
+    const nextAppliedZero = new Set(appliedZeroQuestionIds);
     for (const qEval of aiEvaluation.questionEvaluations) {
-      nextQuestionScores[qEval.questionId] = qEval.suggestedScore;
+      if (qEval.suggestedScore > 0) {
+        nextQuestionScores[qEval.questionId] = qEval.suggestedScore;
+        nextAppliedZero.delete(qEval.questionId);
+      } else {
+        delete nextQuestionScores[qEval.questionId];
+        nextAppliedZero.add(qEval.questionId);
+      }
     }
+    setAppliedZeroQuestionIds(nextAppliedZero);
 
     // 2. Map Rubric Scores (matching exact, question categories, normalized, and aliases)
     const nextRubricScores: Record<string, number> = { ...rubricScores };
 
-    // Build lookup of question categories to their AI scores
+    // Build lookup of question categories to their AI scores (only count addressed questions with score > 0)
     const categoryScores: Record<string, number[]> = {};
     for (const qEval of aiEvaluation.questionEvaluations) {
-      const q = questions.find((item) => item.id === qEval.questionId);
-      if (q && q.category) {
-        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      if (qEval.suggestedScore > 0) {
+        const q = questions.find((item) => item.id === qEval.questionId);
+        if (q && q.category) {
+          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+        }
       }
     }
 
     for (const dim of allDims) {
       const label = dim.label;
+      let resolvedScore: number | undefined;
 
       // Strategy A: Direct key match in aiEvaluation.rubricEvaluations
       if (aiEvaluation.rubricEvaluations && aiEvaluation.rubricEvaluations[label]) {
-        nextRubricScores[label] = aiEvaluation.rubricEvaluations[label].suggestedScore;
-        continue;
-      }
-
-      // Strategy B: Match based on question evaluations for this exact dimension category
-      if (categoryScores[label] && categoryScores[label].length > 0) {
+        resolvedScore = aiEvaluation.rubricEvaluations[label].suggestedScore;
+      } else if (categoryScores[label] && categoryScores[label].length > 0) {
+        // Strategy B: Match based on question evaluations for this exact dimension category
         const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
-        nextRubricScores[label] = Math.min(4, Math.max(1, avg));
-        continue;
-      }
-
-      // Strategy C: Normalized/Fuzzy match in rubricEvaluations
-      if (aiEvaluation.rubricEvaluations) {
+        resolvedScore = Math.min(4, Math.max(1, avg));
+      } else if (aiEvaluation.rubricEvaluations) {
+        // Strategy C: Normalized/Fuzzy match in rubricEvaluations
         const normalizedTarget = label.toLowerCase().replace(/[^a-z0-9]/g, '');
-        let matched = false;
         for (const [key, evalData] of Object.entries(aiEvaluation.rubricEvaluations)) {
           const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (
@@ -669,34 +707,35 @@ export function useRecalibrateSession({
             normalizedKey.includes(normalizedTarget) ||
             normalizedTarget.includes(normalizedKey)
           ) {
-            nextRubricScores[label] = evalData.suggestedScore;
-            matched = true;
+            resolvedScore = evalData.suggestedScore;
             break;
           }
         }
-        if (matched) continue;
 
         // Strategy D: Common aliases
-        if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
-          nextRubricScores[label] = aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore;
-          continue;
+        if (resolvedScore === undefined) {
+          if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
+            resolvedScore = aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore;
+          } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
+            const commsEval = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
+            resolvedScore = commsEval.suggestedScore;
+          } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
+            const peopleEval = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
+            resolvedScore = peopleEval.suggestedScore;
+          }
         }
-        if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
-          const commsEval = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
-          nextRubricScores[label] = commsEval.suggestedScore;
-          continue;
-        }
-        if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
-          const peopleEval = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
-          nextRubricScores[label] = peopleEval.suggestedScore;
-          continue;
-        }
+      }
+
+      if (typeof resolvedScore === 'number' && resolvedScore > 0) {
+        nextRubricScores[label] = resolvedScore;
+      } else {
+        delete nextRubricScores[label];
       }
     }
 
-    // 3. Populate Notes if empty
+    // 3. Populate Notes with AI summary
     let nextNotes = notes;
-    if ((!nextNotes || !nextNotes.trim()) && aiEvaluation.overallSummary) {
+    if (aiEvaluation.overallSummary) {
       nextNotes = aiEvaluation.overallSummary;
       setNotes(nextNotes);
     }
@@ -722,6 +761,16 @@ export function useRecalibrateSession({
   };
 
   const handleAcceptSingleQuestionScore = (questionId: string, score: number) => {
+    if (score <= 0) {
+      // Clear score for this question so nothing is selected
+      const next = { ...questionScores };
+      delete next[questionId];
+      setQuestionScores(next);
+      setAppliedZeroQuestionIds((prev) => new Set(prev).add(questionId));
+      void patchSession({ questionScores: next });
+      toast.info('No score selected (question not addressed in transcript).');
+      return;
+    }
     scoreQuestion(questionId, score);
     toast.success(`Applied AI score (${score}) to question.`);
   };
@@ -729,7 +778,7 @@ export function useRecalibrateSession({
   return {
     loading, generating, submitting, error,
     session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores,
+    questionScores, rubricScores, appliedZeroQuestionIds,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,

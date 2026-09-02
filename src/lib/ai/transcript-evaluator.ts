@@ -5,7 +5,7 @@ import { rubricDimensionsWithBands, ORG_TIER_LABEL, getOrgTier } from './org-rub
 
 export const QuestionEvaluationSchema = z.object({
   questionId: z.string(),
-  suggestedScore: z.coerce.number().int().min(1).max(4).catch(1), // 1: Does Not Meet, 2: Approaching, 3: Meets, 4: Exceeds
+  suggestedScore: z.coerce.number().int().min(0).max(4).catch(0), // 0: Not addressed/unasked in transcript, 1: Does Not Meet, 2: Approaching, 3: Meets, 4: Exceeds
   candidateAnswerSummary: z.string().catch('No answer recorded in transcript.'),
   verbatimQuote: z.string().nullable().optional().default(null),
   reasoning: z.string().catch(''),
@@ -15,7 +15,7 @@ export const QuestionEvaluationSchema = z.object({
 export type QuestionEvaluation = z.infer<typeof QuestionEvaluationSchema>;
 
 export const RubricDimensionEvaluationSchema = z.object({
-  suggestedScore: z.coerce.number().int().min(1).max(4).catch(1),
+  suggestedScore: z.coerce.number().int().min(0).max(4).catch(0),
   reasoning: z.string().catch(''),
 });
 export type RubricDimensionEvaluation = z.infer<typeof RubricDimensionEvaluationSchema>;
@@ -37,13 +37,72 @@ export interface EvaluateTranscriptInput {
   signal?: AbortSignal;
 }
 
+/**
+ * Detects whether a transcript is empty, blank, or contains only no-speech / silence markers.
+ */
+export function isTranscriptEmptyOrNoSpeech(text: string | null | undefined): boolean {
+  if (!text) return true;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return true;
+
+  const lower = trimmed.toLowerCase();
+  // Strip timestamps like [00:00], [00:01:23], etc. and non-alphanumeric chars
+  const stripped = lower.replace(/\[\d{1,2}(?::\d{2})?(?::\d{2})?\]/g, '').replace(/[^a-z0-9]/g, '');
+  if (stripped.length === 0) return true;
+
+  const noSpeechIndicators = [
+    'nospeechdetected',
+    'nospeech',
+    'silence',
+    'inaudible',
+    'backgroundnoise',
+    'nounderstandablespeech',
+    'nomicrophoneinput',
+  ];
+  return noSpeechIndicators.some((ind) => stripped === ind || stripped.includes(ind));
+}
+
 export async function evaluateTranscriptWithAi(input: EvaluateTranscriptInput): Promise<TranscriptEvaluation & { evaluatedAt: string }> {
   const { transcriptText, questionSet, spec, candidateName, roleTitle, signal } = input;
-  const provider = getAiProvider();
 
   const qList = Array.isArray(questionSet)
     ? questionSet
     : (questionSet?.questions && Array.isArray(questionSet.questions) ? questionSet.questions : []);
+
+  const roleGrade = spec?.roleGrade || 'se';
+  const orgTier = getOrgTier(roleGrade);
+  const dims = rubricDimensionsWithBands(roleGrade, spec?.techStacks);
+  const requiredDimensionLabels = dims.map((d) => d.label);
+
+  // 1. Fast path: If transcript is empty or no speech was recorded (e.g. short/silent test audio),
+  // immediately return deterministic 0-score evaluation without risking LLM hallucinations.
+  if (isTranscriptEmptyOrNoSpeech(transcriptText)) {
+    const emptyRubric: Record<string, RubricDimensionEvaluation> = {};
+    for (const d of dims) {
+      emptyRubric[d.label] = {
+        suggestedScore: 0,
+        reasoning: 'No audible speech or dialogue detected in the recording to assess this dimension.',
+      };
+    }
+
+    return {
+      overallSummary: 'No audible speech or interview dialogue was detected in the audio recording.',
+      questionEvaluations: qList.map((q: any) => ({
+        questionId: q.id,
+        suggestedScore: 0,
+        candidateAnswerSummary: 'Question was not asked/addressed in this transcript.',
+        verbatimQuote: null,
+        reasoning: 'The audio recording was empty or contained no intelligible speech to evaluate.',
+        strengths: [],
+        gaps: ['Question was not asked or addressed in the audio recording.'],
+      })),
+      rubricEvaluations: emptyRubric,
+      confidence: 'low',
+      evaluatedAt: new Date().toISOString(),
+    };
+  }
+
+  const provider = getAiProvider();
 
   const questionsFormatted = qList.map((q: any, idx: number) => {
     const rubricList = Array.isArray(q.rubric) ? q.rubric : [];
@@ -56,18 +115,13 @@ export async function evaluateTranscriptWithAi(input: EvaluateTranscriptInput): 
 Question #${idx + 1} (ID: ${q.id})
 Category: ${q.category || 'General'}
 Difficulty: ${q.difficulty || 'medium'}
-Max Marks: ${q.maxMarks || 5}
+Max Marks: ${q.maxMarks || 4}
 Prompt: ${q.question || ''}
 Model Answer Guidance: ${q.modelAnswer || 'N/A'}
-Rubric Bands:
-${rubricText || '  - Band 1: Does Not Meet\n  - Band 2: Meets\n  - Band 3: Exceeds'}
+Rubric Bands (1-4 scale):
+${rubricText || '  - Band 1: Does Not Meet\n  - Band 2: Partially Meets\n  - Band 3: Meets Expectation\n  - Band 4: Exceeds Expectation'}
 `;
   }).join('\n---\n');
-
-  const roleGrade = spec?.roleGrade || 'se';
-  const orgTier = getOrgTier(roleGrade);
-  const dims = rubricDimensionsWithBands(roleGrade, spec?.techStacks);
-  const requiredDimensionLabels = dims.map((d) => d.label);
 
   const rubricContext = `
 Organization Calibration Level: ${ORG_TIER_LABEL[orgTier]} (${roleGrade.toUpperCase()})
@@ -82,20 +136,30 @@ ${dims.map((d) => `
 `;
 
   const systemPrompt = `You are an expert technical interview evaluator and calibration auditor for a senior technical hiring panel.
-Your goal is to parse a raw Microsoft Teams interview transcript, locate where each interview question was asked and answered, evaluate the candidate's technical response objectively against the question's rubric bands, and assign a 1-4 score.
+Your goal is to parse a raw Microsoft Teams interview transcript, locate where each interview question was asked and answered, evaluate the candidate's technical response objectively against the question's rubric bands, and assign a 1-4 score (or 0 if not asked/referenced).
 
-Grading Scale (Org 1-4 standard):
+Grading Scale:
+0 = Not Addressed / Not Referenced (The question or rubric dimension was skipped, unasked, not reached, or not demonstrated in the transcript)
 1 = Does Not Meet Expectation (Significant conceptual gaps, incorrect implementation, unable to solve or explain)
 2 = Approaching Expectation (Basic grasp, partial solution, needed heavy interviewer coaching, missed edge cases)
 3 = Meets Expectation (Solid, accurate solution, explains trade-offs, answers clearly, meets senior bar)
 4 = Exceeds Expectation (Mastery, discusses architectural nuance, proactive optimizations, flawless communication)
 
+CRITICAL ZERO-SCORE RULE:
+If a question was not asked, not answered, not reached, or not discussed in the transcript:
+- You MUST assign suggestedScore: 0.
+- You MUST NEVER assign 1, 2, 3, or 4 to an unasked question.
+- 0 is the ONLY valid score for any question not answered in the transcript.
+Similarly, for any rubric dimension where the candidate did not demonstrate or discuss relevant skills in the transcript:
+- You MUST assign suggestedScore: 0 with reasoning "No transcript evidence or discussion for this dimension."
+- You MUST NEVER assign 1, 2, 3, or 4 without actual evidence in the transcript.
+
 Evaluation Instructions:
 1. Candidate Attribution: Identify statements made by the candidate (${candidateName}) vs the interviewer/panelist.
-2. Question Matching: Match transcript segments to each of the ${questionSet.questions.length} questions. If a question was skipped or not reached in the interview, assign score 1 with candidateAnswerSummary "Question was not asked/addressed in this transcript."
-3. Evidence & Verbatim Quotes: Extract genuine, concise verbatim quotes or direct paraphrases from the transcript representing what the candidate actually stated.
-4. Rubric & Scores: Map the candidate's actual answer to the closest 1-4 score. Be fair, objective, and evidence-based.
-5. Overall Rubric Grid: In rubricEvaluations, provide a 1-4 score and reasoning for EACH dimension. The keys of rubricEvaluations MUST EXACTLY MATCH these dimension labels: ${requiredDimensionLabels.map((l) => `"${l}"`).join(', ')}.
+2. Question Matching: Match transcript segments to each of the ${qList.length} questions. If a question was skipped, unasked, not reached, or not referenced in this transcript, assign suggestedScore 0 with candidateAnswerSummary "Question was not asked/addressed in this transcript.", reasoning "The interview transcript did not reach or reference this question.", and verbatimQuote null.
+3. Evidence & Verbatim Quotes: For addressed questions, extract genuine, concise verbatim quotes or direct paraphrases from the transcript representing what the candidate actually stated.
+4. Rubric & Scores: For questions answered by the candidate, map their response to the closest 1-4 score based on rubric bands. Never assign 1-4 to a question that was not asked or referenced in the transcript—always assign suggestedScore 0.
+5. Overall Rubric Grid: In rubricEvaluations, provide a score (0-4) and reasoning for EACH dimension. If there is no evidence or discussion in the transcript to assess a dimension, you MUST assign suggestedScore: 0 with reasoning "No transcript evidence or discussion for this dimension." The keys of rubricEvaluations MUST EXACTLY MATCH these dimension labels: ${requiredDimensionLabels.map((l) => `"${l}"`).join(', ')}.
 
 Respond with JSON only, conforming strictly to the requested schema.`;
 
@@ -122,8 +186,90 @@ Generate the complete JSON evaluation.`;
     signal,
   });
 
+  const notAskedKeywords = [
+    'not asked',
+    'not addressed',
+    'not reached',
+    'not referenced',
+    'not discussed',
+    'did not reach',
+    'did not address',
+    'did not ask',
+    'no answer recorded',
+    'was not covered',
+    'unasked',
+    'no speech detected',
+    'no audio recorded',
+    'no evidence',
+    'not demonstrated',
+    'not observed',
+    'insufficient evidence',
+  ];
+
+  const rawEvaluations = result.data.questionEvaluations || [];
+  const evaluatedMap = new Map<string, QuestionEvaluation>();
+
+  for (const qe of rawEvaluations) {
+    const summaryLower = (qe.candidateAnswerSummary || '').toLowerCase();
+    const reasoningLower = (qe.reasoning || '').toLowerCase();
+    const isUnasked = notAskedKeywords.some((kw) => summaryLower.includes(kw) || reasoningLower.includes(kw));
+
+    if (isUnasked) {
+      evaluatedMap.set(qe.questionId, {
+        ...qe,
+        suggestedScore: 0,
+        verbatimQuote: null,
+      });
+    } else {
+      evaluatedMap.set(qe.questionId, qe);
+    }
+  }
+
+  // Ensure every question in qList is present; missing ones default to 0
+  const finalQuestionEvaluations = qList.map((q: any) => {
+    const existing = evaluatedMap.get(q.id);
+    if (existing) return existing;
+    return {
+      questionId: q.id,
+      suggestedScore: 0,
+      candidateAnswerSummary: 'Question was not asked/addressed in this transcript.',
+      verbatimQuote: null,
+      reasoning: 'The interview transcript did not reach or reference this question.',
+      strengths: [],
+      gaps: ['Question was not asked or addressed in the transcript.'],
+    };
+  });
+
+  // Post-process rubric evaluations
+  const rawRubric = result.data.rubricEvaluations || {};
+  const finalRubricEvaluations: Record<string, RubricDimensionEvaluation> = {};
+
+  for (const d of dims) {
+    const rEval = rawRubric[d.label];
+    if (!rEval) {
+      finalRubricEvaluations[d.label] = {
+        suggestedScore: 0,
+        reasoning: 'No transcript evidence or discussion for this dimension.',
+      };
+      continue;
+    }
+
+    const rReasonLower = (rEval.reasoning || '').toLowerCase();
+    const isUnaddressed = notAskedKeywords.some((kw) => rReasonLower.includes(kw));
+    if (isUnaddressed) {
+      finalRubricEvaluations[d.label] = {
+        suggestedScore: 0,
+        reasoning: rEval.reasoning || 'No transcript evidence or discussion for this dimension.',
+      };
+    } else {
+      finalRubricEvaluations[d.label] = rEval;
+    }
+  }
+
   return {
     ...result.data,
+    questionEvaluations: finalQuestionEvaluations,
+    rubricEvaluations: finalRubricEvaluations,
     evaluatedAt: new Date().toISOString(),
   };
 }

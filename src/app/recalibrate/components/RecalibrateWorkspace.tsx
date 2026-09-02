@@ -11,7 +11,7 @@ import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
-import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
+import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE, SCORE_COLORS, ORG_SCORE_LABELS } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
@@ -20,6 +20,63 @@ import TranscriptPanel from './TranscriptPanel';
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
+
+interface NormalizedQuestionRubricBand {
+  score: number;
+  description: string;
+}
+
+function normalizeQuestionRubric(rubric: Array<{ band: string; description: string; exampleSignals?: string[] }>): NormalizedQuestionRubricBand[] {
+  if (!Array.isArray(rubric) || rubric.length === 0) {
+    return [
+      { score: 1, description: 'Does not meet expectations; unable to solve or explain core concepts.' },
+      { score: 2, description: 'Partially meets expectations; basic grasp, partial solution, needed interviewer coaching.' },
+      { score: 3, description: 'Meets expectations; solid, accurate solution, explains trade-offs clearly.' },
+      { score: 4, description: 'Exceeds expectations; deep mastery, proactive architectural insight and optimizations.' },
+    ];
+  }
+
+  // If already 4 bands:
+  if (rubric.length === 4) {
+    return rubric.map((b, i) => ({
+      score: i + 1,
+      description: b.description || '',
+    }));
+  }
+
+  // If legacy 3 bands (e.g. 0-1, 2-3, 4-5):
+  if (rubric.length === 3) {
+    return [
+      {
+        score: 1,
+        description: rubric[0]?.description || 'Does not meet expectations; unable to solve or explain.',
+      },
+      {
+        score: 2,
+        description: rubric[1]?.description ? `Basic grasp: ${rubric[1].description}` : 'Partially meets; basic solution with coaching.',
+      },
+      {
+        score: 3,
+        description: rubric[1]?.description ? `Competent execution: ${rubric[1].description}` : 'Meets expectations; solid, accurate solution.',
+      },
+      {
+        score: 4,
+        description: rubric[2]?.description || 'Exceeds expectations; deep mastery and optimizations.',
+      },
+    ];
+  }
+
+  // Any other count: ensure exactly 4 items
+  const result: NormalizedQuestionRubricBand[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const item = rubric[i - 1] || rubric[rubric.length - 1];
+    result.push({
+      score: i,
+      description: item?.description || ORG_SCORE_LABELS[i] || '',
+    });
+  }
+  return result;
 }
 
 export default function RecalibrateWorkspace({
@@ -41,7 +98,7 @@ export default function RecalibrateWorkspace({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    questionScores, rubricScores, appliedZeroQuestionIds, isRunning, elapsedSeconds, elapsedLabel,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
@@ -60,9 +117,11 @@ export default function RecalibrateWorkspace({
 
     const categoryScores: Record<string, number[]> = {};
     for (const qEval of aiEvaluation.questionEvaluations || []) {
-      const q = questions.find((item) => item.id === qEval.questionId);
-      if (q && q.category) {
-        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      if (qEval.suggestedScore > 0) {
+        const q = questions.find((item) => item.id === qEval.questionId);
+        if (q && q.category) {
+          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+        }
       }
     }
 
@@ -100,14 +159,23 @@ export default function RecalibrateWorkspace({
             score: aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore,
             reasoning: aiEvaluation.rubricEvaluations['Problem Solving'].reasoning,
           };
+          continue;
         } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
           const comms = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
           result[label] = { score: comms.suggestedScore, reasoning: comms.reasoning };
+          continue;
         } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
           const people = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
           result[label] = { score: people.suggestedScore, reasoning: people.reasoning };
+          continue;
         }
       }
+
+      // 5. Default to 0 for unaddressed or unevidenced dimension
+      result[label] = {
+        score: 0,
+        reasoning: 'No transcript evidence or discussion for this dimension.',
+      };
     }
     return result;
   }, [aiEvaluation, questions, allDims]);
@@ -396,7 +464,11 @@ export default function RecalibrateWorkspace({
               {questions.map((q, i) => {
                 const dStyle = DIFFICULTY_STYLE[q.difficulty];
                 const qEval = aiEvaluation?.questionEvaluations?.find((e: QuestionEvaluation) => e.questionId === q.id);
-                const isAiScoreApplied = qEval && questionScores[q.id] === qEval.suggestedScore;
+                const isAiScoreApplied = qEval && (
+                  qEval.suggestedScore > 0
+                    ? questionScores[q.id] === qEval.suggestedScore
+                    : (questionScores[q.id] === undefined && (appliedZeroQuestionIds?.has(q.id) ?? false))
+                );
                 return (
                   <div key={q.id} className="glass-card" style={{ padding: '1.1rem', border: '1px solid var(--border-glass)' }}>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem', alignItems: 'center' }}>
@@ -417,7 +489,9 @@ export default function RecalibrateWorkspace({
                             className="badge"
                             style={{
                               fontSize: '0.68rem', fontWeight: 700,
-                              background: 'rgba(124, 58, 237, 0.15)', color: '#c084fc', border: '1px solid rgba(124, 58, 237, 0.3)',
+                              background: qEval.suggestedScore === 0 ? 'rgba(156, 163, 175, 0.12)' : 'rgba(124, 58, 237, 0.15)',
+                              color: qEval.suggestedScore === 0 ? 'var(--text-muted)' : '#c084fc',
+                              border: qEval.suggestedScore === 0 ? '1px solid rgba(156, 163, 175, 0.25)' : '1px solid rgba(124, 58, 237, 0.3)',
                               display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                             }}
                           >
@@ -515,14 +589,36 @@ export default function RecalibrateWorkspace({
                       </details>
                     )}
                     <details style={{ marginBottom: '0.7rem' }}>
-                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model rubric ({q.rubric.length} bands, out of {q.maxMarks})</summary>
-                      <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {q.rubric.map((band, bi) => (
-                          <div key={bi} style={{ fontSize: '0.76rem', display: 'flex', gap: '0.5rem' }}>
-                            <span style={{ fontWeight: 700, minWidth: '3.5rem' }}>{band.band}</span>
-                            <span className="text-muted">{band.description}</span>
-                          </div>
-                        ))}
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                        Model rubric (4 bands, 1-4 scale)
+                      </summary>
+                      <div style={{ marginTop: '0.45rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {normalizeQuestionRubric(q.rubric).map((bandItem) => {
+                          const isSelected = questionScores[q.id] === bandItem.score;
+                          const scoreColor = SCORE_COLORS[bandItem.score] || '#a855f7';
+                          return (
+                            <div
+                              key={bandItem.score}
+                              style={{
+                                fontSize: '0.76rem',
+                                display: 'flex',
+                                gap: '0.45rem',
+                                alignItems: 'baseline',
+                                padding: isSelected ? '0.25rem 0.5rem' : '0.15rem 0.2rem',
+                                borderRadius: isSelected ? '6px' : undefined,
+                                background: isSelected ? `${scoreColor}14` : undefined,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: scoreColor, minWidth: '1.4rem', flexShrink: 0 }}>
+                                {bandItem.score} -
+                              </span>
+                              <span style={{ color: isSelected ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: isSelected ? 600 : 400, lineHeight: 1.45 }}>
+                                {bandItem.description}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </details>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -696,11 +792,36 @@ export default function RecalibrateWorkspace({
               <SectionHeader
                 icon={<StickyNote size={14} />}
                 title="Panel Notes"
-                right={<span className="text-xs text-muted">Auto-saves</span>}
+                right={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {aiEvaluation?.overallSummary && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={handleApplyAiSummaryToNotes}
+                        style={{
+                          fontSize: '0.72rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          color: '#c084fc',
+                          padding: '0.15rem 0.5rem',
+                          border: '1px solid rgba(168, 85, 247, 0.25)',
+                          borderRadius: '6px',
+                        }}
+                        title="Copy AI assessment summary to notes"
+                      >
+                        <Sparkles size={11} />
+                        <span>Use AI Summary</span>
+                      </button>
+                    )}
+                    <span className="text-xs text-muted">Auto-saves</span>
+                  </div>
+                }
               />
               <textarea
                 className="form-input"
-                rows={3}
+                rows={4}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={handleNotesBlur}

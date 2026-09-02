@@ -8,7 +8,7 @@ import {
   resolveOnlineMeetingId,
 } from '@/lib/graph-transcript';
 import { analyseTranscript, parseDialogueTurns } from '@/lib/transcript';
-import { transcribeAudioWithAi, evaluateTranscriptWithAi } from '@/lib/ai/transcript-evaluator';
+import { transcribeAudioWithAi, evaluateTranscriptWithAi, isTranscriptEmptyOrNoSpeech } from '@/lib/ai/transcript-evaluator';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,9 +107,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
       }
 
-      // Fetch existing session and previous transcript so audio takes are cumulative
       const recalSession = await db.getOrCreateRecalibrateSession(id);
-      const previousTranscript = recalSession.transcriptText || '';
+      const isAppend = Boolean(body.append);
+      const previousTranscript = isAppend ? (recalSession.transcriptText || '') : '';
 
       let combinedTranscript = '';
       for (const audioItem of audios) {
@@ -118,10 +118,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           mimeType: audioItem.mimeType,
           candidateName: interview.candidateName,
           roleTitle: interview.role,
-          existingTranscriptText: combinedTranscript || previousTranscript || null,
+          existingTranscriptText: combinedTranscript || (isAppend ? previousTranscript : null),
         });
 
-        if (transResult.transcriptText && !transResult.transcriptText.toLowerCase().includes('no speech detected')) {
+        if (transResult.transcriptText && !isTranscriptEmptyOrNoSpeech(transResult.transcriptText)) {
           if (combinedTranscript) {
             combinedTranscript += '\n\n' + transResult.transcriptText.trim();
           } else {
@@ -130,8 +130,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
-      // Build cumulative transcript combining previous takes and new take
-      const fullTranscript = previousTranscript
+      // Build transcript for this session (or append if explicitly requested)
+      const fullTranscript = isAppend && previousTranscript
         ? (combinedTranscript ? `${previousTranscript}\n\n${combinedTranscript}` : previousTranscript)
         : combinedTranscript;
 
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const questionsToUse = run?.questions || body.questionSet || null;
       const specToUse = run?.spec || body.spec || null;
 
-      if (questionsToUse && fullTranscript.trim()) {
+      if (questionsToUse) {
         try {
           evaluation = await evaluateTranscriptWithAi({
             transcriptText: fullTranscript,
@@ -164,17 +164,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           evaluationError = evalErr?.message || String(evalErr);
         }
       } else {
-        if (!questionsToUse) {
-          console.warn('AI evaluation skipped: No question set found for interview', id);
-          evaluationError = 'No question set found for this interview. Please generate questions first.';
-        } else if (!fullTranscript.trim()) {
-          console.warn('AI evaluation skipped: Empty transcript for interview', id);
-          evaluationError = 'No audible speech was detected in the audio recording.';
-        }
+        console.warn('AI evaluation skipped: No question set found for interview', id);
+        evaluationError = 'No question set found for this interview. Please generate questions first.';
       }
 
-      // Preserve previous evaluation if the new evaluation attempt failed or returned null
-      const finalEvaluation = evaluation || (recalSession.aiEvaluation as any) || null;
+      // Use the newly computed evaluation directly (do not retain obsolete scores from previous takes)
+      const finalEvaluation = evaluation || null;
 
       const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
       const updatedSession = await db.updateRecalibrateSession(id, {
