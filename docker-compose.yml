@@ -54,7 +54,7 @@ services:
       # .env (Neon) rather than the local db service.
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     healthcheck:
       # HEAD /api/health answers without touching the database and is not rate limited.
       test:
