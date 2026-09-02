@@ -1,5 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
 import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as schema from './schema';
 import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
@@ -193,10 +195,18 @@ export interface PanelistInterview {
 }
 
 
-// 1. Initialize Drizzle Neon HTTP Serverless client
+// 1. Initialize the Drizzle client.
+// Neon talks over HTTP; a plain Postgres server (the docker-compose one used for local
+// development) needs the node-postgres driver, so pick one from the connection string.
 const connectionString = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
-const sql = neon(connectionString);
-export const dbClient = drizzle(sql, { schema });
+const usesNeon = connectionString.toLowerCase().includes('.neon.tech');
+
+const neonClient = () => drizzle(neon(connectionString), { schema });
+type DbClient = ReturnType<typeof neonClient>;
+
+export const dbClient: DbClient = usesNeon
+  ? neonClient()
+  : (drizzlePg(new Pool({ connectionString }), { schema }) as unknown as DbClient);
 
 // Helper to clean up default mock panelists and ensure database starts clean
 async function ensureSeeded() {

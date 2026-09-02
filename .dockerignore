@@ -36,3 +36,6 @@ evals
 skills-lock.json
 sessions.json
 db.json
+# Local compose stack (not part of the image build context)
+docker-compose.yml
+docker
