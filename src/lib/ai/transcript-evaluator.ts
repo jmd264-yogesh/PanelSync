@@ -115,11 +115,11 @@ export async function evaluateTranscriptWithAi(input: EvaluateTranscriptInput): 
 Question #${idx + 1} (ID: ${q.id})
 Category: ${q.category || 'General'}
 Difficulty: ${q.difficulty || 'medium'}
-Max Marks: ${q.maxMarks || 5}
+Max Marks: ${q.maxMarks || 4}
 Prompt: ${q.question || ''}
 Model Answer Guidance: ${q.modelAnswer || 'N/A'}
-Rubric Bands:
-${rubricText || '  - Band 1: Does Not Meet\n  - Band 2: Meets\n  - Band 3: Exceeds'}
+Rubric Bands (1-4 scale):
+${rubricText || '  - Band 1: Does Not Meet\n  - Band 2: Partially Meets\n  - Band 3: Meets Expectation\n  - Band 4: Exceeds Expectation'}
 `;
   }).join('\n---\n');
 

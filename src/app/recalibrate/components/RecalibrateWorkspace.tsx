@@ -11,7 +11,7 @@ import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
-import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
+import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE, SCORE_COLORS, ORG_SCORE_LABELS } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
@@ -20,6 +20,63 @@ import TranscriptPanel from './TranscriptPanel';
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
+
+interface NormalizedQuestionRubricBand {
+  score: number;
+  description: string;
+}
+
+function normalizeQuestionRubric(rubric: Array<{ band: string; description: string; exampleSignals?: string[] }>): NormalizedQuestionRubricBand[] {
+  if (!Array.isArray(rubric) || rubric.length === 0) {
+    return [
+      { score: 1, description: 'Does not meet expectations; unable to solve or explain core concepts.' },
+      { score: 2, description: 'Partially meets expectations; basic grasp, partial solution, needed interviewer coaching.' },
+      { score: 3, description: 'Meets expectations; solid, accurate solution, explains trade-offs clearly.' },
+      { score: 4, description: 'Exceeds expectations; deep mastery, proactive architectural insight and optimizations.' },
+    ];
+  }
+
+  // If already 4 bands:
+  if (rubric.length === 4) {
+    return rubric.map((b, i) => ({
+      score: i + 1,
+      description: b.description || '',
+    }));
+  }
+
+  // If legacy 3 bands (e.g. 0-1, 2-3, 4-5):
+  if (rubric.length === 3) {
+    return [
+      {
+        score: 1,
+        description: rubric[0]?.description || 'Does not meet expectations; unable to solve or explain.',
+      },
+      {
+        score: 2,
+        description: rubric[1]?.description ? `Basic grasp: ${rubric[1].description}` : 'Partially meets; basic solution with coaching.',
+      },
+      {
+        score: 3,
+        description: rubric[1]?.description ? `Competent execution: ${rubric[1].description}` : 'Meets expectations; solid, accurate solution.',
+      },
+      {
+        score: 4,
+        description: rubric[2]?.description || 'Exceeds expectations; deep mastery and optimizations.',
+      },
+    ];
+  }
+
+  // Any other count: ensure exactly 4 items
+  const result: NormalizedQuestionRubricBand[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const item = rubric[i - 1] || rubric[rubric.length - 1];
+    result.push({
+      score: i,
+      description: item?.description || ORG_SCORE_LABELS[i] || '',
+    });
+  }
+  return result;
 }
 
 export default function RecalibrateWorkspace({
@@ -532,14 +589,36 @@ export default function RecalibrateWorkspace({
                       </details>
                     )}
                     <details style={{ marginBottom: '0.7rem' }}>
-                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model rubric ({q.rubric.length} bands, out of {q.maxMarks})</summary>
-                      <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {q.rubric.map((band, bi) => (
-                          <div key={bi} style={{ fontSize: '0.76rem', display: 'flex', gap: '0.5rem' }}>
-                            <span style={{ fontWeight: 700, minWidth: '3.5rem' }}>{band.band}</span>
-                            <span className="text-muted">{band.description}</span>
-                          </div>
-                        ))}
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                        Model rubric (4 bands, 1-4 scale)
+                      </summary>
+                      <div style={{ marginTop: '0.45rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {normalizeQuestionRubric(q.rubric).map((bandItem) => {
+                          const isSelected = questionScores[q.id] === bandItem.score;
+                          const scoreColor = SCORE_COLORS[bandItem.score] || '#a855f7';
+                          return (
+                            <div
+                              key={bandItem.score}
+                              style={{
+                                fontSize: '0.76rem',
+                                display: 'flex',
+                                gap: '0.45rem',
+                                alignItems: 'baseline',
+                                padding: isSelected ? '0.25rem 0.5rem' : '0.15rem 0.2rem',
+                                borderRadius: isSelected ? '6px' : undefined,
+                                background: isSelected ? `${scoreColor}14` : undefined,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: scoreColor, minWidth: '1.4rem', flexShrink: 0 }}>
+                                {bandItem.score} -
+                              </span>
+                              <span style={{ color: isSelected ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: isSelected ? 600 : 400, lineHeight: 1.45 }}>
+                                {bandItem.description}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </details>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
