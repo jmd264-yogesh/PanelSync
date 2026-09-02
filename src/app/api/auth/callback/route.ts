@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setSession } from '@/lib/session';
+import { getAppUrl } from '@/lib/app-url';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  // Redirects must use the public origin: behind the proxy request.url resolves to
-  // the container bound address (0.0.0.0:3000), not the browser-facing host.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const baseUrl = getAppUrl(request);
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
@@ -24,7 +23,7 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID || 'common';
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/callback`;
+  const redirectUri = `${getAppUrl(request)}/api/auth/callback`;
 
   if (!clientId || !clientSecret) {
     console.error('Azure client configuration missing.');

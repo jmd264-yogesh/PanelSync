@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "@/lib/schema";
 import { getInterviewInfo } from "@/lib/interview-role";
 import { advanceStage } from "@/lib/lateral-pipeline";
+import { getAppUrl } from '@/lib/app-url';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
       ? role
       : `${interviewType} Interview - ${collegeName}`;
     const createdInterviews = [];
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const appUrl = getAppUrl(request);
 
     for (const p of targetPanelists) {
       const interviewStart = isLateral

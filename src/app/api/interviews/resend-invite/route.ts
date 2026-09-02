@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getValidAccessToken, getSession } from '@/lib/session';
 import { db } from '@/lib/db';
 import { graph } from '@/lib/graph';
+import { getAppUrl } from '@/lib/app-url';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Resend Microsoft Teams chat invitation message
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl(request);
     const availabilityLink = `${appUrl}/availability/${panel.token}`;
 
 

@@ -4,6 +4,7 @@ import { getAnyValidAccessToken, getSession } from '@/lib/session';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
 import { eq, and, lt, isNull } from 'drizzle-orm';
+import { getAppUrl } from '@/lib/app-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'No ended scheduled interviews found.' });
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl(request);
     const processed: { interviewId: string; panelEmail: string; status: string }[] = [];
 
     // Get Vishnupriya's token/session

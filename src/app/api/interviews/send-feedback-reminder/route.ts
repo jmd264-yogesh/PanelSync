@@ -4,6 +4,7 @@ import { db, dbClient } from '@/lib/db';
 import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
 import { eq } from 'drizzle-orm';
+import { getAppUrl } from '@/lib/app-url';
 
 /**
  * POST /api/interviews/send-feedback-reminder
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     const { token, email: senderEmail, userId: senderUserId } = tokenInfo;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl(request);
     const skipped: string[] = [];
     const sent: string[] = [];
 
