@@ -6,7 +6,6 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
-  ChevronDown,
   User,
   Users,
   Mic,
@@ -67,7 +66,6 @@ export default function TranscriptPanel({
   onApplyAiSummaryToNotes,
   questions = [],
 }: TranscriptPanelProps) {
-  const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'live' | 'upload' | 'teams'>('live');
   const [isLiveRecording, setIsLiveRecording] = useState(false);
   const [manualText, setManualText] = useState('');
@@ -99,8 +97,8 @@ export default function TranscriptPanel({
   const turns: TranscriptDialogueTurn[] = transcriptTurns && transcriptTurns.length > 0
     ? transcriptTurns
     : (transcriptText
-        ? transcriptText.split('\n').filter((l) => l.trim().length > 0).map((l): TranscriptDialogueTurn => ({ speaker: 'Dialogue', text: l }))
-        : []);
+      ? transcriptText.split('\n').filter((l) => l.trim().length > 0).map((l): TranscriptDialogueTurn => ({ speaker: 'Dialogue', text: l }))
+      : []);
 
   const handleManualUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,77 +155,126 @@ export default function TranscriptPanel({
   };
 
   return (
-    <div className="glass-card" style={{ padding: '1.15rem', border: '1px solid rgba(124, 58, 237, 0.25)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+    <div
+      className="glass-card"
+      style={{
+        padding: '1.4rem 1.25rem',
+        border: '1px solid rgba(124, 58, 237, 0.28)',
+        borderRadius: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.1rem',
+        minHeight: '420px',
+        overflowX: 'hidden',
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        transition: 'all 0.2s ease',
+      }}
+    >
       {/* Card Header */}
       <div
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
-        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          minWidth: 0,
+        }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <SectionHeader icon={<FileText size={14} />} title="Interview Audio & Transcript" />
-          {hasTranscript && (
-            <span className="badge badge-success" style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem', textTransform: 'none' }}>
-              {transcriptSource === 'live_recording'
-                ? 'Live Recorded'
-                : transcriptSource === 'audio_upload'
-                ? 'Audio File'
-                : transcriptSource === 'graph_api'
-                ? 'Teams Synced'
-                : 'Ready'}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          {isProcessingTranscript && <Loader2 size={13} className="animate-spin text-muted" />}
-          <ChevronDown
-            size={16}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+          <span
             style={{
-              transform: expanded ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.15s ease',
-              color: 'var(--text-muted)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
+              background: 'rgba(168, 85, 247, 0.15)',
+              color: '#a855f7',
+              flexShrink: 0,
             }}
-          />
+          >
+            <FileText size={15} />
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h4 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0, whiteSpace: 'nowrap' }}>
+              Interview Audio & Transcript
+            </h4>
+          </div>
         </div>
+        {isProcessingTranscript && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+            <Loader2 size={13} className="animate-spin text-muted" />
+          </div>
+        )}
       </div>
 
-      {expanded && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          {/* Action Tabs: Record Live / Upload / Teams */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.4rem', gap: '0.4rem', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0, maxWidth: '100%', flex: 1 }}>
+          {/* Action Tabs: Record / Upload / Teams aligned in 3 equal columns */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '0.35rem',
+              width: '100%',
+              boxSizing: 'border-box',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border-glass)',
+              borderRadius: '10px',
+              padding: '0.3rem',
+              minWidth: 0,
+            }}
+          >
             <button
               type="button"
               className={`btn btn-sm ${activeTab === 'live' ? 'btn-primary' : ''}`}
               onClick={() => setActiveTab('live')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem' }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.35rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.5rem 0.25rem',
+                borderRadius: '7px',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                width: '100%',
+              }}
             >
-              <Mic size={12} />
-              <span>Record Live</span>
+              <Mic size={13} style={{ flexShrink: 0 }} />
+              <span>Record</span>
               {isLiveRecording ? (
                 <span
                   style={{
-                    width: '7px',
-                    height: '7px',
+                    width: '6px',
+                    height: '6px',
                     borderRadius: '50%',
                     background: '#ef4444',
                     display: 'inline-block',
                     boxShadow: '0 0 6px rgba(239, 68, 68, 0.9)',
+                    flexShrink: 0,
                   }}
                 />
               ) : (capturedAudio && capturedAudio.totalCount > 0) ? (
                 <span
                   style={{
-                    background: 'var(--rc-brand, #7c3aed)',
+                    background: activeTab === 'live' ? 'rgba(255, 255, 255, 0.25)' : 'var(--rc-brand, #7c3aed)',
                     color: '#fff',
                     borderRadius: '999px',
-                    padding: '0.05rem 0.35rem',
+                    padding: '0.02rem 0.35rem',
                     fontSize: '0.62rem',
                     fontWeight: 700,
+                    flexShrink: 0,
                   }}
                 >
                   {capturedAudio.totalCount}
                 </span>
               ) : null}
             </button>
+
             <button
               type="button"
               className={`btn btn-sm ${activeTab === 'upload' ? 'btn-primary' : ''}`}
@@ -237,15 +284,23 @@ export default function TranscriptPanel({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.35rem',
-                fontSize: '0.74rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.5rem 0.25rem',
+                borderRadius: '7px',
                 opacity: isLiveRecording ? 0.45 : 1,
                 cursor: isLiveRecording ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                width: '100%',
               }}
             >
-              <Upload size={12} />
-              <span>Upload Audio / Text</span>
+              <Upload size={13} style={{ flexShrink: 0 }} />
+              <span>Upload</span>
             </button>
+
             <button
               type="button"
               className={`btn btn-sm ${activeTab === 'teams' ? 'btn-primary' : ''}`}
@@ -255,19 +310,26 @@ export default function TranscriptPanel({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.35rem',
-                fontSize: '0.74rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.5rem 0.25rem',
+                borderRadius: '7px',
                 opacity: isLiveRecording ? 0.45 : 1,
                 cursor: isLiveRecording ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                width: '100%',
               }}
             >
-              <RefreshCw size={12} />
-              <span>Teams Sync</span>
+              <RefreshCw size={13} style={{ flexShrink: 0 }} />
+              <span>Teams</span>
             </button>
           </div>
 
           {/* Tab 1: Live Record (kept mounted so recording state and clips never disappear on tab switch) */}
-          <div style={{ display: activeTab === 'live' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: activeTab === 'live' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem', flex: 1 }}>
             <LiveAudioRecorder
               candidateName={candidateName}
               roleTitle={roleTitle}
@@ -283,19 +345,54 @@ export default function TranscriptPanel({
           </div>
 
           {/* Tab 2: Upload Audio or Text File */}
-          <div style={{ display: activeTab === 'upload' ? 'flex' : 'none', flexDirection: 'column', gap: '0.65rem' }}>
-            <div>
-              <label className="text-xs text-muted" style={{ fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>
-                Upload Audio File (.mp3, .m4a, .webm, .wav) or Transcript (.txt, .vtt)
+          <div style={{ display: activeTab === 'upload' ? 'flex' : 'none', flexDirection: 'column', gap: '0.85rem' }}>
+            <div
+              style={{
+                border: '2px dashed var(--border-glass)',
+                borderRadius: '14px',
+                padding: '1.25rem 1rem',
+                textAlign: 'center',
+                background: 'rgba(255, 255, 255, 0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'rgba(124, 58, 237, 0.12)',
+                  color: 'var(--rc-brand, #7c3aed)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Upload size={18} />
+              </div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>Audio or Transcript File</div>
+              <div className="text-xs text-muted">Supports MP3, M4A, WAV, WebM, TXT, VTT</div>
+              <label
+                className="btn btn-sm btn-primary"
+                style={{
+                  cursor: isProcessingTranscript || isCompressing ? 'not-allowed' : 'pointer',
+                  marginTop: '0.35rem',
+                  fontSize: '0.76rem',
+                  padding: '0.4rem 0.9rem',
+                }}
+              >
+                Choose File
+                <input
+                  type="file"
+                  accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg,.aac,.txt,.vtt"
+                  onChange={handleFileUpload}
+                  disabled={isProcessingTranscript || isCompressing}
+                  style={{ display: 'none' }}
+                />
               </label>
-              <input
-                type="file"
-                accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg,.aac,.txt,.vtt"
-                className="form-input"
-                onChange={handleFileUpload}
-                disabled={isProcessingTranscript || isCompressing}
-                style={{ fontSize: '0.76rem', padding: '0.4rem' }}
-              />
               {isCompressing && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.72rem', color: '#c084fc' }}>
                   <Loader2 size={12} className="animate-spin" />
@@ -304,11 +401,11 @@ export default function TranscriptPanel({
               )}
             </div>
 
-            <form onSubmit={handleManualUploadSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
+            <form onSubmit={handleManualUploadSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
               <label className="text-xs text-muted" style={{ fontWeight: 600 }}>Or Paste Transcript Text Directly</label>
               <textarea
                 className="form-input"
-                rows={3}
+                rows={4}
                 placeholder="Paste interview notes or transcript text here..."
                 value={manualText}
                 onChange={(e) => setManualText(e.target.value)}
@@ -319,7 +416,7 @@ export default function TranscriptPanel({
                 type="submit"
                 className="btn btn-sm btn-primary"
                 disabled={!manualText.trim() || isProcessingTranscript}
-                style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.8rem' }}
               >
                 {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 <span>Evaluate Transcript</span>
@@ -328,18 +425,47 @@ export default function TranscriptPanel({
           </div>
 
           {/* Tab 3: Teams Sync */}
-          <div style={{ display: activeTab === 'teams' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem' }}>
-            <p className="text-xs text-muted" style={{ margin: 0, lineHeight: 1.5 }}>
-              Sync recorded meeting transcript directly from Microsoft Teams via Microsoft Graph API.
-            </p>
+          <div
+            style={{
+              display: activeTab === 'teams' ? 'flex' : 'none',
+              flexDirection: 'column',
+              gap: '0.85rem',
+              border: '1px solid var(--border-glass)',
+              borderRadius: '14px',
+              padding: '1.25rem 1rem',
+              background: 'rgba(255, 255, 255, 0.02)',
+              alignItems: 'center',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                background: 'rgba(59, 130, 246, 0.12)',
+                color: '#3b82f6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <RefreshCw size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>Microsoft Teams Sync</div>
+              <p className="text-xs text-muted" style={{ margin: '0.25rem 0 0', lineHeight: 1.5, maxWidth: '240px' }}>
+                Pull recorded meeting transcript directly via Microsoft Graph API.
+              </p>
+            </div>
             <button
               type="button"
-              className="btn btn-sm"
+              className="btn btn-sm btn-primary"
               onClick={handleTeamsSyncClick}
               disabled={isProcessingTranscript}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', alignSelf: 'flex-start' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.78rem' }}
             >
-              {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {isProcessingTranscript ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               <span>Fetch from Teams</span>
             </button>
 
@@ -350,6 +476,9 @@ export default function TranscriptPanel({
                   fontSize: '0.74rem', lineHeight: 1.5, borderRadius: '8px',
                   borderLeft: '3px solid var(--warning, #f59e0b)',
                   background: 'var(--warning-glow, rgba(245,158,11,0.08))',
+                  textAlign: 'left',
+                  width: '100%',
+                  boxSizing: 'border-box',
                 }}
               >
                 <AlertTriangle size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
@@ -437,7 +566,6 @@ export default function TranscriptPanel({
             </div>
           )} */}
         </div>
-      )}
     </div>
   );
 }
