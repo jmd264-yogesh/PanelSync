@@ -102,7 +102,7 @@ export interface QuestionEvaluation {
   questionId: string;
   suggestedScore: number;
   candidateAnswerSummary: string;
-  verbatimQuote: string | null;
+  verbatimQuote?: string | null;
   reasoning: string;
   strengths: string[];
   gaps: string[];
@@ -119,6 +119,19 @@ export interface AiTranscriptEvaluation {
   rubricEvaluations: Record<string, RubricDimensionEvaluation>;
   confidence: 'high' | 'medium' | 'low';
   evaluatedAt: string;
+}
+
+export interface InterviewAudio {
+  id: string;
+  interviewId: string;
+  s3Key: string;
+  s3Url: string;
+  fileName: string;
+  mimeType: string | null;
+  duration: string | null;
+  transcriptText: string | null;
+  transcriptTurns: TranscriptDialogueTurn[] | null;
+  createdAt: string;
 }
 
 export interface RecalibrateSession {
@@ -223,7 +236,8 @@ async function ensureSeeded() {
 export const INITIAL_RECRUITERS = [
   'yogeshwarang@jmangroup.com',
   'jeffringoldwin@jmangroup.com',
-  'vishnuprriya@jmangroup.com'
+  'vishnuprriya@jmangroup.com',
+  'mohammedabrar@jmangroup.com'
 ];
 
 // 2. Database Helper Operations
@@ -1180,8 +1194,12 @@ export const db = {
         role: interview.role,
         hiringType: interview.hiringType,
         duration: interview.duration,
-        scheduledSlotStart: interview.scheduledSlotStart!.toISOString(),
-        scheduledSlotEnd: interview.scheduledSlotEnd!.toISOString(),
+        scheduledSlotStart: interview.scheduledSlotStart
+          ? interview.scheduledSlotStart.toISOString()
+          : (interview.startDate ? interview.startDate.toISOString() : new Date().toISOString()),
+        scheduledSlotEnd: interview.scheduledSlotEnd
+          ? interview.scheduledSlotEnd.toISOString()
+          : (interview.endDate ? interview.endDate.toISOString() : new Date().toISOString()),
         teamsMeetingUrl: interview.teamsMeetingUrl,
         candidateName: interview.candidateName,
         candidateEmail: interview.candidateEmail,
@@ -1768,6 +1786,70 @@ export const db = {
     const normalizedEmail = email.trim().toLowerCase();
     const all = await db.getInterviews();
     return all.filter((i) => i.candidateEmail.toLowerCase() === normalizedEmail);
+  },
+
+  // --- Interview Audio helpers ---
+  mapInterviewAudioRow: (row: typeof schema.interviewAudios.$inferSelect): InterviewAudio => ({
+    id: row.id,
+    interviewId: row.interviewId,
+    s3Key: row.s3Key,
+    s3Url: row.s3Url,
+    fileName: row.fileName,
+    mimeType: row.mimeType ?? null,
+    duration: row.duration ?? null,
+    transcriptText: row.transcriptText ?? null,
+    transcriptTurns: (row.transcriptTurns as TranscriptDialogueTurn[]) ?? null,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+  }),
+
+  createInterviewAudio: async (data: {
+    interviewId: string;
+    s3Key: string;
+    s3Url: string;
+    fileName: string;
+    mimeType?: string | null;
+    duration?: string | null;
+    transcriptText?: string | null;
+    transcriptTurns?: TranscriptDialogueTurn[] | null;
+  }): Promise<InterviewAudio> => {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await dbClient.insert(schema.interviewAudios).values({
+      id,
+      interviewId: data.interviewId,
+      s3Key: data.s3Key,
+      s3Url: data.s3Url,
+      fileName: data.fileName,
+      mimeType: data.mimeType ?? null,
+      duration: data.duration ?? null,
+      transcriptText: data.transcriptText ?? null,
+      transcriptTurns: data.transcriptTurns ?? null,
+      createdAt: now,
+    });
+    const [row] = await dbClient
+      .select()
+      .from(schema.interviewAudios)
+      .where(eq(schema.interviewAudios.id, id))
+      .limit(1);
+    return db.mapInterviewAudioRow(row);
+  },
+
+  getInterviewAudio: async (id: string): Promise<InterviewAudio | null> => {
+    const [row] = await dbClient
+      .select()
+      .from(schema.interviewAudios)
+      .where(eq(schema.interviewAudios.id, id))
+      .limit(1);
+    return row ? db.mapInterviewAudioRow(row) : null;
+  },
+
+  getInterviewAudiosByInterviewId: async (interviewId: string): Promise<InterviewAudio[]> => {
+    const rows = await dbClient
+      .select()
+      .from(schema.interviewAudios)
+      .where(eq(schema.interviewAudios.interviewId, interviewId))
+      .orderBy(desc(schema.interviewAudios.createdAt));
+    return rows.map(db.mapInterviewAudioRow);
   },
 
   // --- Recalibrate (live spec-driven scoring session) helpers ---

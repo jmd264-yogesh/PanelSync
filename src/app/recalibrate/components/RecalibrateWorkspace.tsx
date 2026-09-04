@@ -11,7 +11,7 @@ import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
 import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
-import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE } from '@/components/recalibrate/primitives';
+import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE, SCORE_COLORS, ORG_SCORE_LABELS } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
@@ -20,6 +20,63 @@ import TranscriptPanel from './TranscriptPanel';
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
+
+interface NormalizedQuestionRubricBand {
+  score: number;
+  description: string;
+}
+
+function normalizeQuestionRubric(rubric: Array<{ band: string; description: string; exampleSignals?: string[] }>): NormalizedQuestionRubricBand[] {
+  if (!Array.isArray(rubric) || rubric.length === 0) {
+    return [
+      { score: 1, description: 'Does not meet expectations; unable to solve or explain core concepts.' },
+      { score: 2, description: 'Partially meets expectations; basic grasp, partial solution, needed interviewer coaching.' },
+      { score: 3, description: 'Meets expectations; solid, accurate solution, explains trade-offs clearly.' },
+      { score: 4, description: 'Exceeds expectations; deep mastery, proactive architectural insight and optimizations.' },
+    ];
+  }
+
+  // If already 4 bands:
+  if (rubric.length === 4) {
+    return rubric.map((b, i) => ({
+      score: i + 1,
+      description: b.description || '',
+    }));
+  }
+
+  // If legacy 3 bands (e.g. 0-1, 2-3, 4-5):
+  if (rubric.length === 3) {
+    return [
+      {
+        score: 1,
+        description: rubric[0]?.description || 'Does not meet expectations; unable to solve or explain.',
+      },
+      {
+        score: 2,
+        description: rubric[1]?.description ? `Basic grasp: ${rubric[1].description}` : 'Partially meets; basic solution with coaching.',
+      },
+      {
+        score: 3,
+        description: rubric[1]?.description ? `Competent execution: ${rubric[1].description}` : 'Meets expectations; solid, accurate solution.',
+      },
+      {
+        score: 4,
+        description: rubric[2]?.description || 'Exceeds expectations; deep mastery and optimizations.',
+      },
+    ];
+  }
+
+  // Any other count: ensure exactly 4 items
+  const result: NormalizedQuestionRubricBand[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const item = rubric[i - 1] || rubric[rubric.length - 1];
+    result.push({
+      score: i,
+      description: item?.description || ORG_SCORE_LABELS[i] || '',
+    });
+  }
+  return result;
 }
 
 export default function RecalibrateWorkspace({
@@ -41,7 +98,7 @@ export default function RecalibrateWorkspace({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
-    questionScores, rubricScores, isRunning, elapsedSeconds, elapsedLabel,
+    questionScores, rubricScores, appliedZeroQuestionIds, isRunning, elapsedSeconds, elapsedLabel,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
@@ -60,9 +117,11 @@ export default function RecalibrateWorkspace({
 
     const categoryScores: Record<string, number[]> = {};
     for (const qEval of aiEvaluation.questionEvaluations || []) {
-      const q = questions.find((item) => item.id === qEval.questionId);
-      if (q && q.category) {
-        (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+      if (qEval.suggestedScore > 0) {
+        const q = questions.find((item) => item.id === qEval.questionId);
+        if (q && q.category) {
+          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
+        }
       }
     }
 
@@ -100,14 +159,23 @@ export default function RecalibrateWorkspace({
             score: aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore,
             reasoning: aiEvaluation.rubricEvaluations['Problem Solving'].reasoning,
           };
+          continue;
         } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
           const comms = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
           result[label] = { score: comms.suggestedScore, reasoning: comms.reasoning };
+          continue;
         } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
           const people = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
           result[label] = { score: people.suggestedScore, reasoning: people.reasoning };
+          continue;
         }
       }
+
+      // 5. Default to 0 for unaddressed or unevidenced dimension
+      result[label] = {
+        score: 0,
+        reasoning: 'No transcript evidence or discussion for this dimension.',
+      };
     }
     return result;
   }, [aiEvaluation, questions, allDims]);
@@ -169,16 +237,45 @@ export default function RecalibrateWorkspace({
           width: 100%;
         }
 
+        .rc-workspace-grid .rc-questions-col {
+          min-width: 0;
+        }
+
         .rc-workspace-grid .rc-rubric-col,
         .rc-workspace-grid .rc-interview-col {
           position: sticky;
           top: 1.5rem;
           max-height: calc(100vh - 3rem);
           overflow-y: auto;
+          overflow-x: hidden !important;
           display: flex;
           flex-direction: column;
           gap: 1rem;
           padding-bottom: 1rem;
+          min-width: 0;
+          scrollbar-width: thin;
+          scrollbar-color: #242c3d transparent;
+        }
+
+        .rc-workspace-grid .rc-rubric-col::-webkit-scrollbar,
+        .rc-workspace-grid .rc-interview-col::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .rc-workspace-grid .rc-rubric-col::-webkit-scrollbar-track,
+        .rc-workspace-grid .rc-interview-col::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .rc-workspace-grid .rc-rubric-col::-webkit-scrollbar-thumb,
+        .rc-workspace-grid .rc-interview-col::-webkit-scrollbar-thumb {
+          background: #242c3d;
+          border-radius: 999px;
+        }
+
+        .rc-workspace-grid .rc-rubric-col::-webkit-scrollbar-thumb:hover,
+        .rc-workspace-grid .rc-interview-col::-webkit-scrollbar-thumb:hover {
+          background: #364157;
         }
 
         @media (max-width: 1400px) {
@@ -396,7 +493,11 @@ export default function RecalibrateWorkspace({
               {questions.map((q, i) => {
                 const dStyle = DIFFICULTY_STYLE[q.difficulty];
                 const qEval = aiEvaluation?.questionEvaluations?.find((e: QuestionEvaluation) => e.questionId === q.id);
-                const isAiScoreApplied = qEval && questionScores[q.id] === qEval.suggestedScore;
+                const isAiScoreApplied = qEval && (
+                  qEval.suggestedScore > 0
+                    ? questionScores[q.id] === qEval.suggestedScore
+                    : (questionScores[q.id] === undefined && (appliedZeroQuestionIds?.has(q.id) ?? false))
+                );
                 return (
                   <div key={q.id} className="glass-card" style={{ padding: '1.1rem', border: '1px solid var(--border-glass)' }}>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem', alignItems: 'center' }}>
@@ -417,7 +518,9 @@ export default function RecalibrateWorkspace({
                             className="badge"
                             style={{
                               fontSize: '0.68rem', fontWeight: 700,
-                              background: 'rgba(124, 58, 237, 0.15)', color: '#c084fc', border: '1px solid rgba(124, 58, 237, 0.3)',
+                              background: qEval.suggestedScore === 0 ? 'rgba(156, 163, 175, 0.12)' : 'rgba(124, 58, 237, 0.15)',
+                              color: qEval.suggestedScore === 0 ? 'var(--text-muted)' : '#c084fc',
+                              border: qEval.suggestedScore === 0 ? '1px solid rgba(156, 163, 175, 0.25)' : '1px solid rgba(124, 58, 237, 0.3)',
                               display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                             }}
                           >
@@ -515,14 +618,36 @@ export default function RecalibrateWorkspace({
                       </details>
                     )}
                     <details style={{ marginBottom: '0.7rem' }}>
-                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>Model rubric ({q.rubric.length} bands, out of {q.maxMarks})</summary>
-                      <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {q.rubric.map((band, bi) => (
-                          <div key={bi} style={{ fontSize: '0.76rem', display: 'flex', gap: '0.5rem' }}>
-                            <span style={{ fontWeight: 700, minWidth: '3.5rem' }}>{band.band}</span>
-                            <span className="text-muted">{band.description}</span>
-                          </div>
-                        ))}
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                        Model rubric (4 bands, 1-4 scale)
+                      </summary>
+                      <div style={{ marginTop: '0.45rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {normalizeQuestionRubric(q.rubric).map((bandItem) => {
+                          const isSelected = questionScores[q.id] === bandItem.score;
+                          const scoreColor = SCORE_COLORS[bandItem.score] || '#a855f7';
+                          return (
+                            <div
+                              key={bandItem.score}
+                              style={{
+                                fontSize: '0.76rem',
+                                display: 'flex',
+                                gap: '0.45rem',
+                                alignItems: 'baseline',
+                                padding: isSelected ? '0.25rem 0.5rem' : '0.15rem 0.2rem',
+                                borderRadius: isSelected ? '6px' : undefined,
+                                background: isSelected ? `${scoreColor}14` : undefined,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: scoreColor, minWidth: '1.4rem', flexShrink: 0 }}>
+                                {bandItem.score} -
+                              </span>
+                              <span style={{ color: isSelected ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: isSelected ? 600 : 400, lineHeight: 1.45 }}>
+                                {bandItem.description}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </details>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -630,115 +755,140 @@ export default function RecalibrateWorkspace({
           {questions.length > 0 && (
             <>
               <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <SectionHeader icon={<Gauge size={14} />} title="Live Analysis" />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                <div>
-                  <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg question</div>
-                  <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg rubric</div>
-                  <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Rubric vs question gap</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: gap === null ? 'inherit' : gapIsDiscrepant ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)' }}>
-                  {gap !== null && (gap > 0 ? <TrendingUp size={15} /> : gap < 0 ? <TrendingDown size={15} /> : <Minus size={15} />)}
-                  {gap !== null ? (gap >= 0 ? '+' : '') + gap.toFixed(1) : '—'}
-                </div>
-              </div>
-              {gap !== null && (
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px',
-                  borderLeft: gapIsDiscrepant ? '3px solid var(--danger, #ef4444)' : '3px solid var(--success, #10b981)',
-                  background: gapIsDiscrepant ? 'var(--danger-glow, rgba(239,68,68,0.08))' : 'var(--success-glow, rgba(16,185,129,0.08))',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
-                    {gapIsDiscrepant ? <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} /> : <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />}
-                    <span>
-                      {gapIsDiscrepant
-                        ? `${Math.abs(gap).toFixed(1)} pt gap — review before finalizing.`
-                        : 'Scores consistent (gap under 1.0).'}
-                    </span>
+                <SectionHeader icon={<Gauge size={14} />} title="Live Analysis" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                  <div>
+                    <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg question</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
                   </div>
-                  {/* Always shown, regardless of whether the gap crosses the discrepancy
-                      threshold — even a small gap is worth seeing where it comes from. */}
-                  {dimensionGaps.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1.1rem' }}>
-                      <span className="text-muted" style={{ fontSize: '0.68rem' }}>By dimension (biggest disagreement first):</span>
-                      {dimensionGaps.map((d) => (
-                        <div key={d.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.7rem' }}>
-                          <span>{d.label}</span>
-                          <span style={{ fontFamily: 'monospace', color: Math.abs(d.gap) >= 1.0 ? 'var(--danger, #ef4444)' : 'var(--text-muted)', flexShrink: 0 }}>
-                            rubric {d.rubricScore} vs q&nbsp;avg {d.questionAvg.toFixed(1)} ({(d.gap >= 0 ? '+' : '') + d.gap.toFixed(1)})
-                          </span>
-                        </div>
-                      ))}
+                  <div>
+                    <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg rubric</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Rubric vs question gap</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: gap === null ? 'inherit' : gapIsDiscrepant ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)' }}>
+                    {gap !== null && (gap > 0 ? <TrendingUp size={15} /> : gap < 0 ? <TrendingDown size={15} /> : <Minus size={15} />)}
+                    {gap !== null ? (gap >= 0 ? '+' : '') + gap.toFixed(1) : '—'}
+                  </div>
+                </div>
+                {gap !== null && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px',
+                    borderLeft: gapIsDiscrepant ? '3px solid var(--danger, #ef4444)' : '3px solid var(--success, #10b981)',
+                    background: gapIsDiscrepant ? 'var(--danger-glow, rgba(239,68,68,0.08))' : 'var(--success-glow, rgba(16,185,129,0.08))',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
+                      {gapIsDiscrepant ? <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} /> : <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />}
+                      <span>
+                        {gapIsDiscrepant
+                          ? `${Math.abs(gap).toFixed(1)} pt gap — review before finalizing.`
+                          : 'Scores consistent (gap under 1.0).'}
+                      </span>
                     </div>
-                  ) : (
-                    <span className="text-muted" style={{ fontSize: '0.68rem', paddingLeft: '1.1rem' }}>
-                      No dimension has both a rubric score and a scored question in the same category yet — score at least one question per rubric category to see what’s driving this.
-                    </span>
-                  )}
-                </div>
-              )}
-              <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
-              {gap !== null && (scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
-                <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
-                  Based on partial scoring so far — this gap may shift as more questions/dimensions are scored.
-                </div>
-              )}
-            </div>
-
-            {/* notes */}
-            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <SectionHeader
-                icon={<StickyNote size={14} />}
-                title="Panel Notes"
-                right={<span className="text-xs text-muted">Auto-saves</span>}
-              />
-              <textarea
-                className="form-input"
-                rows={3}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                onBlur={handleNotesBlur}
-                placeholder="Overall recommendation, standout moments, red flags..."
-              />
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {session?.submittedAt ? (
-                <div className="badge badge-success" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600, textTransform: 'none', fontSize: '0.7rem' }}>
-                  <CheckCircle2 size={12} />
-                  <span>Submitted {new Date(session.submittedAt).toLocaleString()}</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  <Clock3 size={12} />
-                  <span>Not submitted — recruiters can't see this yet.</span>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <button className="btn btn-sm" onClick={handleDownloadCandidate} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <Download size={12} /> Candidate
-                </button>
-                <button className="btn btn-sm" onClick={handleDownloadPanelist} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <Download size={12} /> Panelist
-                </button>
+                    {/* Always shown, regardless of whether the gap crosses the discrepancy
+                      threshold — even a small gap is worth seeing where it comes from. */}
+                    {dimensionGaps.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1.1rem' }}>
+                        <span className="text-muted" style={{ fontSize: '0.68rem' }}>By dimension (biggest disagreement first):</span>
+                        {dimensionGaps.map((d) => (
+                          <div key={d.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.7rem' }}>
+                            <span>{d.label}</span>
+                            <span style={{ fontFamily: 'monospace', color: Math.abs(d.gap) >= 1.0 ? 'var(--danger, #ef4444)' : 'var(--text-muted)', flexShrink: 0 }}>
+                              rubric {d.rubricScore} vs q&nbsp;avg {d.questionAvg.toFixed(1)} ({(d.gap >= 0 ? '+' : '') + d.gap.toFixed(1)})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted" style={{ fontSize: '0.68rem', paddingLeft: '1.1rem' }}>
+                        No dimension has both a rubric score and a scored question in the same category yet — score at least one question per rubric category to see what’s driving this.
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
+                {gap !== null && (scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
+                  <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
+                    Based on partial scoring so far — this gap may shift as more questions/dimensions are scored.
+                  </div>
+                )}
               </div>
-              {session?.submittedAt ? (
-                <button className="btn btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                  {submitting ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-                  <span>Withdraw submission</span>
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                  {submitting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                  <span>Submit to recruiters</span>
-                </button>
-              )}
+
+              {/* notes */}
+              <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <SectionHeader
+                  icon={<StickyNote size={14} />}
+                  title="Panel Notes"
+                  right={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {aiEvaluation?.overallSummary && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={handleApplyAiSummaryToNotes}
+                          style={{
+                            fontSize: '0.72rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            color: '#c084fc',
+                            padding: '0.15rem 0.5rem',
+                            border: '1px solid rgba(168, 85, 247, 0.25)',
+                            borderRadius: '6px',
+                          }}
+                          title="Copy AI assessment summary to notes"
+                        >
+                          <Sparkles size={11} />
+                          <span>Use AI Summary</span>
+                        </button>
+                      )}
+                      <span className="text-xs text-muted">Auto-saves</span>
+                    </div>
+                  }
+                />
+                <textarea
+                  className="form-input"
+                  rows={4}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  onBlur={handleNotesBlur}
+                  placeholder="Overall recommendation, standout moments, red flags..."
+                />
+              </div>
+
+              <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {session?.submittedAt ? (
+                  <div className="badge badge-success" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600, textTransform: 'none', fontSize: '0.7rem' }}>
+                    <CheckCircle2 size={12} />
+                    <span>Submitted {new Date(session.submittedAt).toLocaleString()}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    <Clock3 size={12} />
+                    <span>Not submitted — recruiters can't see this yet.</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <button className="btn btn-sm" onClick={handleDownloadCandidate} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Download size={12} /> Candidate
+                  </button>
+                  <button className="btn btn-sm" onClick={handleDownloadPanelist} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Download size={12} /> Panelist
+                  </button>
+                </div>
+                {session?.submittedAt ? (
+                  <button className="btn btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+                    <span>Withdraw submission</span>
+                  </button>
+                ) : (
+                  <button className="btn btn-primary btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    <span>Submit to recruiters</span>
+                  </button>
+                )}
               </div>
             </>
           )}

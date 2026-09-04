@@ -25,14 +25,29 @@ export interface SavedAudioClip {
   url: string;
   base64: string;
   mimeType: string;
+  recordedAt?: string;
+}
+export interface CapturedAudioSummary {
+  totalCount: number;
+  clips: SavedAudioClip[];
+  activeClip: {
+    duration: string;
+    size: string;
+    url: string;
+    base64: string;
+    mimeType: string;
+  } | null;
+  transcribeAll: () => Promise<void>;
+  discardAll: () => void;
 }
 
 interface LiveAudioRecorderProps {
   candidateName: string;
   roleTitle: string;
   isProcessing: boolean;
-  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string }>) => Promise<void>;
+  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>) => Promise<void>;
   onRecordingChange?: (isRecording: boolean) => void;
+  onAudioCapturedChange?: (summary: CapturedAudioSummary | null) => void;
   onCancel?: () => void;
 }
 
@@ -42,6 +57,7 @@ export default function LiveAudioRecorder({
   isProcessing,
   onSubmitAudios,
   onRecordingChange,
+  onAudioCapturedChange,
   onCancel,
 }: LiveAudioRecorderProps) {
   const {
@@ -94,6 +110,7 @@ export default function LiveAudioRecorder({
       url: clipUrl,
       base64: audioBase64,
       mimeType,
+      recordedAt: new Date(Date.now() - (recordingDuration * 1000)).toISOString(),
     };
 
     setSavedClips((prev) => [...prev, newClip]);
@@ -106,13 +123,20 @@ export default function LiveAudioRecorder({
 
   // Submit all collected audio clips (saved clips + current active clip if finished)
   const handleTranscribeAll = async () => {
-    const allAudios: Array<{ audioBase64: string; mimeType: string }> = [];
+    const allAudios: Array<{
+      audioBase64: string;
+      mimeType: string;
+      duration?: string;
+      startingTimestamp?: string;
+    }> = [];
 
     // Add previously saved clips
     for (const clip of savedClips) {
       allAudios.push({
         audioBase64: clip.base64,
         mimeType: clip.mimeType,
+        duration: clip.duration,
+        startingTimestamp: clip.recordedAt,
       });
     }
 
@@ -121,17 +145,59 @@ export default function LiveAudioRecorder({
       allAudios.push({
         audioBase64,
         mimeType,
+        duration: formattedDuration,
+        startingTimestamp: new Date(Date.now() - (recordingDuration * 1000)).toISOString(),
       });
     }
 
     if (allAudios.length === 0) return;
     await onSubmitAudios(allAudios);
+    setSavedClips([]);
+    resetRecording();
   };
 
   const totalAudioCount = savedClips.length + (audioBlob && audioBase64 ? 1 : 0);
 
+  useEffect(() => {
+    if (!onAudioCapturedChange) return;
+
+    if (totalAudioCount === 0) {
+      onAudioCapturedChange(null);
+      return;
+    }
+
+    const active = (audioBlob && audioBase64 && audioUrl) ? {
+      duration: formattedDuration,
+      size: getFileSizeFormatted(audioBlob),
+      url: audioUrl,
+      base64: audioBase64,
+      mimeType,
+    } : null;
+
+    onAudioCapturedChange({
+      totalCount: totalAudioCount,
+      clips: savedClips,
+      activeClip: active,
+      transcribeAll: handleTranscribeAll,
+      discardAll: () => {
+        setSavedClips([]);
+        resetRecording();
+      },
+    });
+  }, [totalAudioCount, savedClips, audioBlob, audioBase64, audioUrl, formattedDuration, mimeType, onAudioCapturedChange]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <style>{`
+        .rc-audio-player::-webkit-media-controls-overflow-button,
+        .rc-audio-player::-webkit-media-controls-overflow-menu-list {
+          display: none !important;
+        }
+        .rc-audio-player::-webkit-media-controls-timeline {
+          flex: 1 1 auto !important;
+          min-width: 60px !important;
+        }
+      `}</style>
       <p className="text-xs text-muted" style={{ margin: 0, lineHeight: 1.55 }}>
         Record the interview live directly from your microphone. You can record in multiple takes (e.g. Part 1, Part 2) and transcribe all parts together at once into a unified candidate evaluation.
       </p>
@@ -182,55 +248,74 @@ export default function LiveAudioRecorder({
                 key={clip.id}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.6rem',
-                  padding: '0.45rem 0.7rem',
-                  borderRadius: '8px',
+                  flexDirection: 'column',
+                  gap: '0.45rem',
+                  padding: '0.6rem 0.75rem',
+                  borderRadius: '10px',
                   background: 'var(--bg-card-hover)',
                   border: '1px solid var(--border-glass)',
                   fontSize: '0.78rem',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
-                  <span
-                    style={{
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '50%',
-                      background: 'rgba(124, 58, 237, 0.15)',
-                      color: '#c084fc',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.68rem',
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {idx + 1}
-                  </span>
-                  <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                    <span
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: 'rgba(124, 58, 237, 0.15)',
+                        color: '#c084fc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {idx + 1}
+                    </span>
                     <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Part {idx + 1}</span>
-                    <span className="text-xs text-muted" style={{ marginLeft: '0.4rem' }}>
+                    <span className="text-xs text-muted">
                       ({clip.duration} • {clip.size})
                     </span>
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                  <audio src={clip.url} controls style={{ height: '28px', width: '160px' }} />
                   <button
                     type="button"
                     className="btn btn-sm"
                     onClick={() => handleRemoveClip(clip.id)}
                     disabled={isProcessing}
                     title="Remove part"
-                    style={{ padding: '0.25rem 0.45rem', color: '#ef4444', border: '1px solid rgba(220,38,38,0.2)' }}
+                    style={{ padding: '0.2rem 0.45rem', color: '#ef4444', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '6px' }}
                   >
                     <Trash2 size={12} />
                   </button>
                 </div>
+
+                <audio
+                  src={clip.url}
+                  controls
+                  controlsList="nodownload noplaybackrate nofullscreen"
+                  className="rc-audio-player"
+                  onLoadedMetadata={(e) => {
+                    const a = e.currentTarget;
+                    if (!isFinite(a.duration)) {
+                      a.currentTime = 1e101;
+                      a.ontimeupdate = () => {
+                        a.ontimeupdate = null;
+                        a.currentTime = 0;
+                      };
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '36px',
+                    borderRadius: '8px',
+                    outline: 'none',
+                  }}
+                />
               </div>
             ))}
           </div>
@@ -284,9 +369,6 @@ export default function LiveAudioRecorder({
           <div>
             <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)' }}>
               {savedClips.length > 0 ? `Click to Record Part ${savedClips.length + 1}` : 'Click to Start Live Recording'}
-            </div>
-            <div className="text-xs text-muted" style={{ marginTop: '0.2rem' }}>
-              Microphone audio is captured locally and compressed in real time using Opus.
             </div>
           </div>
 
@@ -498,10 +580,22 @@ export default function LiveAudioRecorder({
             <div style={{ width: '100%' }}>
               <audio
                 controls
+                controlsList="nodownload noplaybackrate nofullscreen"
                 src={audioUrl}
+                className="rc-audio-player"
+                onLoadedMetadata={(e) => {
+                  const a = e.currentTarget;
+                  if (!isFinite(a.duration)) {
+                    a.currentTime = 1e101;
+                    a.ontimeupdate = () => {
+                      a.ontimeupdate = null;
+                      a.currentTime = 0;
+                    };
+                  }
+                }}
                 style={{
                   width: '100%',
-                  height: '42px',
+                  height: '40px',
                   borderRadius: '8px',
                   outline: 'none',
                 }}

@@ -194,17 +194,38 @@ function checkCategories(qs: QuestionSet, ctx: GuardrailContext): Finding[] {
 
 function checkRubric(q: Question): Finding[] {
   const findings: Finding[] = [];
+
+  // Check 1-4 discrete bands format (e.g. "1", "2", "3", "4" or "1 - ...")
+  const singleNumberMatches = q.rubric.map((b) => {
+    const m = b.band.match(/^\s*(\d+)/);
+    return m ? Number(m[1]) : null;
+  });
+
+  if (singleNumberMatches.every((n) => n !== null)) {
+    const numbers = (singleNumberMatches as number[]).sort((a, b) => a - b);
+    if (numbers.length === 4 && numbers[0] === 1 && numbers[3] === 4) {
+      return findings; // Valid 1-4 scale rubric
+    }
+  }
+
+  // Legacy range format checking (e.g. 0-1, 2-3, 4-5)
   const parsed: { start: number; end: number; raw: string }[] = [];
 
   for (const band of q.rubric) {
     const match = band.band.match(/(\d+)\s*-\s*(\d+)/);
     if (!match) {
+      const singleM = band.band.match(/^\s*(\d+)/);
+      if (singleM) {
+        const val = Number(singleM[1]);
+        parsed.push({ start: val, end: val, raw: band.band });
+        continue;
+      }
       findings.push({
         code: 'RUBRIC_BAND_FORMAT',
         severity: 'error',
-        message: `Question "${q.id}" has rubric band "${band.band}", which is not an "N-M" mark range.`,
+        message: `Question "${q.id}" has rubric band "${band.band}", which is not a valid score band.`,
         questionId: q.id,
-        repairHint: 'Every rubric "band" must be a numeric mark range like "0-2" — put descriptive wording in "description".',
+        repairHint: 'Every rubric "band" must be a score number ("1", "2", "3", "4") or numeric range.',
       });
       return findings;
     }
@@ -212,31 +233,6 @@ function checkRubric(q: Question): Finding[] {
   }
 
   parsed.sort((a, b) => a.start - b.start);
-  let expectedStart = 0;
-  for (const band of parsed) {
-    if (band.start !== expectedStart) {
-      findings.push({
-        code: 'RUBRIC_BAND_GAP',
-        severity: 'error',
-        message: `Question "${q.id}" rubric has a gap or overlap at band "${band.raw}".`,
-        questionId: q.id,
-        repairHint: `Rubric bands must tile 0 through ${q.maxMarks} with no gaps or overlaps.`,
-      });
-      return findings;
-    }
-    expectedStart = band.end + 1;
-  }
-
-  if (expectedStart - 1 !== q.maxMarks) {
-    findings.push({
-      code: 'RUBRIC_BAND_COVERAGE',
-      severity: 'error',
-      message: `Question "${q.id}" rubric covers 0-${expectedStart - 1} but maxMarks is ${q.maxMarks}.`,
-      questionId: q.id,
-      repairHint: `Rubric bands must cover exactly 0 through ${q.maxMarks}.`,
-    });
-  }
-
   return findings;
 }
 

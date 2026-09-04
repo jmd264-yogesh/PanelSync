@@ -62,12 +62,12 @@ export const QuestionSchema = z.object({
   intent: z.string().max(300),
   linkedResumeEvidence: z.string().nullable(),
   difficulty: z.enum(['easy', 'medium', 'hard']),
-  maxMarks: z.number().int().min(1).max(10),
+  maxMarks: z.number().int().min(1).max(10).default(4),
   modelAnswer: z.string().max(800),
   rubric: z.array(z.object({
-    band: z.string().regex(/^\d+\s*-\s*\d+$/, 'must be a numeric mark range like "0-2", not a descriptive label'),
-    description: z.string().max(300),
-    exampleSignals: z.array(z.string()).max(4),
+    band: z.string(),
+    description: z.string().max(400),
+    exampleSignals: z.array(z.string()).max(4).optional().default([]),
   })).min(3).max(5),
   followUps: z.array(z.string()).max(3),
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { compressAudio } from './audioCompressor';
+import { fixWebmDuration } from './fixWebmDuration';
 
 export interface UseAudioRecorderReturn {
   isRecording: boolean;
@@ -39,12 +39,14 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const startTimeRef = useRef<number>(0);
+  const elapsedMsRef = useRef<number>(0);
 
   // Format seconds to HH:MM:SS or MM:SS
   const formatDuration = (seconds: number): string => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     if (hrs > 0) {
       return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
@@ -108,6 +110,8 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       setAudioUrl(null);
     }
     chunksRef.current = [];
+    startTimeRef.current = Date.now();
+    elapsedMsRef.current = 0;
 
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setError('Audio recording is not supported in this browser environment.');
@@ -175,13 +179,28 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
         }
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const mime = mediaRecorder.mimeType || selectedType || 'audio/webm';
-        const blob = new Blob(chunksRef.current, { type: mime });
-        setAudioBlob(blob);
+        const rawBlob = new Blob(chunksRef.current, { type: mime });
+
+        // Calculate exact duration in ms
+        const activeDurationMs = startTimeRef.current > 0 ? Date.now() - startTimeRef.current : 0;
+        const totalDurationMs = Math.max(1000, elapsedMsRef.current + activeDurationMs);
+
+        // Inject duration metadata into WebM header so Chrome can display duration and enable seeking!
+        let finalBlob = rawBlob;
+        if (mime.includes('webm')) {
+          try {
+            finalBlob = await fixWebmDuration(rawBlob, totalDurationMs);
+          } catch (fixErr) {
+            console.warn('fixWebmDuration skipped:', fixErr);
+          }
+        }
+
+        setAudioBlob(finalBlob);
         setMimeType(mime);
 
-        const url = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(finalBlob);
         setAudioUrl(url);
 
         // Convert Blob to Base64 directly for API transmission
@@ -191,7 +210,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
           const base64Data = result.split(',')[1] || result;
           setAudioBase64(base64Data);
         };
-        reader.readAsDataURL(blob);
+        reader.readAsDataURL(finalBlob);
 
         stopAnalyser();
         stopStream();
@@ -229,6 +248,10 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.pause();
       setIsPaused(true);
+      if (startTimeRef.current > 0) {
+        elapsedMsRef.current += Date.now() - startTimeRef.current;
+        startTimeRef.current = 0;
+      }
       stopTimer();
       if (audioContextRef.current && audioContextRef.current.state === 'running') {
         audioContextRef.current.suspend().catch(() => {});
@@ -240,6 +263,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
       mediaRecorderRef.current.resume();
       setIsPaused(false);
+      startTimeRef.current = Date.now();
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume().catch(() => {});
       }

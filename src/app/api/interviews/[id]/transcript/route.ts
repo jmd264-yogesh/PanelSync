@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
-import { db } from '@/lib/db';
+import { db, type AiTranscriptEvaluation } from '@/lib/db';
 import {
   TranscriptError,
   fetchTranscriptVtt,
@@ -8,7 +8,8 @@ import {
   resolveOnlineMeetingId,
 } from '@/lib/graph-transcript';
 import { analyseTranscript, parseDialogueTurns } from '@/lib/transcript';
-import { transcribeAudioWithAi, evaluateTranscriptWithAi } from '@/lib/ai/transcript-evaluator';
+import { transcribeAudioWithAi, evaluateTranscriptWithAi, isTranscriptEmptyOrNoSpeech } from '@/lib/ai/transcript-evaluator';
+import { uploadAudioBase64, type UploadAudioResult } from '@/lib/s3';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,99 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
       }
 
+      // Format components for S3 key naming: candidatename-round-startingtimestamp-duration
+      const candidateSlug = (interview.candidateName || 'Candidate')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]/g, '');
+
+      let roundVal = body.round;
+      if (!roundVal && interview.role) {
+        const roleLower = interview.role.toLowerCase();
+        if (roleLower.includes('l2')) roundVal = 'L2';
+        else if (roleLower.includes('l1')) roundVal = 'L1';
+        else roundVal = 'Technical';
+      }
+      const roundSlug = String(roundVal || 'Round')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]/g, '');
+
+      const formatTimestamp = (d: Date): string => {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+      };
+
+      const formatDurationSlug = (rawDuration?: string | number, fallbackMinutes?: number): string => {
+        if (rawDuration !== undefined && rawDuration !== null && String(rawDuration).trim().length > 0) {
+          const s = String(rawDuration).trim();
+          if (s.includes(':')) {
+            const parts = s.split(':');
+            if (parts.length === 2) {
+              const m = parseInt(parts[0], 10) || 0;
+              const sec = parseInt(parts[1], 10) || 0;
+              return m > 0 ? `${m}m${sec}s` : `${sec}s`;
+            } else if (parts.length === 3) {
+              const h = parseInt(parts[0], 10) || 0;
+              const m = parseInt(parts[1], 10) || 0;
+              const sec = parseInt(parts[2], 10) || 0;
+              return `${h}h${m}m${sec}s`;
+            }
+          }
+          const cleaned = s.replace(/[^a-zA-Z0-9_-]/g, '');
+          return cleaned.endsWith('s') || cleaned.endsWith('m') ? cleaned : `${cleaned}s`;
+        }
+        return fallbackMinutes ? `${fallbackMinutes}m` : '0s';
+      };
+
+      // Query existing audios for this interview to accurately continue the clip count
+      const existingAudios = await db.getInterviewAudiosByInterviewId(id);
+      const existingClipCount = existingAudios.length;
+
+      // Upload audio clip(s) to S3 before sending to Gemini
+      const uploadedS3Clips: (UploadAudioResult & { fileName: string; mimeType?: string; duration?: string })[] = [];
+      for (let i = 0; i < audios.length; i++) {
+        const audioItem: any = audios[i];
+        try {
+          const extension = audioItem.mimeType?.includes('mp3')
+            ? 'mp3'
+            : (audioItem.mimeType?.includes('wav') ? 'wav' : 'webm');
+
+          const startTime = audioItem.startingTimestamp
+            ? new Date(audioItem.startingTimestamp)
+            : new Date();
+          const startTimestampStr = isNaN(startTime.getTime())
+            ? formatTimestamp(new Date())
+            : formatTimestamp(startTime);
+
+          const durationSlug = formatDurationSlug(audioItem.duration, interview.duration);
+          const clipCount = existingClipCount + i + 1;
+
+          // Target naming: candidatename-round-startingtimestamp-duration-clip<clipCount>.ext
+          const fileName = `${candidateSlug}-${roundSlug}-${startTimestampStr}-${durationSlug}-clip${clipCount}.${extension}`;
+
+          const s3Result = await uploadAudioBase64({
+            interviewId: id,
+            audioBase64: audioItem.audioBase64,
+            mimeType: audioItem.mimeType,
+            fileName,
+          });
+          uploadedS3Clips.push({
+            ...s3Result,
+            fileName,
+            mimeType: audioItem.mimeType,
+            duration: durationSlug,
+          });
+          console.log(`[S3] Uploaded audio clip ${i + 1}/${audios.length} to ${s3Result.location}`);
+        } catch (s3Err) {
+          console.error(`[S3] Warning: Failed to upload audio clip ${i + 1} to S3:`, s3Err);
+        }
+      }
+
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      const isAppend = Boolean(body.append);
+      const previousTranscript = isAppend ? (recalSession.transcriptText || '') : '';
+
       let combinedTranscript = '';
       for (const audioItem of audios) {
         const transResult = await transcribeAudioWithAi({
@@ -114,10 +208,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           mimeType: audioItem.mimeType,
           candidateName: interview.candidateName,
           roleTitle: interview.role,
-          existingTranscriptText: combinedTranscript || null,
+          existingTranscriptText: combinedTranscript || (isAppend ? previousTranscript : null),
         });
 
-        if (transResult.transcriptText && !transResult.transcriptText.toLowerCase().includes('no speech detected')) {
+        if (transResult.transcriptText && !isTranscriptEmptyOrNoSpeech(transResult.transcriptText)) {
           if (combinedTranscript) {
             combinedTranscript += '\n\n' + transResult.transcriptText.trim();
           } else {
@@ -126,53 +220,95 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
-      const turns = parseDialogueTurns(combinedTranscript);
+      // Build transcript for this session (or append if explicitly requested)
+      const fullTranscript = isAppend && previousTranscript
+        ? (combinedTranscript ? `${previousTranscript}\n\n${combinedTranscript}` : previousTranscript)
+        : combinedTranscript;
 
-      // Fetch AI questions for evaluation
-      const recalSession = await db.getOrCreateRecalibrateSession(id);
-      let evaluation = null;
+      const turns = parseDialogueTurns(fullTranscript);
 
-      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
-      if (!run) {
-        const runs = await db.getAiRunsForInterview(id);
-        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
-      }
-
-      if (run?.questions && combinedTranscript.trim()) {
+      // Store audio records in database and link the primary audio ID to the recalibrate session
+      let primaryAudioId: string | null = null;
+      for (const clip of uploadedS3Clips) {
         try {
-          evaluation = await evaluateTranscriptWithAi({
-            transcriptText: combinedTranscript,
-            questionSet: run.questions as any,
-            spec: run.spec as any,
-            candidateName: interview.candidateName,
-            roleTitle: interview.role,
+          const audioRecord = await db.createInterviewAudio({
+            interviewId: id,
+            s3Key: clip.key,
+            s3Url: clip.location,
+            fileName: clip.fileName,
+            mimeType: clip.mimeType || null,
+            duration: clip.duration || null,
+            transcriptText: fullTranscript || null,
+            transcriptTurns: turns.length > 0 ? turns : null,
           });
-        } catch (evalErr) {
-          console.error('Failed to run AI evaluation on transcript:', evalErr);
+          if (!primaryAudioId) {
+            primaryAudioId = audioRecord.id;
+          }
+        } catch (audioDbErr) {
+          console.error('[DB] Failed to save interview audio record:', audioDbErr);
         }
       }
 
+      // Fetch AI questions for evaluation
+      let evaluation: AiTranscriptEvaluation | null = null;
+      let evaluationError: string | null = null;
+      const targetAiRunId = body.aiRunId || recalSession.aiRunId;
+      let run = targetAiRunId ? await db.getAiRun(targetAiRunId) : null;
+      if (!run) {
+        const runs = await db.getAiRunsForInterview(id);
+        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || runs[0] || null;
+      }
+
+      const questionsToUse = run?.questions || body.questionSet || null;
+      const specToUse = run?.spec || body.spec || null;
+
+      if (questionsToUse) {
+        try {
+          evaluation = await evaluateTranscriptWithAi({
+            transcriptText: fullTranscript,
+            questionSet: questionsToUse as any,
+            spec: specToUse as any,
+            candidateName: interview.candidateName,
+            roleTitle: interview.role,
+          });
+        } catch (evalErr: any) {
+          console.error('Failed to run AI evaluation on transcript:', evalErr);
+          evaluationError = evalErr?.message || String(evalErr);
+        }
+      } else {
+        console.warn('AI evaluation skipped: No question set found for interview', id);
+        evaluationError = 'No question set found for this interview. Please generate questions first.';
+      }
+
+      // Use the newly computed evaluation directly (do not retain obsolete scores from previous takes)
+      const finalEvaluation = evaluation || null;
+
       const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
       const updatedSession = await db.updateRecalibrateSession(id, {
-        transcriptText: combinedTranscript || null,
+        aiRunId: targetAiRunId || run?.id || recalSession.aiRunId || null,
+        transcriptText: fullTranscript || null,
         transcriptTurns: turns.length > 0 ? turns : null,
-        aiEvaluation: evaluation,
+        aiEvaluation: finalEvaluation,
         transcriptFetchedAt: new Date(),
         transcriptSource: sourceType,
       });
 
       await db.addAuditLog(session.user.email, 'AUDIO_TRANSCRIBED', 'Interview', id, {
         chunksCount: audios.length,
-        characters: combinedTranscript.length,
-        hasEvaluation: Boolean(evaluation),
+        characters: fullTranscript.length,
+        hasEvaluation: Boolean(finalEvaluation),
+        s3AudioKeys: uploadedS3Clips.map((c) => c.key),
+        audioId: primaryAudioId,
       });
 
       return NextResponse.json({
         success: true,
         session: updatedSession,
-        // transcriptText: combinedTranscript,
-        // transcriptTurns: turns,
-        // evaluation,
+        audioId: primaryAudioId,
+        evaluation: finalEvaluation,
+        evaluationError,
+        s3AudioClips: uploadedS3Clips,
+        // transcriptText and transcriptTurns kept commented out so raw transcript text is not returned
       });
     }
 
@@ -185,7 +321,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const turns = parseDialogueTurns(rawText);
       const recalSession = await db.getOrCreateRecalibrateSession(id);
-      let evaluation = null;
+      let evaluation: AiTranscriptEvaluation | null = null;
 
       let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
       if (!run) {
@@ -218,9 +354,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         session: updatedSession,
+        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
         // transcriptText: rawText,
         // transcriptTurns: turns,
-        // evaluation,
       });
     }
 
@@ -267,7 +403,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const stored = await db.getInterviewTranscripts(id);
       const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
 
-      let evaluation = null;
+      let evaluation: AiTranscriptEvaluation | null = null;
       const recalSession = await db.getOrCreateRecalibrateSession(id);
       let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
       if (!run) {
@@ -306,13 +442,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         hasTranscript: false,
+        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
         // fetchedAt: stored[0]?.fetchedAt ?? null,
         // transcriptCount: stored.length,
         // analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
         // session: updatedSession,
         // transcriptText: combinedVtt,
         // transcriptTurns: turns,
-        // evaluation,
       });
     }
 
