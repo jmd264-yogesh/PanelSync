@@ -567,7 +567,7 @@ export function useRecalibrateSession({
   };
 
   const handleUploadAudio = async (
-    audioOrAudios: string | Array<{ audioBase64: string; mimeType: string }>,
+    audioOrAudios: string | Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>,
     mimeTypeOrSourceType?: string,
     sourceTypeParam: 'live_recording' | 'audio_upload' = 'audio_upload',
   ) => {

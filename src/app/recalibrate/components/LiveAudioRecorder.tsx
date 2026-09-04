@@ -25,6 +25,7 @@ export interface SavedAudioClip {
   url: string;
   base64: string;
   mimeType: string;
+  recordedAt?: string;
 }
 export interface CapturedAudioSummary {
   totalCount: number;
@@ -44,7 +45,7 @@ interface LiveAudioRecorderProps {
   candidateName: string;
   roleTitle: string;
   isProcessing: boolean;
-  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string }>) => Promise<void>;
+  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>) => Promise<void>;
   onRecordingChange?: (isRecording: boolean) => void;
   onAudioCapturedChange?: (summary: CapturedAudioSummary | null) => void;
   onCancel?: () => void;
@@ -109,6 +110,7 @@ export default function LiveAudioRecorder({
       url: clipUrl,
       base64: audioBase64,
       mimeType,
+      recordedAt: new Date(Date.now() - (recordingDuration * 1000)).toISOString(),
     };
 
     setSavedClips((prev) => [...prev, newClip]);
@@ -121,13 +123,20 @@ export default function LiveAudioRecorder({
 
   // Submit all collected audio clips (saved clips + current active clip if finished)
   const handleTranscribeAll = async () => {
-    const allAudios: Array<{ audioBase64: string; mimeType: string }> = [];
+    const allAudios: Array<{
+      audioBase64: string;
+      mimeType: string;
+      duration?: string;
+      startingTimestamp?: string;
+    }> = [];
 
     // Add previously saved clips
     for (const clip of savedClips) {
       allAudios.push({
         audioBase64: clip.base64,
         mimeType: clip.mimeType,
+        duration: clip.duration,
+        startingTimestamp: clip.recordedAt,
       });
     }
 
@@ -136,6 +145,8 @@ export default function LiveAudioRecorder({
       allAudios.push({
         audioBase64,
         mimeType,
+        duration: formattedDuration,
+        startingTimestamp: new Date(Date.now() - (recordingDuration * 1000)).toISOString(),
       });
     }
 

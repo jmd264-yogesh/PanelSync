@@ -35,7 +35,7 @@ interface TranscriptPanelProps {
   isProcessingTranscript?: boolean;
   onFetchFromTeams?: () => Promise<void>;
   onUploadTranscript?: (text: string) => Promise<void>;
-  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string }>, sourceType?: string) => Promise<void>;
+  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>, sourceType?: string) => Promise<void>;
   onAcceptAllAiScores?: () => Promise<void>;
   onAcceptSingleQuestionScore?: (questionId: string, score: number) => void;
   onApplyAiSummaryToNotes?: () => void;
@@ -119,7 +119,11 @@ export default function TranscriptPanel({
       setIsCompressing(true);
       try {
         const compressed = await compressAudio(file);
-        await onUploadAudio([{ audioBase64: compressed.base64, mimeType: compressed.mimeType }], 'audio_upload');
+        await onUploadAudio([{
+          audioBase64: compressed.base64,
+          mimeType: compressed.mimeType,
+          startingTimestamp: new Date(file.lastModified || Date.now()).toISOString(),
+        }], 'audio_upload');
       } catch (err) {
         console.error('Failed to compress audio file:', err);
       } finally {

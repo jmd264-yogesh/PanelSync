@@ -9,6 +9,7 @@ import {
 } from '@/lib/graph-transcript';
 import { analyseTranscript, parseDialogueTurns } from '@/lib/transcript';
 import { transcribeAudioWithAi, evaluateTranscriptWithAi, isTranscriptEmptyOrNoSpeech } from '@/lib/ai/transcript-evaluator';
+import { uploadAudioBase64, type UploadAudioResult } from '@/lib/s3';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,86 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
       }
 
+      // Format components for S3 key naming: candidatename-round-startingtimestamp-duration
+      const candidateSlug = (interview.candidateName || 'Candidate')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]/g, '');
+
+      let roundVal = body.round;
+      if (!roundVal && interview.role) {
+        const roleLower = interview.role.toLowerCase();
+        if (roleLower.includes('l2')) roundVal = 'L2';
+        else if (roleLower.includes('l1')) roundVal = 'L1';
+        else roundVal = 'Technical';
+      }
+      const roundSlug = String(roundVal || 'Round')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]/g, '');
+
+      const formatTimestamp = (d: Date): string => {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+      };
+
+      const formatDurationSlug = (rawDuration?: string | number, fallbackMinutes?: number): string => {
+        if (rawDuration !== undefined && rawDuration !== null && String(rawDuration).trim().length > 0) {
+          const s = String(rawDuration).trim();
+          if (s.includes(':')) {
+            const parts = s.split(':');
+            if (parts.length === 2) {
+              const m = parseInt(parts[0], 10) || 0;
+              const sec = parseInt(parts[1], 10) || 0;
+              return m > 0 ? `${m}m${sec}s` : `${sec}s`;
+            } else if (parts.length === 3) {
+              const h = parseInt(parts[0], 10) || 0;
+              const m = parseInt(parts[1], 10) || 0;
+              const sec = parseInt(parts[2], 10) || 0;
+              return `${h}h${m}m${sec}s`;
+            }
+          }
+          const cleaned = s.replace(/[^a-zA-Z0-9_-]/g, '');
+          return cleaned.endsWith('s') || cleaned.endsWith('m') ? cleaned : `${cleaned}s`;
+        }
+        return fallbackMinutes ? `${fallbackMinutes}m` : '0s';
+      };
+
+      // Upload audio clip(s) to S3 before sending to Gemini
+      const uploadedS3Clips: UploadAudioResult[] = [];
+      for (let i = 0; i < audios.length; i++) {
+        const audioItem: any = audios[i];
+        try {
+          const extension = audioItem.mimeType?.includes('mp3')
+            ? 'mp3'
+            : (audioItem.mimeType?.includes('wav') ? 'wav' : 'webm');
+
+          const startTime = audioItem.startingTimestamp
+            ? new Date(audioItem.startingTimestamp)
+            : new Date();
+          const startTimestampStr = isNaN(startTime.getTime())
+            ? formatTimestamp(new Date())
+            : formatTimestamp(startTime);
+
+          const durationSlug = formatDurationSlug(audioItem.duration, interview.duration);
+          const partSuffix = audios.length > 1 ? `-part${i + 1}` : '';
+
+          // Target naming: candidatename-round-startingtimestamp-duration.ext
+          const fileName = `${candidateSlug}-${roundSlug}-${startTimestampStr}-${durationSlug}${partSuffix}.${extension}`;
+
+          const s3Result = await uploadAudioBase64({
+            interviewId: id,
+            audioBase64: audioItem.audioBase64,
+            mimeType: audioItem.mimeType,
+            fileName,
+          });
+          uploadedS3Clips.push(s3Result);
+          console.log(`[S3] Uploaded audio clip ${i + 1}/${audios.length} to ${s3Result.location}`);
+        } catch (s3Err) {
+          console.error(`[S3] Warning: Failed to upload audio clip ${i + 1} to S3:`, s3Err);
+        }
+      }
+
       const recalSession = await db.getOrCreateRecalibrateSession(id);
       const isAppend = Boolean(body.append);
       const previousTranscript = isAppend ? (recalSession.transcriptText || '') : '';
@@ -185,6 +266,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         chunksCount: audios.length,
         characters: fullTranscript.length,
         hasEvaluation: Boolean(finalEvaluation),
+        s3AudioKeys: uploadedS3Clips.map((c) => c.key),
       });
 
       return NextResponse.json({
@@ -192,6 +274,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         session: updatedSession,
         evaluation: finalEvaluation,
         evaluationError,
+        s3AudioClips: uploadedS3Clips,
         // transcriptText and transcriptTurns kept commented out so raw transcript text is not returned
       });
     }
