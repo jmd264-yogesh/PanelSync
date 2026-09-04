@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setSession } from '@/lib/session';
+import { getAppUrl } from '@/lib/app-url';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const baseUrl = getAppUrl(request);
   const code = searchParams.get('code');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
@@ -11,21 +13,21 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('OAuth Callback Error:', error, errorDescription);
-    return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(errorDescription || error)}`, request.url));
+    return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(errorDescription || error)}`, baseUrl));
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL('/?error=no_code_provided', request.url));
+    return NextResponse.redirect(new URL('/?error=no_code_provided', baseUrl));
   }
 
   const clientId = process.env.AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID || 'common';
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/callback`;
+  const redirectUri = `${getAppUrl(request)}/api/auth/callback`;
 
   if (!clientId || !clientSecret) {
     console.error('Azure client configuration missing.');
-    return NextResponse.redirect(new URL('/?error=server_configuration_error', request.url));
+    return NextResponse.redirect(new URL('/?error=server_configuration_error', baseUrl));
   }
 
   try {
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errText = await tokenResponse.text();
       console.error('Token exchange failed:', errText);
-      return NextResponse.redirect(new URL('/?error=token_exchange_failed', request.url));
+      return NextResponse.redirect(new URL('/?error=token_exchange_failed', baseUrl));
     }
 
     const tokenData = await tokenResponse.json();
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
     if (!userResponse.ok) {
       const errText = await userResponse.text();
       console.error('Graph user profile request failed:', errText);
-      return NextResponse.redirect(new URL('/?error=user_profile_failed', request.url));
+      return NextResponse.redirect(new URL('/?error=user_profile_failed', baseUrl));
     }
 
     const userData = await userResponse.json();
@@ -79,13 +81,13 @@ export async function GET(request: NextRequest) {
       const isPanelist = await db.isPanelist(userEmail);
       if (!isPanelist) {
         console.warn(`Panelist sign-in attempt by unregistered email: ${userEmail}`);
-        return NextResponse.redirect(new URL('/?error=not_a_panelist', request.url));
+        return NextResponse.redirect(new URL('/?error=not_a_panelist', baseUrl));
       }
     } else {
       const isAllowed = await db.isEmailAllowed(userEmail);
       if (!isAllowed) {
         console.warn(`Unauthorized recruiter sign-in attempt by email: ${userEmail}`);
-        return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', request.url));
+        return NextResponse.redirect(new URL('/?error=unauthorized_recruiter', baseUrl));
       }
     }
 
@@ -102,7 +104,7 @@ export async function GET(request: NextRequest) {
     });
 
     const redirectPath = isPanelistLogin ? '/panelist' : '/dashboard';
-    const response = NextResponse.redirect(new URL(redirectPath, request.url));
+    const response = NextResponse.redirect(new URL(redirectPath, baseUrl));
     response.cookies.set('sessionId', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -114,6 +116,6 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (err) {
     console.error('Callback handler network or parsing error:', err);
-    return NextResponse.redirect(new URL('/?error=internal_server_error', request.url));
+    return NextResponse.redirect(new URL('/?error=internal_server_error', baseUrl));
   }
 }

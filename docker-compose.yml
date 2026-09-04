@@ -1,0 +1,71 @@
+# Local PanelSync stack: the Next.js app plus the Postgres it talks to.
+#
+#   docker compose up -d --build     start (first run builds the image and
+#                                    creates the schema in a fresh volume)
+#   docker compose logs -f app       follow the app logs
+#   docker compose down              stop; add -v to also drop the database
+#
+# Settings come from .env (copy .env.example if you do not have one). The app
+# reads DATABASE_URL straight from .env; the local db service below is kept for
+# host-side tooling such as `npx drizzle-kit push` and psql.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: panelsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-panelsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-panelsync}
+      POSTGRES_DB: ${POSTGRES_DB:-panelsync}
+    ports:
+      # Exposed so psql / drizzle-kit / a GUI client can reach it from the host.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - panelsync-db-data:/var/lib/postgresql/data
+      # Postgres runs these once, on the first start of an empty volume.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panelsync} -d ${POSTGRES_DB:-panelsync}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    image: panelsync-app
+    container_name: panelsync-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      # Next's standalone server binds to HOSTNAME; 0.0.0.0 so the published port works.
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      # DATABASE_URL intentionally not set here: the app uses the value from
+      # .env (Neon) rather than the local db service.
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    healthcheck:
+      # HEAD /api/health answers without touching the database and is not rate limited.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').request({host:'127.0.0.1',port:3000,path:'/api/health',method:'HEAD'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).end()"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  panelsync-db-data:

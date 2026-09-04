@@ -5,6 +5,7 @@ import { graph } from '@/lib/graph';
 import * as schema from '@/lib/schema';
 import { sql } from 'drizzle-orm';
 import { getInterviewInfo } from '@/lib/interview-role';
+import { getAppUrl } from '@/lib/app-url';
 
 export async function POST(request: NextRequest) {
   const token = await getValidAccessToken();
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Send Teams chat notifications to each panel member
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl(request);
 
     for (const panel of interview.panels) {
       try {

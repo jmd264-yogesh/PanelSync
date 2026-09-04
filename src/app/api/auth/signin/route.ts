@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAppUrl } from '@/lib/app-url';
 
 export async function GET(request: NextRequest) {
   const clientId = process.env.AZURE_CLIENT_ID;
   const tenantId = process.env.AZURE_TENANT_ID || 'common';
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/callback`;
+  const redirectUri = `${getAppUrl(request)}/api/auth/callback`;
 
   if (!clientId) {
     return NextResponse.json({ error: 'AZURE_CLIENT_ID is not configured' }, { status: 500 });
