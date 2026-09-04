@@ -233,7 +233,23 @@ export const lateralCandidates = pgTable("lateral_candidates", {
   deletedAt: timestamp("deleted_at"),
 });
 
-// 13. Recalibrate live-scoring sessions (one per interview) — persists the timer,
+// 13. Interview Audios Table (uploaded/recorded audio clips with S3 URLs and transcripts)
+export const interviewAudios = pgTable('interview_audios', {
+  id: varchar('id', { length: 255 }).primaryKey(),
+  interviewId: varchar('interview_id', { length: 255 })
+    .references(() => interviews.id, { onDelete: 'cascade' })
+    .notNull(),
+  s3Key: text('s3_key').notNull(),
+  s3Url: text('s3_url').notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  mimeType: varchar('mime_type', { length: 100 }),
+  duration: varchar('duration', { length: 50 }),
+  transcriptText: text('transcript_text'),
+  transcriptTurns: jsonb('transcript_turns'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 14. Recalibrate live-scoring sessions (one per interview) — persists the timer,
 // per-question scores, overall rubric grid, and notes for the panelist's live
 // spec-driven interview run, so it survives page reloads.
 export const recalibrateSessions = pgTable('recalibrate_sessions', {

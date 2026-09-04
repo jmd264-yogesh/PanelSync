@@ -153,8 +153,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return fallbackMinutes ? `${fallbackMinutes}m` : '0s';
       };
 
+      // Query existing audios for this interview to accurately continue the clip count
+      const existingAudios = await db.getInterviewAudiosByInterviewId(id);
+      const existingClipCount = existingAudios.length;
+
       // Upload audio clip(s) to S3 before sending to Gemini
-      const uploadedS3Clips: UploadAudioResult[] = [];
+      const uploadedS3Clips: (UploadAudioResult & { fileName: string; mimeType?: string; duration?: string })[] = [];
       for (let i = 0; i < audios.length; i++) {
         const audioItem: any = audios[i];
         try {
@@ -170,10 +174,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             : formatTimestamp(startTime);
 
           const durationSlug = formatDurationSlug(audioItem.duration, interview.duration);
-          const partSuffix = audios.length > 1 ? `-part${i + 1}` : '';
+          const clipCount = existingClipCount + i + 1;
 
-          // Target naming: candidatename-round-startingtimestamp-duration.ext
-          const fileName = `${candidateSlug}-${roundSlug}-${startTimestampStr}-${durationSlug}${partSuffix}.${extension}`;
+          // Target naming: candidatename-round-startingtimestamp-duration-clip<clipCount>.ext
+          const fileName = `${candidateSlug}-${roundSlug}-${startTimestampStr}-${durationSlug}-clip${clipCount}.${extension}`;
 
           const s3Result = await uploadAudioBase64({
             interviewId: id,
@@ -181,7 +185,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             mimeType: audioItem.mimeType,
             fileName,
           });
-          uploadedS3Clips.push(s3Result);
+          uploadedS3Clips.push({
+            ...s3Result,
+            fileName,
+            mimeType: audioItem.mimeType,
+            duration: durationSlug,
+          });
           console.log(`[S3] Uploaded audio clip ${i + 1}/${audios.length} to ${s3Result.location}`);
         } catch (s3Err) {
           console.error(`[S3] Warning: Failed to upload audio clip ${i + 1} to S3:`, s3Err);
@@ -217,6 +226,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         : combinedTranscript;
 
       const turns = parseDialogueTurns(fullTranscript);
+
+      // Store audio records in database and link the primary audio ID to the recalibrate session
+      let primaryAudioId: string | null = null;
+      for (const clip of uploadedS3Clips) {
+        try {
+          const audioRecord = await db.createInterviewAudio({
+            interviewId: id,
+            s3Key: clip.key,
+            s3Url: clip.location,
+            fileName: clip.fileName,
+            mimeType: clip.mimeType || null,
+            duration: clip.duration || null,
+            transcriptText: fullTranscript || null,
+            transcriptTurns: turns.length > 0 ? turns : null,
+          });
+          if (!primaryAudioId) {
+            primaryAudioId = audioRecord.id;
+          }
+        } catch (audioDbErr) {
+          console.error('[DB] Failed to save interview audio record:', audioDbErr);
+        }
+      }
 
       // Fetch AI questions for evaluation
       let evaluation: AiTranscriptEvaluation | null = null;
@@ -267,11 +298,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         characters: fullTranscript.length,
         hasEvaluation: Boolean(finalEvaluation),
         s3AudioKeys: uploadedS3Clips.map((c) => c.key),
+        audioId: primaryAudioId,
       });
 
       return NextResponse.json({
         success: true,
         session: updatedSession,
+        audioId: primaryAudioId,
         evaluation: finalEvaluation,
         evaluationError,
         s3AudioClips: uploadedS3Clips,

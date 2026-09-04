@@ -152,6 +152,8 @@ export default function LiveAudioRecorder({
 
     if (allAudios.length === 0) return;
     await onSubmitAudios(allAudios);
+    setSavedClips([]);
+    resetRecording();
   };
 
   const totalAudioCount = savedClips.length + (audioBlob && audioBase64 ? 1 : 0);
