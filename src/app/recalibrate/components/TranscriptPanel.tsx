@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   FileText,
   Loader2,
@@ -35,7 +35,7 @@ interface TranscriptPanelProps {
   isProcessingTranscript?: boolean;
   onFetchFromTeams?: () => Promise<void>;
   onUploadTranscript?: (text: string) => Promise<void>;
-  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string }>, sourceType?: string) => Promise<void>;
+  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>, sourceType?: string) => Promise<void>;
   onAcceptAllAiScores?: () => Promise<void>;
   onAcceptSingleQuestionScore?: (questionId: string, score: number) => void;
   onApplyAiSummaryToNotes?: () => void;
@@ -74,6 +74,35 @@ export default function TranscriptPanel({
   const [syncError, setSyncError] = useState<string | null>(null);
   const [graphAnalysis, setGraphAnalysis] = useState<TranscriptAnalysis | null>(null);
   const [capturedAudio, setCapturedAudio] = useState<CapturedAudioSummary | null>(null);
+
+  interface SavedAudioItem {
+    id: string;
+    fileName: string;
+    duration: string | null;
+    mimeType: string | null;
+    streamUrl: string;
+    createdAt: string;
+  }
+
+  const [savedAudios, setSavedAudios] = useState<SavedAudioItem[]>([]);
+
+  const loadSavedAudios = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/audios`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.audios)) {
+          setSavedAudios(data.audios);
+        }
+      }
+    } catch {
+      // Fallback silently if not available
+    }
+  }, [interviewId]);
+
+  useEffect(() => {
+    void loadSavedAudios();
+  }, [loadSavedAudios, transcriptFetchedAt]);
 
   // Load any existing Graph VTT analysis on mount
   useEffect(() => {
@@ -119,7 +148,12 @@ export default function TranscriptPanel({
       setIsCompressing(true);
       try {
         const compressed = await compressAudio(file);
-        await onUploadAudio([{ audioBase64: compressed.base64, mimeType: compressed.mimeType }], 'audio_upload');
+        await onUploadAudio([{
+          audioBase64: compressed.base64,
+          mimeType: compressed.mimeType,
+          startingTimestamp: new Date(file.lastModified || Date.now()).toISOString(),
+        }], 'audio_upload');
+        await loadSavedAudios();
       } catch (err) {
         console.error('Failed to compress audio file:', err);
       } finally {
@@ -339,9 +373,127 @@ export default function TranscriptPanel({
               onSubmitAudios={async (audios) => {
                 if (onUploadAudio) {
                   await onUploadAudio(audios, 'live_recording');
+                  await loadSavedAudios();
                 }
               }}
             />
+
+            {/* Saved Audio Recordings Playback List (Only in Record Tab) */}
+            {savedAudios.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                  borderTop: '1px solid var(--border-glass)',
+                  paddingTop: '0.9rem',
+                  marginTop: '0.25rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Volume2 size={14} style={{ color: 'var(--rc-brand, #a855f7)' }} />
+                    <span
+                      style={{
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      Recorded Audio Files ({savedAudios.length})
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted" style={{ fontSize: '0.68rem' }}>
+                    Stored in S3
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.6rem',
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    paddingRight: '0.2rem',
+                  }}
+                >
+                  {savedAudios.map((audio, idx) => (
+                    <div
+                      key={audio.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.45rem',
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.025)',
+                        border: '1px solid var(--border-glass)',
+                        transition: 'border-color 0.2s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.66rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '5px',
+                              background: 'rgba(124, 58, 237, 0.15)',
+                              color: '#c084fc',
+                              flexShrink: 0,
+                            }}
+                          >
+                            Clip {savedAudios.length - idx}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.76rem',
+                              fontWeight: 600,
+                              color: 'var(--text-main)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={audio.fileName}
+                          >
+                            {audio.fileName}
+                          </span>
+                        </div>
+                        {audio.duration && (
+                          <span
+                            style={{
+                              fontSize: '0.68rem',
+                              color: 'var(--text-muted)',
+                              fontFamily: 'monospace',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {audio.duration}
+                          </span>
+                        )}
+                      </div>
+
+                      <audio
+                        controls
+                        controlsList="nodownload noplaybackrate"
+                        src={audio.streamUrl}
+                        className="rc-audio-player"
+                        style={{
+                          width: '100%',
+                          height: '36px',
+                          borderRadius: '8px',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tab 2: Upload Audio or Text File */}
