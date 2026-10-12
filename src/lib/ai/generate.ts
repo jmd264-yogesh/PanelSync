@@ -27,7 +27,9 @@ import {
 import { critiqueQuestionSet, type Critique } from './critic';
 import { AiError } from './errors';
 import { ROLE_GRADES, sortByDifficulty } from './spec-catalog';
-import { ORG_TIER_BAR, ORG_TIER_LABEL, getOrgTier } from './org-rubric';
+import {
+  CASE_STUDY_CATEGORY_LABEL, ORG_TIER_BAR, ORG_TIER_LABEL, getOrgTier, pickCaseStudy, requiresCaseStudy,
+} from './org-rubric';
 
 export interface GenerateInput {
   spec: Spec;
@@ -97,11 +99,15 @@ export async function generateQuestionSetAgentic(input: GenerateInput): Promise<
   const provider = getAiProvider();
   const orgTier = getOrgTier(spec.roleGrade);
 
+  const caseStudy = requiresCaseStudy(spec.roleGrade) ? pickCaseStudy(spec.caseStudyId) : null;
+
   const guardrailCtx: GuardrailContext = {
     expectedCount: spec.questionCount,
     allowedCategories: focusAreas,
     behaviouralCategories,
     round,
+    requireFullCoverage: true,
+    caseStudyCategory: caseStudy ? CASE_STUDY_CATEGORY_LABEL : null,
   };
 
   const basePrompt = buildSpecQuestionPrompt(spec, focusAreas, round);
@@ -249,7 +255,14 @@ export async function generateQuestionSetAgentic(input: GenerateInput): Promise<
     }
   }
 
-  const ordered: QuestionSet = { ...best, questions: sortByDifficulty(best.questions) };
+  // The case study's scenario and follow-ups come verbatim from the org's panel deck,
+  // attached here rather than trusted from the model's paraphrase.
+  const withCaseStudy = caseStudy
+    ? best.questions.map((q) => (q.category.toLowerCase() === CASE_STUDY_CATEGORY_LABEL.toLowerCase()
+      ? { ...q, caseStudy: { id: caseStudy.id, title: caseStudy.title, scenario: caseStudy.scenario, followUps: caseStudy.followUps } }
+      : q))
+    : best.questions;
+  const ordered: QuestionSet = { ...best, questions: sortByDifficulty(withCaseStudy) };
 
   return {
     questionSet: ordered,

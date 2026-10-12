@@ -6,7 +6,9 @@ import { ROLE_GRADES, STYLES } from '@/lib/ai/spec-catalog';
 import {
   getOrgTier, ORG_TIER_LABEL, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL, TECHNICAL_RUBRIC,
   BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC, BEHAVIOURAL_EXPECTED_BAND,
+  CASE_STUDY_CATEGORY_LABEL, CASE_STUDY_RUBRIC, requiresCaseStudy, computeRubricBreakdown,
 } from '@/lib/ai/org-rubric';
+import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
 import type { Spec } from '@/lib/ai/schemas';
 import { buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
 
@@ -23,6 +25,7 @@ interface ReportQuestion {
   maxMarks: number;
   modelAnswer: string;
   rubric: RubricBand[];
+  caseStudy?: { id: string; title: string; scenario: string; followUps: string[] };
 }
 
 interface RoundReport {
@@ -148,7 +151,10 @@ export default function RecalibrateReportModal({
     return selected.map((id) => ({ label: TECHNICAL_CATEGORY_LABEL[id], bands: TECHNICAL_RUBRIC[orgTier][id]! }));
   }, [orgTier, spec]);
   const behaviouralDims = useMemo(() => BEHAVIOURAL_CATEGORIES.map((id) => ({ label: BEHAVIOURAL_CATEGORY_LABEL[id], bands: BEHAVIOURAL_RUBRIC[id] })), []);
-  const allDims = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
+  const caseStudyDims = useMemo(() => (spec && requiresCaseStudy(spec.roleGrade)
+    ? [{ label: CASE_STUDY_CATEGORY_LABEL, bands: CASE_STUDY_RUBRIC }]
+    : []), [spec]);
+  const allDims = useMemo(() => [...technicalDims, ...caseStudyDims, ...behaviouralDims], [technicalDims, caseStudyDims, behaviouralDims]);
 
   const questionScores = activeRound?.session.questionScores || {};
   const rubricScores = activeRound?.session.rubricScores || {};
@@ -157,6 +163,7 @@ export default function RecalibrateReportModal({
   const avgRubricScore = avgOf(allDims.map((d) => rubricScores[d.label]).filter((v): v is number => typeof v === 'number'));
   const gap = avgQuestionScore !== null && avgRubricScore !== null ? avgRubricScore - avgQuestionScore : null;
   const gapIsDiscrepant = gap !== null && Math.abs(gap) >= 1.0;
+  const rubricBreakdown = spec ? computeRubricBreakdown(spec.roleGrade, spec.techStacks, rubricScores) : null;
 
   const durationLabel = (() => {
     const s = activeRound?.session;
@@ -292,6 +299,12 @@ export default function RecalibrateReportModal({
               )}
             </div>
 
+            {rubricBreakdown && (
+              <div className="glass-card" style={{ padding: '0.9rem' }}>
+                <RubricBreakdown breakdown={rubricBreakdown} />
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <SectionHeader icon={<ListChecks size={13} />} title="Questions" />
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -324,6 +337,18 @@ export default function RecalibrateReportModal({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {caseStudyDims.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <SectionHeader icon={<Gauge size={13} />} title="Technical Case Study" />
+                {caseStudyDims.map((dim) => (
+                  <div key={dim.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                    <span>{questions.find((q) => q.caseStudy)?.caseStudy?.title ?? dim.label}</span>
+                    <ScoreChip value={rubricScores[dim.label]} />
+                  </div>
+                ))}
               </div>
             )}
 

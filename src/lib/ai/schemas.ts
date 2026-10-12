@@ -48,10 +48,15 @@ export type Criteria = z.infer<typeof CriteriaSchema>;
 export const SpecSchema = z.object({
   roleGrade: z.enum(['intern', 'se', 'sse', 'enabler', 'sc', 'ssc', 'architect']),
   style: z.enum(['foundational', 'practical']),
-  questionCount: z.number().int().min(3).max(12),
+  // A requested count, not an exact one: the server raises it to
+  // org-rubric.ts's minimumQuestionCount (one question per focus area) when lower.
+  questionCount: z.number().int().min(3).max(20),
   techStacks: z.array(z.enum([
     'azureDatabricks', 'microsoftFabric', 'snowflake', 'pyspark', 'sql', 'dataPipeline', 'awsGcp', 'dbt',
   ])).min(1, 'Select at least one tech stack for this candidate.'),
+  // Consultant & above only (see org-rubric.ts CASE_STUDIES). Omitted = the server picks
+  // one and writes the choice back onto the stored spec.
+  caseStudyId: z.enum(['multiEntityAcquisition', 'multiPortcoPe', 'exitReadiness']).optional(),
 });
 export type Spec = z.infer<typeof SpecSchema>;
 
@@ -70,6 +75,15 @@ export const QuestionSchema = z.object({
     exampleSignals: z.array(z.string()).max(4).optional().default([]),
   })).min(3).max(5),
   followUps: z.array(z.string()).max(3),
+  // Set server-side (never trusted from the model) on the one "Technical Case Study"
+  // question for Consultant & above: the full scenario and the deck's follow-ups, so the
+  // panel reads the case exactly as written.
+  caseStudy: z.object({
+    id: z.string(),
+    title: z.string(),
+    scenario: z.string(),
+    followUps: z.array(z.string()),
+  }).optional(),
 });
 export type Question = z.infer<typeof QuestionSchema>;
 

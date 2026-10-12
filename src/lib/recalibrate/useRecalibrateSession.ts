@@ -8,6 +8,7 @@ import { ROLE_GRADES, STYLES } from '@/lib/ai/spec-catalog';
 import {
   getOrgTier, ORG_TIER_LABEL, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL,
   TECHNICAL_RUBRIC, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC,
+  CASE_STUDY_CATEGORY_LABEL, CASE_STUDY_RUBRIC, requiresCaseStudy, computeRubricBreakdown, minimumQuestionCount,
 } from '@/lib/ai/org-rubric';
 import { buildCandidateSheetHtml, buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
 import type { RecalibrateSession, AiTranscriptEvaluation, TranscriptDialogueTurn } from '@/lib/db';
@@ -29,6 +30,7 @@ export interface RecalibrateQuestion {
   modelAnswer: string;
   rubric: RubricBand[];
   followUps: string[];
+  caseStudy?: { id: string; title: string; scenario: string; followUps: string[] };
 }
 
 export interface QuestionSet {
@@ -94,6 +96,15 @@ export function useRecalibrateSession({
   const [session, setSession] = useState<RecalibrateSession | null>(null);
   const [activeRun, setActiveRun] = useState<AiRun | null>(null);
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
+
+  // One question per focus area (technical stacks + case study for Consultant & above +
+  // behavioural) is the least that lets every rubric row be scored, so the effective
+  // count never drops below it as the role grade / stack selection changes.
+  const minQuestionCount = useMemo(
+    () => minimumQuestionCount(spec.roleGrade, spec.techStacks),
+    [spec.roleGrade, spec.techStacks],
+  );
+  const effectiveQuestionCount = Math.max(spec.questionCount, minQuestionCount);
 
   const [questionScores, setQuestionScores] = useState<Record<string, number>>({});
   const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
@@ -219,7 +230,7 @@ export function useRecalibrateSession({
       const res = await fetch(`/api/interviews/${interviewId}/ai-runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec }),
+        body: JSON.stringify({ spec: { ...spec, questionCount: effectiveQuestionCount } }),
       });
       const result = await res.json();
       if (!res.ok) {
@@ -407,7 +418,15 @@ export function useRecalibrateSession({
     label: BEHAVIOURAL_CATEGORY_LABEL[id],
     bands: BEHAVIOURAL_RUBRIC[id],
   })), []);
-  const allDims: RubricDim[] = useMemo(() => [...technicalDims, ...behaviouralDims], [technicalDims, behaviouralDims]);
+  // Consultant & above are scored on a compulsory technical case study as well.
+  const caseStudyDims: RubricDim[] = useMemo(() => (requiresCaseStudy(spec.roleGrade)
+    ? [{ label: CASE_STUDY_CATEGORY_LABEL, bands: CASE_STUDY_RUBRIC }]
+    : []), [spec.roleGrade]);
+  const allDims: RubricDim[] = useMemo(() => [...technicalDims, ...caseStudyDims, ...behaviouralDims], [technicalDims, caseStudyDims, behaviouralDims]);
+  const rubricBreakdown = useMemo(
+    () => computeRubricBreakdown(spec.roleGrade, spec.techStacks, rubricScores),
+    [spec.roleGrade, spec.techStacks, rubricScores],
+  );
 
   const avgQuestionScore = useMemo(() => avgOf(questions.map((q) => questionScores[q.id]).filter((v): v is number => typeof v === 'number')), [questions, questionScores]);
   const scoredQuestionCount = questions.filter((q) => typeof questionScores[q.id] === 'number').length;
@@ -777,7 +796,7 @@ export function useRecalibrateSession({
 
   return {
     loading, generating, submitting, error,
-    session, activeRun, spec, setSpec, notes, setNotes,
+    session, activeRun, spec, setSpec, minQuestionCount, effectiveQuestionCount, notes, setNotes,
     questionScores, rubricScores, appliedZeroQuestionIds,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
@@ -785,7 +804,7 @@ export function useRecalibrateSession({
     isRunning, startedAt, elapsedSeconds, elapsedLabel,
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset,
-    questions, orgTier, technicalDims, behaviouralDims, allDims,
+    questions, orgTier, technicalDims, caseStudyDims, behaviouralDims, allDims, rubricBreakdown,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, gap, gapIsDiscrepant, dimensionGaps,
     handleDownloadCandidate, handleDownloadPanelist,
   };

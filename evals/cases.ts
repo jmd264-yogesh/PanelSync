@@ -10,7 +10,7 @@
 
 import type { QuestionSet } from '../src/lib/ai/schemas';
 import type { GuardrailContext } from '../src/lib/ai/guardrails';
-import { BASE_CONTEXT, BEHAVIOURAL, TECH_A, mutate, validQuestionSet } from './fixtures';
+import { BASE_CONTEXT, BEHAVIOURAL, TECH_A, TECH_B, mutate, validQuestionSet } from './fixtures';
 
 export interface GuardrailCase {
   name: string;
@@ -273,6 +273,43 @@ export const GUARDRAIL_CASES: GuardrailCase[] = [
     }),
     context: ctx({ expectedCount: 2 }),
     forbidCodes: ['CATEGORY_NOT_COVERED'],
+    expectBlocking: false,
+  },
+  {
+    name: 'blocks an uncovered category when the spec flow requires full coverage',
+    questionSet: mutate((qs) => { qs.questions.forEach((q) => { if (q.category === TECH_B) q.category = TECH_A; }); }),
+    context: ctx({ requireFullCoverage: true }),
+    expectCodes: ['CATEGORY_NOT_COVERED'],
+    expectBlocking: true,
+  },
+  {
+    name: 'blocks a Consultant-level set with no case study',
+    questionSet: validQuestionSet(),
+    context: ctx({
+      allowedCategories: [TECH_A, TECH_B, 'Technical Case Study', BEHAVIOURAL],
+      caseStudyCategory: 'Technical Case Study',
+    }),
+    expectCodes: ['CASE_STUDY_MISSING'],
+    expectBlocking: true,
+  },
+  {
+    name: 'blocks more than one case study question',
+    questionSet: mutate((qs) => { qs.questions[0].category = 'Technical Case Study'; qs.questions[3].category = 'Technical Case Study'; }),
+    context: ctx({
+      allowedCategories: [TECH_A, TECH_B, 'Technical Case Study', BEHAVIOURAL],
+      caseStudyCategory: 'Technical Case Study',
+    }),
+    expectCodes: ['CASE_STUDY_DUPLICATE'],
+    expectBlocking: true,
+  },
+  {
+    name: 'accepts exactly one case study question',
+    questionSet: mutate((qs) => { qs.questions[0].category = 'Technical Case Study'; }),
+    context: ctx({
+      allowedCategories: [TECH_A, TECH_B, 'Technical Case Study', BEHAVIOURAL],
+      caseStudyCategory: 'Technical Case Study',
+    }),
+    forbidCodes: ['CASE_STUDY_MISSING', 'CASE_STUDY_DUPLICATE'],
     expectBlocking: false,
   },
 ];

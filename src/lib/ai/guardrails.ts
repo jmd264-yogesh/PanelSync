@@ -33,6 +33,13 @@ export interface GuardrailContext {
   /** Subset of allowedCategories that assess behaviour rather than technical skill. */
   behaviouralCategories: string[];
   round?: 'L1' | 'L2' | null;
+  /**
+   * Spec flow: every allowed category must get at least one question (the question count
+   * is already at least the number of categories), so an uncovered one blocks.
+   */
+  requireFullCoverage?: boolean;
+  /** Category label of the compulsory case study (Consultant & above); exactly one question must use it. */
+  caseStudyCategory?: string | null;
 }
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
@@ -171,11 +178,25 @@ function checkCategories(qs: QuestionSet, ctx: GuardrailContext): Finding[] {
       if (!usage.has(key)) {
         findings.push({
           code: 'CATEGORY_NOT_COVERED',
-          severity: 'warn',
+          severity: ctx.requireFullCoverage ? 'error' : 'warn',
           message: `No question covers "${label}", even though there was room for one.`,
           repairHint: `Make sure every selected category gets at least one question, including "${label}".`,
         });
       }
+    }
+  }
+
+  if (ctx.caseStudyCategory) {
+    const caseCount = usage.get(ctx.caseStudyCategory.toLowerCase()) ?? 0;
+    if (caseCount !== 1) {
+      findings.push({
+        code: caseCount === 0 ? 'CASE_STUDY_MISSING' : 'CASE_STUDY_DUPLICATE',
+        severity: 'error',
+        message: caseCount === 0
+          ? `No "${ctx.caseStudyCategory}" question — the case study is compulsory for this role.`
+          : `${caseCount} questions use "${ctx.caseStudyCategory}" — there must be exactly one.`,
+        repairHint: `Include exactly one question with category "${ctx.caseStudyCategory}", based on the case study scenario given in the instructions.`,
+      });
     }
   }
 
