@@ -6,7 +6,10 @@ import { Sparkles, Loader2, FileText, Wand2, History, Save, AlertTriangle } from
 import type { Spec } from '@/lib/ai/schemas';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
-import { getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
+import {
+  getOrgTier, ORG_TIER_LABEL, ORG_TIER_BAR, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL,
+  MAX_QUESTION_COUNT, minimumQuestionCount, requiresCaseStudy,
+} from '@/lib/ai/org-rubric';
 
 interface ResumeDigestSkill {
   name: string;
@@ -51,6 +54,7 @@ interface Question {
   maxMarks: number;
   rubric: RubricBand[];
   followUps: string[];
+  caseStudy?: { id: string; title: string; scenario: string; followUps: string[] };
 }
 
 interface QuestionSet {
@@ -455,11 +459,15 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
                 <input
                   className="form-input"
                   type="number"
-                  min={3}
-                  max={12}
-                  value={spec.questionCount}
+                  min={minimumQuestionCount(spec.roleGrade, spec.techStacks)}
+                  max={MAX_QUESTION_COUNT}
+                  value={Math.max(spec.questionCount, minimumQuestionCount(spec.roleGrade, spec.techStacks))}
                   onChange={(e) => setSpec((s) => ({ ...s, questionCount: Number(e.target.value) }))}
                 />
+              </div>
+              <div className="text-xs text-muted">
+                Minimum {minimumQuestionCount(spec.roleGrade, spec.techStacks)} questions needed to cover every selected area
+                {requiresCaseStudy(spec.roleGrade) ? ', including a compulsory technical case study' : ''}.
               </div>
               <div className="text-xs text-muted">{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</div>
               <div className="text-xs text-muted">{STYLES[spec.style].hint}</div>
@@ -546,6 +554,12 @@ export default function AiCopilotPanel({ interviewId, defaultRoleTitle }: { inte
                   {q.followUps.length > 0 && (
                     <div className="text-xs text-muted" style={{ marginTop: '0.3rem' }}>
                       Follow-ups: {q.followUps.join(' · ')}
+                    </div>
+                  )}
+                  {q.caseStudy && (
+                    <div className="text-xs" style={{ marginTop: '0.4rem', lineHeight: 1.5 }}>
+                      <strong>Case study — {q.caseStudy.title}:</strong> {q.caseStudy.scenario}
+                      <div className="text-muted" style={{ marginTop: '0.2rem' }}>Follow-ups: {q.caseStudy.followUps.join(' · ')}</div>
                     </div>
                   )}
                 </div>

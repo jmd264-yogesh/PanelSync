@@ -8,7 +8,10 @@ import { getAiProvider } from '@/lib/ai/provider';
 import { buildDigestPrompt, buildQuestionPrompt, PROMPT_VERSION } from '@/lib/ai/prompts';
 import { ResumeDigestSchema, CriteriaSchema, QuestionSetSchema, SpecSchema } from '@/lib/ai/schemas';
 import { verifyQuestionSet, recomputeTotalMarks, QuestionSetVerificationError } from '@/lib/ai/verify';
-import { deriveFocusAreas, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
+import {
+  deriveFocusAreas, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL,
+  MAX_QUESTION_COUNT, minimumQuestionCount, pickCaseStudy, requiresCaseStudy,
+} from '@/lib/ai/org-rubric';
 import { getInterviewInfo } from '@/lib/interview-role';
 import { generateQuestionSetAgentic } from '@/lib/ai/generate';
 import { AiError, classifyProviderError } from '@/lib/ai/errors';
@@ -68,7 +71,19 @@ export async function POST(
       if (!parsedSpec.success) {
         return NextResponse.json({ error: 'Invalid spec', details: parsedSpec.error.issues }, { status: 400 });
       }
-      const spec = parsedSpec.data;
+      // The requested count is a floor-adjusted target: never fewer than one question per
+      // focus area, otherwise some rubric categories can't be scored. The case study is
+      // resolved here (not inside generation) so the stored spec records which one was used.
+      const spec = {
+        ...parsedSpec.data,
+        questionCount: Math.min(
+          MAX_QUESTION_COUNT,
+          Math.max(parsedSpec.data.questionCount, minimumQuestionCount(parsedSpec.data.roleGrade, parsedSpec.data.techStacks)),
+        ),
+        caseStudyId: requiresCaseStudy(parsedSpec.data.roleGrade)
+          ? pickCaseStudy(parsedSpec.data.caseStudyId).id
+          : undefined,
+      };
 
       let specRun = await db.createAiRun({ interviewId: id, candidateId: null, triggeredByEmail: session.user.email });
 

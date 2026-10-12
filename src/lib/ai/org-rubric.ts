@@ -5,7 +5,8 @@ import { RoleGrade } from './spec-catalog';
 // AI-generated questions are scoped to, and (b) the Overall Scoring Rubric grid's
 // dimensions and score-band language. Score scale is 1-4 per the org framework
 // (Does Not Meet / Partially Meets / Meets Expectation / Exceeds Expectation) — distinct
-// from the AI's own per-question 1-5 rubric, which stays as-is.
+// from the AI-generated per-question rubric, which also uses 1-4 bands but is written
+// per question rather than per category.
 
 export type OrgRubricTier = 'se_sse' | 'consultant' | 'enabler';
 
@@ -117,7 +118,7 @@ export const TECHNICAL_RUBRIC: Record<OrgRubricTier, Partial<Record<TechnicalCat
       "Operates within an existing Databricks setup but doesn't design one; trade-off reasoning is shallow.",
       'Makes some architectural contributions with support; trade-offs (cost, performance, governance) still developing.',
       'Designs end-to-end Databricks architecture that scales — clusters, Unity Catalog, Delta Lake, DABs, LakeFlow, Genie; makes real trade-offs; troubleshoots performance/cost issues.',
-      'Same, plus their Databricks architecture decisions are adopted as a standard/playbook beyond their own project/account; advises other teams/accounts.',
+      'Same, plus their Databricks architecture decisions are adopted as a standard/playbook beyond their own project; advises other teams/accounts.',
     ],
     microsoftFabric: [
       "Operates within an existing Fabric setup but doesn't design one; trade-off reasoning is shallow.",
@@ -201,7 +202,7 @@ export const TECHNICAL_RUBRIC: Record<OrgRubricTier, Partial<Record<TechnicalCat
     ],
     dbt: [
       'Has basic knowledge on dbt and how it works.',
-      'Has basic knowledge, able to explain macros, models, snapshot, seeds.',
+      'Has dbt knowledge, able to explain macros, models, snapshot, seeds.',
       'Able to clearly define dbt folders, variables, usecases for macros, jinja template, understanding of CI/CD, unit test.',
       'Complete knowledge on dbt, same as #3 and covering anchors, selectors, hooks, state, freshness, lineage, document.',
     ],
@@ -279,29 +280,198 @@ function selectedOrAllTechnical(tier: OrgRubricTier, selectedTechStacks?: Techni
   return all.filter((id) => selected.has(id));
 }
 
+// ── Technical case study (Consultant & above) ───────────────────────────────
+// The org's "Technical Case Studies — Panel Reference" slide: for Solution Consultant,
+// Senior Solution Consultant and Data Architect, every question set must include exactly
+// one case-study question built on one of these scenarios. It's scored as its own
+// rubric dimension so the panel's case-study observation is a number, not just a note.
+
+export const CASE_STUDY_CATEGORY_LABEL = 'Technical Case Study';
+
+export type CaseStudyId = 'multiEntityAcquisition' | 'multiPortcoPe' | 'exitReadiness';
+
+export interface CaseStudy {
+  id: CaseStudyId;
+  title: string;
+  scenario: string;
+  followUps: string[];
+}
+
+export const CASE_STUDIES: Record<CaseStudyId, CaseStudy> = {
+  multiEntityAcquisition: {
+    id: 'multiEntityAcquisition',
+    title: 'Multi-Entity Acquisition',
+    scenario:
+      'LensKart operates across multiple regions and has acquired John Jacobs — both specs-making companies (same business model), but their operating models differ, with separate CRM and ERP systems for each.',
+    followUps: [
+      'Explain the architecture solution.',
+      'How would you organise the data?',
+      'If they acquire another similar specs company, how quickly can you integrate and get them into reporting?',
+      'What questions would you ask?',
+      'Are you aware of compliance (e.g. GDPR, PCI DSS, HIPAA)? (good to have)',
+      'Explain the development process.',
+    ],
+  },
+  multiPortcoPe: {
+    id: 'multiPortcoPe',
+    title: 'Multi-Portco PE Reporting',
+    scenario:
+      'A PE firm with 10 portfolio companies (e.g. Banking, Pharma, others) has no unified reporting layer for cross-portco insights. 5 portcos run on-prem SQL Server; 5 run web apps with API connectivity. Each portco has its own chart of accounts, KPIs, and operating cadence.',
+    followUps: [
+      'What questions would you ask the client to better understand the situation before proposing a solution?',
+      'How would you propose the technical architecture, and why?',
+      'How can we build the ingestion efficiently?',
+      'How easy would it be to integrate a newly acquired business into the data platform?',
+      'How would you recommend governing this platform?',
+      'How easy would it be to leverage AI capabilities in your platform? Any use case?',
+    ],
+  },
+  exitReadiness: {
+    id: 'exitReadiness',
+    title: 'PE Exit-Readiness Reporting',
+    scenario:
+      'Meridian Home & Garden — a £180M home & garden products company — was acquired by a PE firm 14 months ago and has since acquired two more brands, resulting in multiple disconnected systems: ERP (orders, inventory, finance — Meridian), SAP (Acquired Brand 2), Shopify / Amazon (D2C Brand 3), a 3PL warehouse (daily shipment CSVs), and Excel (product mappings, exchange rates, revenue reconciliation). Finance and Brand teams report different revenue figures each month; month-end close takes 9 days. Exit is expected in 2-3 years, and current reporting lacks the trust/governance required for due diligence.',
+    followUps: [
+      'Before you design anything — what would you want to know, and who would you want to talk to?',
+      'Which KPIs or reports would you recommend to create value for the PE business?',
+      'Design the target data architecture, including layers and data model — why this approach?',
+      'IT lead wants everything built on the existing Matillion/Alteryx instance (licences owned), or fully on-prem — how do you respond?',
+      "It's week 4 of 12. The CFO asks you to also build inventory forecasting dashboards. What do you say?",
+    ],
+  },
+};
+
+export const CASE_STUDY_IDS = Object.keys(CASE_STUDIES) as CaseStudyId[];
+
+// The deck defines the case studies and their follow-ups but not 1-4 band text for
+// scoring them, so these bands apply the Consultant & Sr Consultant bar ("architecture,
+// scale, real trade-offs") to what the follow-up questions probe: clarifying questions,
+// target architecture, ingestion/integration of new entities, governance, and handling
+// stakeholder pushback.
+export const CASE_STUDY_RUBRIC: Bands = [
+  'Jumps straight to a tool or generic diagram without clarifying the business problem; architecture is incomplete or not scalable; struggles with the follow-ups.',
+  'Asks a few clarifying questions and proposes a workable architecture, but trade-offs, integration of new entities, or governance are thin and need prompting.',
+  'Asks the right business questions first; designs a scalable end-to-end architecture (layers, data model, ingestion) with real trade-offs; credibly covers onboarding new acquisitions and governance.',
+  'Same, plus ties the design to business value (KPIs, exit readiness, cross-portco insight), handles stakeholder pushback and scope changes with confidence, and raises compliance/AI opportunities unprompted.',
+];
+
+/** Consultant & above (SC, SSC, Architect) must be asked one technical case study. */
+export function requiresCaseStudy(roleGrade: RoleGrade): boolean {
+  return getOrgTier(roleGrade) === 'consultant';
+}
+
+export function pickCaseStudy(preferred?: CaseStudyId | null): CaseStudy {
+  if (preferred && CASE_STUDIES[preferred]) return CASE_STUDIES[preferred];
+  return CASE_STUDIES[CASE_STUDY_IDS[Math.floor(Math.random() * CASE_STUDY_IDS.length)]];
+}
+
 // The full list of valid question/rubric category labels for a role grade — technical
-// (tier-specific, optionally narrowed to `selectedTechStacks`) + the shared behavioural
-// set (always all — behavioural categories are role-agnostic, not stack-specific). Used
-// both as the AI prompt's allowed "category" list and as verifyQuestionSet's focusAreas.
+// (tier-specific, optionally narrowed to `selectedTechStacks`), the case study for
+// Consultant & above, and the shared behavioural set (always all — behavioural
+// categories are role-agnostic, not stack-specific). Used both as the AI prompt's
+// allowed "category" list and as verifyQuestionSet's focusAreas.
 export function deriveFocusAreas(roleGrade: RoleGrade, selectedTechStacks?: TechnicalCategoryId[]): string[] {
   const tier = getOrgTier(roleGrade);
   const technical = selectedOrAllTechnical(tier, selectedTechStacks).map((c) => TECHNICAL_CATEGORY_LABEL[c]);
+  const caseStudy = requiresCaseStudy(roleGrade) ? [CASE_STUDY_CATEGORY_LABEL] : [];
   const behavioural = BEHAVIOURAL_CATEGORIES.map((c) => BEHAVIOURAL_CATEGORY_LABEL[c]);
-  return [...technical, ...behavioural];
+  return [...technical, ...caseStudy, ...behavioural];
+}
+
+// Every focus area needs at least one question for the set to be scorable across the
+// whole rubric — so the minimum question count is simply the number of areas.
+export const MIN_QUESTION_FLOOR = 3;
+export const MAX_QUESTION_COUNT = 20;
+
+export function minimumQuestionCount(roleGrade: RoleGrade, selectedTechStacks?: TechnicalCategoryId[]): number {
+  return Math.max(MIN_QUESTION_FLOOR, deriveFocusAreas(roleGrade, selectedTechStacks).length);
 }
 
 // The Overall Scoring Rubric grid's dimensions for a role grade, each with its org-defined
 // 1-4 band text (technical bands are tier-specific and optionally narrowed to
-// `selectedTechStacks`; behavioural bands are shared and always all included).
+// `selectedTechStacks`; the case study row is added for Consultant & above; behavioural
+// bands are shared and always all included).
 export function rubricDimensionsWithBands(roleGrade: RoleGrade, selectedTechStacks?: TechnicalCategoryId[]): { label: string; bands: Bands }[] {
   const tier = getOrgTier(roleGrade);
   const technical = selectedOrAllTechnical(tier, selectedTechStacks).map((c) => ({
     label: TECHNICAL_CATEGORY_LABEL[c],
     bands: TECHNICAL_RUBRIC[tier][c] as Bands,
   }));
+  const caseStudy = requiresCaseStudy(roleGrade)
+    ? [{ label: CASE_STUDY_CATEGORY_LABEL, bands: CASE_STUDY_RUBRIC }]
+    : [];
   const behavioural = BEHAVIOURAL_CATEGORIES.map((c) => ({
     label: BEHAVIOURAL_CATEGORY_LABEL[c],
     bands: BEHAVIOURAL_RUBRIC[c],
   }));
-  return [...technical, ...behavioural];
+  return [...technical, ...caseStudy, ...behavioural];
+}
+
+// ── Score calculation ───────────────────────────────────────────────────────
+// How the deck says the 1-4 rubric scores are read:
+//   • Technical: "Score 3 = the bar stated in the interview framework for this role",
+//     so the technical average is compared against 3.
+//   • Case study (Consultant & above): same bar, 3.
+//   • Behavioural: one role-agnostic scale where the score itself reflects seniority
+//     (1-2 = SSE, 2-3 = Enabler, 3-4 = Consultant & above, 4 = exceeds even that), so
+//     the behavioural average is compared against the bottom of the role's expected band.
+// Averages are unweighted and only include dimensions that were actually rated.
+
+export const TECHNICAL_BAR = 3;
+
+const BEHAVIOURAL_BAND_MIN: Record<OrgRubricTier, number> = { se_sse: 1, enabler: 2, consultant: 3 };
+
+export function behaviouralSeniority(avg: number): string {
+  if (avg >= 4) return 'Exceeds Consultant & above';
+  if (avg >= 3) return 'Consultant & above';
+  if (avg >= 2) return 'Enabler';
+  return 'SSE';
+}
+
+export interface RubricSectionResult {
+  average: number | null;
+  rated: number;
+  total: number;
+  bar: number;
+  meetsBar: boolean | null;
+}
+
+export interface RubricBreakdown {
+  tier: OrgRubricTier;
+  technical: RubricSectionResult;
+  caseStudy: RubricSectionResult | null;
+  behavioural: RubricSectionResult & { expectedBand: string; indicatedSeniority: string | null };
+  overall: { average: number | null; rated: number; total: number };
+}
+
+function scoreSection(labels: string[], scores: Record<string, number>, bar: number): RubricSectionResult {
+  const values = labels.map((l) => scores[l]).filter((v): v is number => typeof v === 'number');
+  const average = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  return { average, rated: values.length, total: labels.length, bar, meetsBar: average === null ? null : average >= bar };
+}
+
+export function computeRubricBreakdown(
+  roleGrade: RoleGrade,
+  selectedTechStacks: TechnicalCategoryId[] | undefined,
+  rubricScores: Record<string, number>,
+): RubricBreakdown {
+  const tier = getOrgTier(roleGrade);
+  const technicalLabels = selectedOrAllTechnical(tier, selectedTechStacks).map((c) => TECHNICAL_CATEGORY_LABEL[c]);
+  const caseLabels = requiresCaseStudy(roleGrade) ? [CASE_STUDY_CATEGORY_LABEL] : [];
+  const behaviouralLabels = BEHAVIOURAL_CATEGORIES.map((c) => BEHAVIOURAL_CATEGORY_LABEL[c]);
+
+  const behavioural = scoreSection(behaviouralLabels, rubricScores, BEHAVIOURAL_BAND_MIN[tier]);
+  const overall = scoreSection([...technicalLabels, ...caseLabels, ...behaviouralLabels], rubricScores, TECHNICAL_BAR);
+
+  return {
+    tier,
+    technical: scoreSection(technicalLabels, rubricScores, TECHNICAL_BAR),
+    caseStudy: caseLabels.length ? scoreSection(caseLabels, rubricScores, TECHNICAL_BAR) : null,
+    behavioural: {
+      ...behavioural,
+      expectedBand: BEHAVIOURAL_EXPECTED_BAND[tier],
+      indicatedSeniority: behavioural.average === null ? null : behaviouralSeniority(behavioural.average),
+    },
+    overall: { average: overall.average, rated: overall.rated, total: overall.total },
+  };
 }

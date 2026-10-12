@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, ChevronDown, CheckCircle2 } from 'lucide-react';
 import {
   getOrgTier, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL, TECHNICAL_RUBRIC,
-  BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC,
+  BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC, deriveFocusAreas,
 } from '@/lib/ai/org-rubric';
 import type { Spec } from '@/lib/ai/schemas';
 import { SectionHeader } from '@/components/recalibrate/primitives';
@@ -74,12 +74,9 @@ export default function L1ReferencePanel({ interviewId }: { interviewId: string 
 
   const spec = data?.spec || null;
   const orgTier = useMemo(() => (spec ? getOrgTier(spec.roleGrade) : null), [spec]);
-  const allDims = useMemo(() => {
-    if (!orgTier) return [];
-    const technical = TECHNICAL_CATEGORIES_BY_TIER[orgTier].map((id) => TECHNICAL_CATEGORY_LABEL[id]);
-    const behavioural = BEHAVIOURAL_CATEGORIES.map((id) => BEHAVIOURAL_CATEGORY_LABEL[id]);
-    return [...technical, ...behavioural];
-  }, [orgTier]);
+  // Same rows the L1 panelist scored: their selected stacks, the case study for
+  // Consultant & above, and the behavioural set.
+  const allDims = useMemo(() => (spec ? deriveFocusAreas(spec.roleGrade, spec.techStacks) : []), [spec]);
 
   const questions = data?.questions?.questions || [];
   const questionScores = data?.session.questionScores || {};

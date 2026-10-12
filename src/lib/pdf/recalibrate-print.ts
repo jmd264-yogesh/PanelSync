@@ -16,6 +16,15 @@ export interface RecalibrateQuestion {
   maxMarks: number;
   modelAnswer: string;
   rubric: RecalibrateRubricBand[];
+  caseStudy?: { title: string; scenario: string; followUps: string[] };
+}
+
+// The full case-study scenario + standard follow-ups, so a printed sheet carries the case
+// exactly as the panel reads it out.
+function caseStudyHtml(q: RecalibrateQuestion): string {
+  if (!q.caseStudy) return '';
+  return `<p class="ma"><b>Case study — ${escapeHtml(q.caseStudy.title)}:</b> ${escapeHtml(q.caseStudy.scenario)}</p>
+      <ol class="ma">${q.caseStudy.followUps.map((f) => `<li>${escapeHtml(f)}</li>`).join('')}</ol>`;
 }
 
 export interface RecalibratePrintInput {
@@ -105,6 +114,7 @@ export function buildCandidateSheetHtml(input: RecalibratePrintInput): string {
     qBlock += `<div class="q">
       <p class="qh"><b>Q${idx + 1}.</b> <span class="area">${escapeHtml(q.category)}</span></p>
       <p class="qt">${escapeHtml(q.question)}</p>
+      ${caseStudyHtml(q)}
     </div>`;
   });
 
@@ -132,6 +142,7 @@ export function buildPanelistReportHtml(input: RecalibratePrintInput): string {
     qBlock += `<div class="q">
       <p class="qh"><b>Q${idx + 1}.</b> <span class="area">${escapeHtml(q.category)} · ${escapeHtml(q.difficulty)} · ${q.maxMarks} marks</span></p>
       <p class="qt">${escapeHtml(q.question)}</p>
+      ${caseStudyHtml(q)}
       <p class="ma"><b>Model answer:</b> ${escapeHtml(q.modelAnswer)}</p>
       <p class="gg">${rubricLines}</p>
       <p class="sc"><b>Score given:</b> ${score !== undefined ? score + ' / 4' : '— (not scored)'}</p>

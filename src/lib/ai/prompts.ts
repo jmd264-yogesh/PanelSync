@@ -1,8 +1,11 @@
 import { Criteria, ResumeDigest, Spec } from './schemas';
 import { CALIBRATION, ROLE_GRADES, STYLES } from './spec-catalog';
-import { BEHAVIOURAL_CATEGORY_LABEL, ORG_TIER_BAR, ORG_TIER_LABEL, getOrgTier, rubricDimensionsWithBands } from './org-rubric';
+import {
+  BEHAVIOURAL_CATEGORY_LABEL, CASE_STUDY_CATEGORY_LABEL, ORG_TIER_BAR, ORG_TIER_LABEL,
+  getOrgTier, pickCaseStudy, requiresCaseStudy, rubricDimensionsWithBands,
+} from './org-rubric';
 
-export const PROMPT_VERSION = 'v1';
+export const PROMPT_VERSION = 'v2';
 
 const RESUME_DELIMITER_START = '<<<RESUME_TEXT_START>>>';
 const RESUME_DELIMITER_END = '<<<RESUME_TEXT_END>>>';
@@ -67,13 +70,26 @@ export function buildSpecQuestionPrompt(spec: Spec, focusAreas: string[], round?
       : '';
 
   const categoryBriefs = dims.map(({ label, bands }) => {
-    const kind = behaviouralLabels.has(label) ? 'behavioural' : 'technical';
+    const kind = behaviouralLabels.has(label) ? 'behavioural' : label === CASE_STUDY_CATEGORY_LABEL ? 'case study' : 'technical';
     return `- "${label}" (${kind}) — the organization's bar (score 3 = "Meets Expectation") for this category at ${ORG_TIER_LABEL[orgTier]} level:
   1 (Does Not Meet): ${bands[0]}
   2 (Partially Meets): ${bands[1]}
   3 (Meets Expectation): ${bands[2]}
   4 (Exceeds Expectation): ${bands[3]}`;
   }).join('\n');
+
+  // Consultant & above must get one case study from the org's panel reference deck. The
+  // route resolves spec.caseStudyId before calling this, so the scenario named here is
+  // the same one generate.ts attaches to the question afterwards.
+  const caseStudy = requiresCaseStudy(spec.roleGrade) ? pickCaseStudy(spec.caseStudyId) : null;
+  const caseStudyRules = caseStudy
+    ? `
+- Exactly ONE question must have category "${CASE_STUDY_CATEGORY_LABEL}". It is a compulsory technical case study for this Consultant-and-above role, based on this scenario (the panel reads the full scenario and its standard follow-ups to the candidate; they are attached to the question automatically):
+  Case study: ${caseStudy.title}
+  Scenario: ${caseStudy.scenario}
+  Standard follow-ups: ${caseStudy.followUps.join(' | ')}
+  Write that question's "question" as a short opening ask for this case (under 400 characters, e.g. "Case study — ${caseStudy.title}: walk us through how you would approach this, starting with what you would want to know."), set its difficulty to "hard", leave its "followUps" empty, and make its "modelAnswer" and 4 rubric bands describe what clarifying questions, architecture, integration, governance and stakeholder handling a strong answer to THIS scenario shows.`
+    : '';
 
   const systemPrompt = `You are an interview question generator for a Data Engineering Center of Excellence hiring panel, using the organization's own technical + behavioural rubric (not a generic question bank). You propose questions and scoring rubrics — panelists remain the decision-makers and can edit everything you produce. There is no candidate resume for this session; the panelist has instead scoped the question set directly by role grade.
 
@@ -83,7 +99,8 @@ ${categoryBriefs}
 
 Rules:
 - Generate exactly ${spec.questionCount} questions.
-- Every question's "category" must be exactly one of the category names above (do not invent categories outside this list) — cover them roughly evenly across the question set.
+- Every question's "category" must be exactly one of the category names above (do not invent categories outside this list).
+- EVERY category above must get at least one question — the panel scores each category afterwards, so an uncovered category cannot be scored. Spread any questions beyond one-per-category evenly.${caseStudyRules}
 - Set "linkedResumeEvidence" to null for every question — there is no resume to link to.
 - Behavioural categories (marked "behavioural" above) assess judgement, communication, and people/client skill, not syntax — do not ask coding questions for these categories.
 - Set "maxMarks" to 4 for every question.

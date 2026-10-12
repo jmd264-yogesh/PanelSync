@@ -8,7 +8,11 @@ import {
 } from 'lucide-react';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
-import { ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL } from '@/lib/ai/org-rubric';
+import {
+  ORG_TIER_LABEL, ORG_TIER_BAR, BEHAVIOURAL_EXPECTED_BAND, TECHNICAL_CATEGORIES_BY_TIER, TECHNICAL_CATEGORY_LABEL,
+  CASE_STUDIES, CASE_STUDY_IDS, MAX_QUESTION_COUNT, deriveFocusAreas, requiresCaseStudy,
+} from '@/lib/ai/org-rubric';
+import type { CaseStudyId } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
 import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE, SCORE_COLORS, ORG_SCORE_LABELS } from '@/components/recalibrate/primitives';
@@ -16,6 +20,7 @@ import type { CandidateStatus } from './CandidateGrid';
 import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
 import TranscriptPanel from './TranscriptPanel';
+import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -97,14 +102,14 @@ export default function RecalibrateWorkspace({
   const isL2Round = round === 'L2';
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
-    loading, generating, submitting, error, session, activeRun, spec, setSpec, notes, setNotes,
+    loading, generating, submitting, error, session, activeRun, spec, setSpec, minQuestionCount, effectiveQuestionCount, notes, setNotes,
     questionScores, rubricScores, appliedZeroQuestionIds, isRunning, elapsedSeconds, elapsedLabel,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
     handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
-    questions, orgTier, technicalDims, behaviouralDims,
+    questions, orgTier, technicalDims, caseStudyDims, behaviouralDims, rubricBreakdown,
     avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant, dimensionGaps,
     handleDownloadCandidate, handleDownloadPanelist,
   } = rc;
@@ -373,7 +378,8 @@ export default function RecalibrateWorkspace({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                   <span className="badge">{ROLE_GRADES[spec.roleGrade].label}</span>
                   <span className="badge">{STYLES[spec.style].label}</span>
-                  <span className="badge">{spec.questionCount} questions</span>
+                  <span className="badge">{questions.length || effectiveQuestionCount} questions</span>
+                  {requiresCaseStudy(spec.roleGrade) && <span className="badge">+ case study</span>}
                   <span className="badge">{spec.techStacks.length} tech stack{spec.techStacks.length === 1 ? '' : 's'}</span>
                 </div>
                 <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setSpecExpanded(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -389,12 +395,37 @@ export default function RecalibrateWorkspace({
                   <select className="form-input" value={spec.style} onChange={(e) => setSpec((s) => ({ ...s, style: e.target.value as Style }))}>
                     {Object.entries(STYLES).map(([key, st]) => <option key={key} value={key}>{st.label}</option>)}
                   </select>
-                  <input
-                    className="form-input" type="number" min={3} max={12}
-                    value={spec.questionCount}
-                    onChange={(e) => setSpec((s) => ({ ...s, questionCount: Number(e.target.value) }))}
-                  />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Questions
+                    <input
+                      className="form-input" type="number" min={minQuestionCount} max={MAX_QUESTION_COUNT}
+                      value={effectiveQuestionCount}
+                      onChange={(e) => setSpec((s) => ({ ...s, questionCount: Number(e.target.value) }))}
+                      onBlur={(e) => setSpec((s) => ({
+                        ...s,
+                        questionCount: Math.min(MAX_QUESTION_COUNT, Math.max(minQuestionCount, Number(e.target.value) || minQuestionCount)),
+                      }))}
+                    />
+                  </label>
                 </div>
+                <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
+                  Minimum <strong style={{ color: 'var(--text-main)' }}>{minQuestionCount} questions</strong> needed to cover and score every selected area
+                  ({deriveFocusAreas(spec.roleGrade, spec.techStacks).length} areas: {spec.techStacks.length} tech stack{spec.techStacks.length === 1 ? '' : 's'}
+                  {requiresCaseStudy(spec.roleGrade) ? ', 1 case study' : ''}, 4 behavioural). Extra questions are spread evenly.
+                </div>
+                {requiresCaseStudy(spec.roleGrade) && (
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <span className="text-xs" style={{ fontWeight: 700 }}>Compulsory technical case study (Consultant &amp; above)</span>
+                    <select
+                      className="form-input"
+                      value={spec.caseStudyId ?? ''}
+                      onChange={(e) => setSpec((s) => ({ ...s, caseStudyId: (e.target.value || undefined) as CaseStudyId | undefined }))}
+                    >
+                      <option value="">Pick one at random</option>
+                      {CASE_STUDY_IDS.map((id) => <option key={id} value={id}>{CASE_STUDIES[id].title}</option>)}
+                    </select>
+                  </label>
+                )}
                 <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</div>
                 <div className="text-xs text-muted">
                   Rubric: <strong style={{ color: 'var(--text-main)' }}>{ORG_TIER_LABEL[orgTier]}</strong> — bar: {ORG_TIER_BAR[orgTier]}
@@ -558,6 +589,16 @@ export default function RecalibrateWorkspace({
                       </label>
                     </div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 0.65rem', lineHeight: 1.55 }}>{q.question}</p>
+                    {q.caseStudy && (
+                      <div style={{ margin: '0 0 0.75rem', padding: '0.75rem 0.9rem', borderRadius: 'var(--radius-md)', background: 'var(--rc-brand-glow, rgba(124,58,237,0.08))', border: '1px solid var(--border-glass)' }}>
+                        <div className="text-xs" style={{ fontWeight: 700, marginBottom: '0.35rem' }}>Case study — {q.caseStudy.title}</div>
+                        <p style={{ fontSize: '0.85rem', margin: '0 0 0.5rem', lineHeight: 1.55 }}>{q.caseStudy.scenario}</p>
+                        <div className="text-xs" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Follow-up questions</div>
+                        <ol style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.82rem', lineHeight: 1.55 }}>
+                          {q.caseStudy.followUps.map((f, fi) => <li key={fi}>{f}</li>)}
+                        </ol>
+                      </div>
+                    )}
 
                     {/* AI Transcript Evidence & Reasoning */}
                     {qEval && (
@@ -697,6 +738,28 @@ export default function RecalibrateWorkspace({
                 ))}
               </div>
 
+              {caseStudyDims.length > 0 && (
+                <div style={{
+                  borderLeft: '3px solid #f59e0b', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.05)',
+                  padding: '0.75rem 0.9rem 0.15rem',
+                }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Case Study</div>
+                  <div className="text-xs text-muted" style={{ marginBottom: '0.3rem' }}>Compulsory for Consultant &amp; above — bar: <strong>3</strong></div>
+                  {caseStudyDims.map((dim) => (
+                    <RubricRow
+                      key={dim.label}
+                      label={dim.label}
+                      bands={dim.bands}
+                      score={rubricScores[dim.label]}
+                      suggestedScore={suggestedRubricScores[dim.label]?.score}
+                      aiReasoning={suggestedRubricScores[dim.label]?.reasoning}
+                      onScore={(n) => scoreRubric(dim.label, n)}
+                      dialSize={22}
+                    />
+                  ))}
+                </div>
+              )}
+
               <div style={{
                 borderLeft: '3px solid var(--success, #10b981)', borderRadius: '10px', background: 'var(--success-glow, rgba(16,185,129,0.05))',
                 padding: '0.75rem 0.9rem 0.15rem',
@@ -808,6 +871,7 @@ export default function RecalibrateWorkspace({
                     )}
                   </div>
                 )}
+                <RubricBreakdown breakdown={rubricBreakdown} />
                 <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
                 {gap !== null && (scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
                   <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
