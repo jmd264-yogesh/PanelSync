@@ -779,10 +779,10 @@ export default function PanelistClient({
     return (
       <div
         role="radiogroup"
-        aria-label="Rating out of 5"
+        aria-label="Rating out of 4"
         style={{ display: "flex", gap: "6px" }}
       >
-        {[1, 2, 3, 4, 5].map((star) => {
+        {[1, 2, 3, 4].map((star) => {
           const active = star <= currentRating;
           return (
             <button
@@ -790,7 +790,7 @@ export default function PanelistClient({
               type="button"
               role="radio"
               aria-checked={star === currentRating}
-              aria-label={`${star} of 5 stars`}
+              aria-label={`${star} of 4 stars`}
               disabled={disabled}
               onClick={() => onChange(star)}
               style={{
@@ -822,7 +822,7 @@ export default function PanelistClient({
   const renderStarsStatic = (rating: number) => {
     return (
       <div style={{ display: "flex", gap: "3px" }}>
-        {[1, 2, 3, 4, 5].map((star) => (
+        {[1, 2, 3, 4].map((star) => (
           <span
             key={star}
             style={{

@@ -139,7 +139,7 @@ function parseFeedbackSafely(rawFeedback: string | null | undefined) {
 function renderStarsStatic(rating: number) {
   return (
     <div style={{ display: 'flex', gap: '2px' }}>
-      {[1, 2, 3, 4, 5].map((star) => (
+      {[1, 2, 3, 4].map((star) => (
         <span key={star} style={{ color: star <= rating ? '#fbbf24' : 'rgba(255,255,255,0.12)', fontSize: '1rem', lineHeight: 1 }}>★</span>
       ))}
     </div>
