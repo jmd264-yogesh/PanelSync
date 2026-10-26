@@ -21,6 +21,7 @@ import InterviewStopwatch from './InterviewStopwatch';
 import L1ReferencePanel from './L1ReferencePanel';
 import TranscriptPanel from './TranscriptPanel';
 import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
+import ScoringPopout from './ScoringPopout';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -518,7 +519,26 @@ export default function RecalibrateWorkspace({
               <SectionHeader
                 icon={<ListChecks size={14} />}
                 title="Questions"
-                right={<span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>{scoredQuestionCount}/{questions.length} scored</span>}
+                right={
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>{scoredQuestionCount}/{questions.length} scored</span>
+                    <ScoringPopout
+                      candidateName={candidateName}
+                      questions={questions}
+                      questionScores={questionScores}
+                      onScoreQuestion={scoreQuestion}
+                      dims={allDims}
+                      rubricScores={rubricScores}
+                      onScoreRubric={scoreRubric}
+                      notes={notes}
+                      onNotesChange={setNotes}
+                      onNotesSave={handleNotesBlur}
+                      elapsedLabel={elapsedLabel}
+                      isRunning={isRunning}
+                      onToggleTimer={isRunning ? handleTimerPause : hasStarted ? handleTimerResume : handleTimerStart}
+                    />
+                  </span>
+                }
               />
               <ProgressBar value={scoredQuestionCount} max={questions.length} color="var(--success, #10b981)" />
               {questions.map((q, i) => {
