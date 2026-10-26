@@ -260,8 +260,8 @@ export const recalibrateSessions = pgTable('recalibrate_sessions', {
     .unique(),
   aiRunId: varchar('ai_run_id', { length: 255 })
     .references(() => aiRuns.id, { onDelete: 'set null' }), // which run's questions are currently being scored
-  questionScores: jsonb('question_scores'), // { [questionId]: 1-5 }
-  rubricScores: jsonb('rubric_scores'), // { [dimensionLabel]: 1-5 }
+  questionScores: jsonb('question_scores'), // { [questionId]: 1-4 }
+  rubricScores: jsonb('rubric_scores'), // { [dimensionLabel]: 1-4 }
   notes: text('notes'),
   timerStartedAt: timestamp('timer_started_at'),
   timerEndedAt: timestamp('timer_ended_at'),

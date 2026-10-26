@@ -64,7 +64,7 @@ interface InterviewsTabProps {
 function renderStarsStatic(rating: number) {
   return (
     <div style={{ display: "flex", gap: "2px" }}>
-      {[1, 2, 3, 4, 5].map((star) => (
+      {[1, 2, 3, 4].map((star) => (
         <span
           key={star}
           style={{
@@ -3048,7 +3048,7 @@ export default function InterviewsTab({
                                                       color: "var(--info)",
                                                     }}
                                                   >
-                                                    {String(score)} / 5
+                                                    {String(score)} / 4
                                                   </span>
                                                 </div>
                                               ),
