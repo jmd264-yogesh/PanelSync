@@ -58,7 +58,7 @@ export default function HelpGuide() {
         }}
       >
         <HelpCircle size={14} />
-        <span>How to use this</span>
+        <span>How it works</span>
       </button>
 
       <SheetContent side="right" className="flex flex-col" style={{ width: 'min(480px, 92vw)', maxWidth: 'none' }}>
@@ -67,53 +67,58 @@ export default function HelpGuide() {
         </SheetHeader>
         <div style={{ padding: '0 1rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-          <Section title="Before the interview">
+          <Section title="1 · Prepare">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <Step n={1} title="Pick the candidate">
-                Use the candidate switcher at the top (only shown when you have more than one) to select who you’re interviewing.
+              <Step n={1} title="Set up the interview">
+                Pick the candidate&apos;s role grade and the tech stacks that apply to them, then generate the questions. The number of questions can&apos;t go below one per area you selected, so every area can be scored. Consultant-level roles always include one case study from the panel deck.
               </Step>
-              <Step n={2} title="Set Spec Inputs">
-                Choose the candidate’s Role Grade, question Style, and how many questions to generate. The role grade determines which organization rubric (SE &amp; SSE / Consultant / Enabler) the candidate is scored against.
+              <Step n={2} title="Choose how it is being held">
+                <strong>Online (Teams)</strong> pulls the speakers from the meeting transcript. <strong>In person</strong> records the room: afterwards you confirm who is the candidate and who is on the panel before the AI scores anything.
               </Step>
-              <Step n={3} title="Select tech stacks for this candidate">
-                Check only the technical categories actually relevant to them (e.g. just Snowflake + SQL, not every category). This scopes both the generated questions and the Overall Scoring Rubric — you won’t see or need to score categories you didn’t select. At least one is required before you can generate.
-              </Step>
-              <Step n={4} title="Generate Questions">
-                The AI proposes questions plus a model answer and rubric per question. Regenerating replaces the current set — do this before the candidate joins, not mid-interview, since it resets question scores. The interview timer starts automatically the moment questions are ready.
+              <Step n={3} title="Starting over">
+                Regenerating replaces all questions and clears the scores you entered, so it asks first. It is blocked once you have submitted.
               </Step>
             </div>
           </Section>
 
-          <Section title="During the interview">
+          <Section title="2 · Interview">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <Step n={5} title="Ask each question, then score it 1–4">
-                The “Model answer” block under each question is for your reference only — it’s never shown to the candidate. Use it to judge how close the candidate’s actual answer is, then score 1 (Does Not Meet) through 4 (Exceeds Expectation). “Model rubric” gives band-by-band language if you want more detail before scoring.
+              <Step n={4} title="Keep the scoring window open">
+                &ldquo;Pop out&rdquo; opens a small window that stays on top of your Teams call, with the current question, the 1–4 buttons, your notes and the timer. Chrome or Edge only.
               </Step>
-              <Step n={6} title="Adjust marks if a question deserves more weight">
-                The small “Marks” field next to each question’s category/difficulty badges is editable — bump it up if that question should count for more (e.g. it’s the candidate’s specialty).
+              <Step n={5} title="Score each question 1–4">
+                1 Does Not Meet · 2 Partially Meets · 3 Meets Expectation · 4 Exceeds Expectation. The model answer and scoring guide under each question are for you only — the candidate never sees them.
               </Step>
-              <Step n={7} title="Score the Overall Scoring Rubric as you go">
-                Separate from per-question scores — this is your holistic 1–4 rating per skill dimension (Technical + Behavioural), reflecting the organization’s actual bar for this role grade, not just this one interview’s questions.
+              <Step n={6} title="Rate each skill">
+                The skill ratings are your overall view per area (technical, case study, behavioural), against the bar for this role. They are separate from the individual question scores.
               </Step>
-              <Step n={8} title="Watch the Rubric vs question gap">
-                In Live Analysis, a gap of 1.0+ between your average question score and average rubric score gets flagged, with the specific dimension(s) driving it listed underneath — that’s your cue to double check whether a rubric score and its matching questions actually agree before you finalize.
-              </Step>
-              <Step n={9} title="Use the L1 Round Reference if this is an L2 round">
-                For L2 interviews, a read-only summary of the candidate’s submitted L1 assessment appears near the top of this column automatically — L1 panelists never see the reverse.
+              <Step n={7} title="Recording">
+                Record in the browser, upload a recording, or pull the Teams transcript. A recording is only cleared from the page after it has been transcribed, so a failed attempt can be retried.
               </Step>
             </div>
           </Section>
 
-          <Section title="Wrapping up">
+          <Section title="3 · Review with AI">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <Step n={10} title="Add overall notes">
-                Recommendation, standout moments, red flags — autosaves when you click away from the field.
+              <Step n={8} title="Score with AI">
+                Once there is a transcript the AI suggests a score for each question and skill, with the evidence it used. If it hasn&apos;t run, or failed, a banner says why and lets you run it again. In person, you must confirm who is who first.
               </Step>
+              <Step n={9} title="Apply AI scores">
+                &ldquo;Apply&rdquo; fills the scores you haven&apos;t set. If the AI disagrees with a score you already entered, it asks before replacing it, and your notes are never overwritten — the AI summary is added underneath.
+              </Step>
+              <Step n={10} title="L2 interviews">
+                You can read the L1 panel&apos;s feedback and assessment for the same candidate. L1 panelists never see any L2 information.
+              </Step>
+            </div>
+          </Section>
+
+          <Section title="4 · Submit">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
               <Step n={11} title="Submit to recruiters">
-                Nothing is visible to recruiters until you explicitly submit. You can withdraw and re-submit as many times as needed while the round is still open.
+                Use the button in the bar at the top. You&apos;ll be warned if anything is still unscored. Recruiters see nothing until you submit, and you can withdraw it while the round is open.
               </Step>
-              <Step n={12} title="Download if you need a copy">
-                “Candidate” downloads a question-only sheet (safe to hand over); “Panelist” downloads the full report — model answers, rubric, scores, and your notes — for your own records.
+              <Step n={12} title="Download a copy">
+                &ldquo;Question sheet&rdquo; is safe to hand over. &ldquo;Assessment report&rdquo; has the model answers, scores and your notes, for your own records.
               </Step>
             </div>
           </Section>

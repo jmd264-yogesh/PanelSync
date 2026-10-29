@@ -656,7 +656,7 @@ export default function LiveAudioRecorder({
                   <>
                     <Sparkles size={14} />
                     <span>
-                      Transcribe & Auto-Score {totalAudioCount > 1 ? `(${totalAudioCount} Parts)` : 'with AI'}
+                      Transcribe {totalAudioCount > 1 ? `${totalAudioCount} recordings` : 'recording'}
                     </span>
                   </>
                 )}
@@ -689,7 +689,7 @@ export default function LiveAudioRecorder({
             ) : (
               <>
                 <Sparkles size={14} />
-                <span>Transcribe & Auto-Score ({savedClips.length} Parts)</span>
+                <span>Transcribe {savedClips.length} recordings</span>
               </>
             )}
           </button>

@@ -124,7 +124,8 @@ function CompactScoringPanel({
   const tabButton = (id: Tab, label: string) => (
     <button
       key={id}
-      className={`btn btn-sm ${tab === id ? 'btn-primary' : ''}`}
+      className={`btn btn-sm ${tab === id ? 'rc-seg-active' : ''}`}
+      aria-pressed={tab === id}
       onClick={() => setTab(id)}
       style={{ flex: 1, justifyContent: 'center' }}
     >
@@ -138,7 +139,7 @@ function CompactScoringPanel({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{candidateName}</div>
-          <div className="text-xs text-muted">{scored}/{questions.length} questions · {rated}/{dims.length} rubric</div>
+          <div className="text-xs text-muted">{scored}/{questions.length} questions · {rated}/{dims.length} skills</div>
         </div>
         <button
           className="btn btn-sm"

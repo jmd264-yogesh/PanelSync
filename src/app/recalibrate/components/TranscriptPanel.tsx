@@ -266,7 +266,8 @@ export default function TranscriptPanel({
           >
             <button
               type="button"
-              className={`btn btn-sm ${activeTab === 'live' ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${activeTab === 'live' ? 'rc-seg-active' : ''}`}
+              aria-pressed={activeTab === 'live'}
               onClick={() => setActiveTab('live')}
               style={{
                 display: 'inline-flex',
@@ -315,7 +316,8 @@ export default function TranscriptPanel({
 
             <button
               type="button"
-              className={`btn btn-sm ${activeTab === 'upload' ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${activeTab === 'upload' ? 'rc-seg-active' : ''}`}
+              aria-pressed={activeTab === 'upload'}
               onClick={() => !isLiveRecording && setActiveTab('upload')}
               disabled={isLiveRecording}
               title={isLiveRecording ? 'Live recording is in progress' : 'Upload Audio / Text'}
@@ -341,7 +343,8 @@ export default function TranscriptPanel({
 
             {!inPerson && <button
               type="button"
-              className={`btn btn-sm ${activeTab === 'teams' ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${activeTab === 'teams' ? 'rc-seg-active' : ''}`}
+              aria-pressed={activeTab === 'teams'}
               onClick={() => !isLiveRecording && setActiveTab('teams')}
               disabled={isLiveRecording}
               title={isLiveRecording ? 'Live recording is in progress' : 'Teams Sync'}
@@ -367,15 +370,15 @@ export default function TranscriptPanel({
           </div>
 
           {inPerson && (
-            <div className="text-xs" style={{ lineHeight: 1.55, padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(14, 165, 233, 0.07)', border: '1px solid rgba(14, 165, 233, 0.25)' }}>
-              <strong>In-person recording tips</strong>
-              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem' }}>
+            <details className="text-xs" style={{ lineHeight: 1.55 }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--info, #0ea5e9)' }}>Recording tips for in-person interviews</summary>
+              <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
                 <li>Put the laptop (or a conference mic) in the middle of the table, not in front of the panel.</li>
                 <li>Ask everyone to say their name once at the start — it makes the speaker check quicker.</li>
                 <li>Avoid talking over each other; record long interviews as several clips.</li>
                 <li>After transcribing you&apos;ll confirm who is who before any AI scoring.</li>
               </ul>
-            </div>
+            </details>
           )}
 
           {/* Tab 1: Live Record (kept mounted so recording state and clips never disappear on tab switch) */}
@@ -423,7 +426,7 @@ export default function TranscriptPanel({
                     </span>
                   </div>
                   <span className="text-xs text-muted" style={{ fontSize: '0.68rem' }}>
-                    Stored in S3
+                    Saved recordings
                   </span>
                 </div>
 
@@ -565,7 +568,7 @@ export default function TranscriptPanel({
               {isCompressing && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.72rem', color: '#c084fc' }}>
                   <Loader2 size={12} className="animate-spin" />
-                  <span>Compressing to 16kHz Mono for speech AI...</span>
+                  <span>Preparing audio...</span>
                 </div>
               )}
             </div>
@@ -588,7 +591,7 @@ export default function TranscriptPanel({
                 style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.8rem' }}
               >
                 {isProcessingTranscript ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                <span>Evaluate Transcript</span>
+                <span>Score with AI</span>
               </button>
             </form>
           </div>
@@ -622,9 +625,9 @@ export default function TranscriptPanel({
               <RefreshCw size={20} />
             </div>
             <div>
-              <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>Microsoft Teams Sync</div>
+              <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>Teams transcript</div>
               <p className="text-xs text-muted" style={{ margin: '0.25rem 0 0', lineHeight: 1.5, maxWidth: '240px' }}>
-                Pull recorded meeting transcript directly via Microsoft Graph API.
+                Pull the transcript from your Teams meeting.
               </p>
             </div>
             <button

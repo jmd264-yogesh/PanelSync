@@ -3548,3 +3548,12 @@ tbody td {
   color: var(--text-main);
   font-weight: 700;
 }
+/* Recalibrate: a selected tab / toggle / role choice is a state, not "the" next action.
+   Only one button per screen area should use .btn-primary. */
+.btn.rc-seg-active {
+  background: var(--rc-brand-glow, rgba(124, 58, 237, 0.14));
+  border-color: var(--rc-brand, #7c3aed);
+  color: var(--text-main);
+  font-weight: 700;
+}
+.rc-summary > summary::-webkit-details-marker { display: none; }

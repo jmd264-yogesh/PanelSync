@@ -59,7 +59,7 @@ function ScoreChip({ value }: { value: number | undefined }) {
 // candidate — the lateral-hiring equivalent of campus hiring's "L1 Round Feedback
 // Reference" block. Never rendered anywhere in an L1 round's own view.
 export default function L1ReferencePanel({ interviewId }: { interviewId: string }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<L1Reference | null>(null);

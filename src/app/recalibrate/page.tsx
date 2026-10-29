@@ -29,7 +29,7 @@ export default async function RecalibratePage() {
               <div className="brand-name">
                 Recalibrate<span>.</span>
               </div>
-              <div className="brand-context">DE CoE Interview Console</div>
+              <div className="brand-context">Interview Console</div>
             </div>
           </div>
 

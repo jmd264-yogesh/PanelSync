@@ -2,9 +2,20 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  Wand2, Loader2, Download, AlertTriangle, Send, Undo2, CheckCircle2,
-  Gauge, ListChecks, SlidersHorizontal, StickyNote, TrendingUp, TrendingDown, Minus, Pencil, ChevronDown,
-  Clock3, Sparkles, FileText, CheckCheck, Upload, Quote, RefreshCw, Eye, X, Check, Mic, Radio,
+  Wand2,
+  Loader2,
+  Download,
+  AlertTriangle,
+  CheckCircle2,
+  Gauge,
+  ListChecks,
+  SlidersHorizontal,
+  StickyNote,
+  Pencil,
+  ChevronDown,
+  Sparkles,
+  CheckCheck,
+  Check,
 } from 'lucide-react';
 import { ROLE_GRADES, CALIBRATION, STYLES } from '@/lib/ai/spec-catalog';
 import type { RoleGrade, Style } from '@/lib/ai/spec-catalog';
@@ -14,21 +25,16 @@ import {
 } from '@/lib/ai/org-rubric';
 import type { CaseStudyId } from '@/lib/ai/org-rubric';
 import { useRecalibrateSession } from '@/lib/recalibrate/useRecalibrateSession';
-import type { QuestionEvaluation, TranscriptDialogueTurn } from '@/lib/db';
+import type { QuestionEvaluation } from '@/lib/db';
 import { SectionHeader, ScoreDial, ProgressBar, ScoreLegend, RubricRow, DIFFICULTY_STYLE, SCORE_COLORS, ORG_SCORE_LABELS } from '@/components/recalibrate/primitives';
 import type { CandidateStatus } from './CandidateGrid';
-import InterviewStopwatch from './InterviewStopwatch';
+import SessionBar from './SessionBar';
 import L1ReferencePanel from './L1ReferencePanel';
 import TranscriptPanel from './TranscriptPanel';
 import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
 import ScoringPopout from './ScoringPopout';
 import { resolveSuggestedRubricScores } from '@/lib/recalibrate/ai-suggestions';
 import InPersonSpeakerReview from './InPersonSpeakerReview';
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
-}
 
 interface NormalizedQuestionRubricBand {
   score: number;
@@ -112,14 +118,17 @@ export default function RecalibrateWorkspace({
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
     handleAcceptAllAiScores, handleAcceptSingleQuestionScore, handleApplyAiSummaryToNotes,
-    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur, updateQuestionMaxMarks,
+    handleGenerate, handleToggleSubmit, scoreQuestion, scoreRubric, handleNotesBlur,
     handleTimerStart, handleTimerPause, handleTimerResume, handleTimerReset: resetTimer,
     questions, orgTier, technicalDims, caseStudyDims, behaviouralDims, rubricBreakdown,
-    avgQuestionScore, scoredQuestionCount, avgRubricScore, ratedDimCount, allDims, gap, gapIsDiscrepant, dimensionGaps,
+    avgQuestionScore, scoredQuestionCount, ratedDimCount, allDims, gap, gapIsDiscrepant, dimensionGaps,
     handleDownloadCandidate, handleDownloadPanelist,
   } = rc;
 
-  const [specExpanded, setSpecExpanded] = useState(true);
+  // The setup form is the whole page until questions exist; afterwards it folds into one line
+  // of badges (the panelist can still open it to adjust and regenerate).
+  const [specOverride, setSpecExpanded] = useState<boolean | null>(null);
+  const specExpanded = specOverride ?? questions.length === 0;
 
   // The same resolver Apply All uses, so a badge always shows exactly what would be applied.
   const suggestedRubricScores = useMemo(
@@ -258,42 +267,25 @@ export default function RecalibrateWorkspace({
         }
       `}</style>
 
-      {/* Hero header */}
-      <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.25rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            width: '56px', height: '56px', borderRadius: '16px', fontSize: '1.1rem', fontWeight: 700,
-            background: 'linear-gradient(145deg, #a855f7, #7c3aed 70%)', color: '#fff',
-          }}>
-            {initials(candidateName)}
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, fontFamily: 'var(--font-heading)' }}>{candidateName}</h1>
-            <p className="text-muted" style={{ margin: '0.1rem 0 0', fontSize: '0.9rem' }}>{positionTitle}</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
-              {round && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', fontSize: '0.72rem', fontWeight: 700,
-                  padding: '0.2rem 0.55rem', borderRadius: '999px',
-                  background: round === 'L1' ? 'var(--badge-l1-bg)' : 'var(--badge-l2-bg)',
-                  color: round === 'L1' ? 'var(--badge-l1-text)' : 'var(--badge-l2-text)',
-                  border: round === 'L1' ? '1px solid var(--badge-l1-border)' : '1px solid var(--badge-l2-border)',
-                }}>
-                  {round} Round
-                </span>
-              )}
-              <span className="badge badge-info">{ROLE_GRADES[spec.roleGrade].label}</span>
-              <span className="badge">{ORG_TIER_LABEL[orgTier]} rubric</span>
-              {session?.submittedAt && (
-                <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <CheckCircle2 size={11} /> Submitted
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <SessionBar
+        candidateName={candidateName}
+        positionTitle={positionTitle}
+        round={round === 'L1' || round === 'L2' ? round : null}
+        gradeLabel={ROLE_GRADES[spec.roleGrade].label}
+        elapsedLabel={elapsedLabel}
+        isRunning={isRunning}
+        hasStarted={hasStarted}
+        onStartTimer={hasStarted ? handleTimerResume : handleTimerStart}
+        onPauseTimer={handleTimerPause}
+        onResetTimer={handleTimerReset}
+        scoredQuestions={scoredQuestionCount}
+        totalQuestions={questions.length}
+        ratedSkills={ratedDimCount}
+        totalSkills={allDims.length}
+        submittedAt={session?.submittedAt ?? null}
+        submitting={submitting}
+        onToggleSubmit={handleToggleSubmit}
+      />
 
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--danger, #ef4444)' }}>
@@ -309,7 +301,7 @@ export default function RecalibrateWorkspace({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: questions.length > 0 ? 'pointer' : 'default' }}
               onClick={() => questions.length > 0 && setSpecExpanded((v) => !v)}
             >
-              <SectionHeader icon={<SlidersHorizontal size={14} />} title="Spec Inputs" />
+              <SectionHeader icon={<SlidersHorizontal size={14} />} title="Interview setup" />
               {questions.length > 0 && (
                 <ChevronDown size={16} style={{ transform: specExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease', color: 'var(--text-muted)' }} />
               )}
@@ -350,11 +342,18 @@ export default function RecalibrateWorkspace({
                     />
                   </label>
                 </div>
-                <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
-                  Minimum <strong style={{ color: 'var(--text-main)' }}>{minQuestionCount} questions</strong> needed to cover and score every selected area
-                  ({deriveFocusAreas(spec.roleGrade, spec.techStacks).length} areas: {spec.techStacks.length} tech stack{spec.techStacks.length === 1 ? '' : 's'}
-                  {requiresCaseStudy(spec.roleGrade) ? ', 1 case study' : ''}, 4 behavioural). Extra questions are spread evenly.
-                </div>
+                <details className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
+                  <summary style={{ cursor: 'pointer' }}>
+                    At least {minQuestionCount} questions · {ORG_TIER_LABEL[orgTier]} role bar — why?
+                  </summary>
+                  <p style={{ margin: '0.4rem 0 0' }}>
+                    Every selected area needs at least one question so it can be scored
+                    ({deriveFocusAreas(spec.roleGrade, spec.techStacks).length} areas: {spec.techStacks.length} tech stack{spec.techStacks.length === 1 ? '' : 's'}
+                    {requiresCaseStudy(spec.roleGrade) ? ', 1 case study' : ''}, 4 behavioural). Extra questions are spread evenly.
+                  </p>
+                  <p style={{ margin: '0.4rem 0 0' }}>{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</p>
+                  <p style={{ margin: '0.4rem 0 0' }}>Bar for {ORG_TIER_LABEL[orgTier]}: {ORG_TIER_BAR[orgTier]}.</p>
+                </details>
                 {requiresCaseStudy(spec.roleGrade) && (
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                     <span className="text-xs" style={{ fontWeight: 700 }}>Compulsory technical case study (Consultant &amp; above)</span>
@@ -368,10 +367,6 @@ export default function RecalibrateWorkspace({
                     </select>
                   </label>
                 )}
-                <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>{CALIBRATION[ROLE_GRADES[spec.roleGrade].tier]}</div>
-                <div className="text-xs text-muted">
-                  Rubric: <strong style={{ color: 'var(--text-main)' }}>{ORG_TIER_LABEL[orgTier]}</strong> — bar: {ORG_TIER_BAR[orgTier]}
-                </div>
 
                 <div>
                   <div className="text-xs" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Tech stacks for this candidate</div>
@@ -567,20 +562,7 @@ export default function RecalibrateWorkspace({
                           )}
                         </div>
                       )}
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                        Marks
-                        <input
-                          key={q.maxMarks}
-                          type="number" min={1} max={10}
-                          className="form-input"
-                          style={{ width: '3.2rem', padding: '0.15rem 0.35rem', fontSize: '0.72rem', textAlign: 'center' }}
-                          defaultValue={q.maxMarks}
-                          onBlur={(e) => {
-                            const next = Math.min(10, Math.max(1, Number(e.target.value) || q.maxMarks));
-                            if (next !== q.maxMarks) updateQuestionMaxMarks(q.id, next);
-                          }}
-                        />
-                      </label>
+
                     </div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 0.65rem', lineHeight: 1.55 }}>{q.question}</p>
                     {q.caseStudy && (
@@ -596,9 +578,9 @@ export default function RecalibrateWorkspace({
 
                     {/* AI Transcript Evidence & Reasoning */}
                     {qEval && (
-                      <details style={{ marginBottom: '0.65rem' }} open>
+                      <details style={{ marginBottom: '0.65rem' }}>
                         <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: '#c084fc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <Sparkles size={11} /> Candidate Response & Transcript Evidence
+                          <Sparkles size={11} /> What the AI heard
                         </summary>
                         <div style={{
                           marginTop: '0.45rem', padding: '0.65rem 0.8rem', borderRadius: '8px',
@@ -606,7 +588,7 @@ export default function RecalibrateWorkspace({
                           fontSize: '0.78rem', lineHeight: 1.55, display: 'flex', flexDirection: 'column', gap: '0.4rem',
                         }}>
                           <div>
-                            <strong style={{ color: 'var(--text-main)' }}>Candidate's Answer: </strong>
+                            <strong style={{ color: 'var(--text-main)' }}>Candidate&apos;s answer: </strong>
                             <span>{qEval.candidateAnswerSummary}</span>
                           </div>
 
@@ -616,7 +598,7 @@ export default function RecalibrateWorkspace({
                               background: 'rgba(124, 58, 237, 0.08)', fontStyle: 'italic',
                               borderRadius: '0 6px 6px 0', fontSize: '0.75rem',
                             }}>
-                              "{qEval.verbatimQuote}"
+                              &ldquo;{qEval.verbatimQuote}&rdquo;
                             </div>
                           )}
 
@@ -654,7 +636,7 @@ export default function RecalibrateWorkspace({
                     )}
                     <details style={{ marginBottom: '0.7rem' }}>
                       <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                        Model rubric (4 bands, 1-4 scale)
+                        Scoring guide (1-4)
                       </summary>
                       <div style={{ marginTop: '0.45rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                         {normalizeQuestionRubric(q.rubric).map((bandItem) => {
@@ -703,7 +685,7 @@ export default function RecalibrateWorkspace({
           <div className="rc-rubric-col">
             <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <SectionHeader icon={<Gauge size={14} />} title="Overall Scoring Rubric" />
+                <SectionHeader icon={<Gauge size={14} />} title="Skill ratings" />
                 {aiEvaluation && (
                   <span className="badge" style={{ fontSize: '0.65rem', background: 'rgba(124, 58, 237, 0.12)', color: '#c084fc', border: 'none' }}>
                     <Sparkles size={9} style={{ display: 'inline', marginRight: '3px' }} />
@@ -788,7 +770,8 @@ export default function RecalibrateWorkspace({
                 <button
                   key={mode}
                   type="button"
-                  className={`btn btn-sm ${interviewMode === mode ? 'btn-primary' : ''}`}
+                  className={`btn btn-sm ${interviewMode === mode ? 'rc-seg-active' : ''}`}
+                  aria-pressed={interviewMode === mode}
                   disabled={isProcessingTranscript || isConfirmingSpeakers}
                   onClick={() => handleSetInterviewMode(mode)}
                 >
@@ -837,79 +820,62 @@ export default function RecalibrateWorkspace({
             />
           )}
 
-          <InterviewStopwatch
-            elapsedLabel={elapsedLabel}
-            isRunning={isRunning}
-            hasStarted={hasStarted}
-            onStart={hasStarted ? handleTimerResume : handleTimerStart}
-            onPause={handleTimerPause}
-            onReset={handleTimerReset}
-          />
-
           {questions.length > 0 && (
             <>
-              <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <SectionHeader icon={<Gauge size={14} />} title="Live Analysis" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                  <div>
-                    <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg question</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgQuestionScore !== null ? avgQuestionScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Avg rubric</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'monospace' }}>{avgRubricScore !== null ? avgRubricScore.toFixed(1) : '—'}<span className="text-xs text-muted" style={{ fontFamily: 'inherit', fontWeight: 500 }}>/4</span></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Rubric vs question gap</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: gap === null ? 'inherit' : gapIsDiscrepant ? 'var(--danger, #ef4444)' : 'var(--success, #10b981)' }}>
-                    {gap !== null && (gap > 0 ? <TrendingUp size={15} /> : gap < 0 ? <TrendingDown size={15} /> : <Minus size={15} />)}
-                    {gap !== null ? (gap >= 0 ? '+' : '') + gap.toFixed(1) : '—'}
-                  </div>
-                </div>
-                {gap !== null && (
-                  <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem', fontSize: '0.72rem', borderRadius: '8px',
-                    borderLeft: gapIsDiscrepant ? '3px solid var(--danger, #ef4444)' : '3px solid var(--success, #10b981)',
-                    background: gapIsDiscrepant ? 'var(--danger-glow, rgba(239,68,68,0.08))' : 'var(--success-glow, rgba(16,185,129,0.08))',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
-                      {gapIsDiscrepant ? <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} /> : <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />}
-                      <span>
-                        {gapIsDiscrepant
-                          ? `${Math.abs(gap).toFixed(1)} pt gap — review before finalizing.`
-                          : 'Scores consistent (gap under 1.0).'}
-                      </span>
+              <details className="glass-card rc-summary" style={{ padding: '0.9rem 1.1rem' }}>
+                <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', listStyle: 'none' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem' }}>
+                    <Gauge size={14} /> Score summary
+                  </span>
+                  <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>
+                    {rubricBreakdown.overall.average !== null ? `${rubricBreakdown.overall.average.toFixed(1)}/4 overall` : 'not scored yet'}
+                  </span>
+                </summary>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.85rem' }}>
+                  <RubricBreakdown breakdown={rubricBreakdown} />
+                  {avgQuestionScore !== null && (
+                    <div className="text-xs" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <span className="text-muted">Average question score</span>
+                      <strong style={{ fontFamily: 'monospace' }}>{avgQuestionScore.toFixed(1)}/4</strong>
                     </div>
-                    {/* Always shown, regardless of whether the gap crosses the discrepancy
-                      threshold — even a small gap is worth seeing where it comes from. */}
-                    {dimensionGaps.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1.1rem' }}>
-                        <span className="text-muted" style={{ fontSize: '0.68rem' }}>By dimension (biggest disagreement first):</span>
-                        {dimensionGaps.map((d) => (
-                          <div key={d.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.7rem' }}>
-                            <span>{d.label}</span>
-                            <span style={{ fontFamily: 'monospace', color: Math.abs(d.gap) >= 1.0 ? 'var(--danger, #ef4444)' : 'var(--text-muted)', flexShrink: 0 }}>
-                              rubric {d.rubricScore} vs q&nbsp;avg {d.questionAvg.toFixed(1)} ({(d.gap >= 0 ? '+' : '') + d.gap.toFixed(1)})
-                            </span>
-                          </div>
-                        ))}
+                  )}
+                  {gap !== null && (
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.65rem', fontSize: '0.74rem', borderRadius: '8px',
+                      background: gapIsDiscrepant ? 'var(--danger-glow, rgba(239,68,68,0.08))' : 'var(--success-glow, rgba(16,185,129,0.08))',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem' }}>
+                        {gapIsDiscrepant ? <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} /> : <CheckCircle2 size={12} style={{ marginTop: '1px', flexShrink: 0 }} />}
+                        <span>
+                          {gapIsDiscrepant
+                            ? `Skill ratings are ${Math.abs(gap).toFixed(1)} points ${gap > 0 ? 'higher' : 'lower'} than your question scores — review before submitting.`
+                            : 'Skill ratings and question scores agree.'}
+                        </span>
                       </div>
-                    ) : (
-                      <span className="text-muted" style={{ fontSize: '0.68rem', paddingLeft: '1.1rem' }}>
-                        No dimension has both a rubric score and a scored question in the same category yet — score at least one question per rubric category to see what’s driving this.
-                      </span>
-                    )}
-                  </div>
-                )}
-                <RubricBreakdown breakdown={rubricBreakdown} />
-                <div className="text-xs text-muted">{scoredQuestionCount}/{questions.length} questions · {ratedDimCount}/{allDims.length} rubric dims</div>
-                {gap !== null && (scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
-                  <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
-                    Based on partial scoring so far — this gap may shift as more questions/dimensions are scored.
-                  </div>
-                )}
-              </div>
+                      {dimensionGaps.length > 0 && (
+                        <details>
+                          <summary className="text-muted" style={{ cursor: 'pointer', fontSize: '0.7rem' }}>Where the difference comes from</summary>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.3rem' }}>
+                            {dimensionGaps.map((d) => (
+                              <div key={d.label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.7rem' }}>
+                                <span>{d.label}</span>
+                                <span style={{ fontFamily: 'monospace', color: Math.abs(d.gap) >= 1.0 ? 'var(--danger, #ef4444)' : 'var(--text-muted)', flexShrink: 0 }}>
+                                  skill {d.rubricScore} vs questions {d.questionAvg.toFixed(1)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  {(scoredQuestionCount < questions.length || ratedDimCount < allDims.length) && (
+                    <div className="text-xs text-muted" style={{ fontStyle: 'italic' }}>
+                      Partial so far: {scoredQuestionCount}/{questions.length} questions and {ratedDimCount}/{allDims.length} skills scored.
+                    </div>
+                  )}
+                </div>
+              </details>
 
               {/* notes */}
               <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -953,38 +919,24 @@ export default function RecalibrateWorkspace({
                 />
               </div>
 
-              <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {session?.submittedAt ? (
-                  <div className="badge badge-success" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600, textTransform: 'none', fontSize: '0.7rem' }}>
-                    <CheckCircle2 size={12} />
-                    <span>Submitted {new Date(session.submittedAt).toLocaleString()}</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    <Clock3 size={12} />
-                    <span>Not submitted — recruiters can't see this yet.</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <details className="glass-card" style={{ padding: '0.8rem 1.1rem' }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Download size={13} /> Download as PDF
+                </summary>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.7rem' }}>
                   <button className="btn btn-sm" onClick={handleDownloadCandidate} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <Download size={12} /> Candidate
+                    <Download size={12} /> Question sheet
                   </button>
                   <button className="btn btn-sm" onClick={handleDownloadPanelist} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <Download size={12} /> Panelist
+                    <Download size={12} /> Assessment report
                   </button>
                 </div>
-                {session?.submittedAt ? (
-                  <button className="btn btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-                    <span>Withdraw submission</span>
-                  </button>
-                ) : (
-                  <button className="btn btn-primary btn-sm" onClick={handleToggleSubmit} disabled={submitting} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                    {submitting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                    <span>Submit to recruiters</span>
-                  </button>
+                {!session?.submittedAt && (
+                  <p className="text-xs text-muted" style={{ margin: '0.6rem 0 0' }}>
+                    Recruiters can&apos;t see this assessment until you submit it.
+                  </p>
                 )}
-              </div>
+              </details>
             </>
           )}
         </div>

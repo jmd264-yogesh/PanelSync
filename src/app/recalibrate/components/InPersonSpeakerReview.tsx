@@ -140,7 +140,8 @@ export default function InPersonSpeakerReview(props: Props) {
                     <button
                       key={role}
                       type="button"
-                      className={`btn btn-sm ${a?.role === role ? 'btn-primary' : ''}`}
+                      className={`btn btn-sm ${a?.role === role ? 'rc-seg-active' : ''}`}
+                      aria-pressed={a?.role === role}
                       onClick={() => setAssignment(sp.label, { role, name: role === 'panelist' ? (a?.name ?? panelNames[0]) : undefined })}
                     >
                       {role === 'candidate' ? 'Candidate' : role === 'panelist' ? 'Panelist' : 'Ignore'}
