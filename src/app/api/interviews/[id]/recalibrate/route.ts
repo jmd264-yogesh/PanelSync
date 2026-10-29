@@ -69,6 +69,7 @@ export async function PATCH(
       notes: string | null;
       timerStartedAt: Date | null;
       timerEndedAt: Date | null;
+      elapsedSeconds: number;
       submittedAt: Date | null;
       submittedBy: string | null;
       aiEvaluation: any;
@@ -113,8 +114,11 @@ export async function PATCH(
     if (body.timerStartedAt !== undefined) {
       patch.timerStartedAt = body.timerStartedAt === null ? null : new Date(body.timerStartedAt);
     }
-    if (body.timerEndedAt !== undefined) {
-      patch.timerEndedAt = body.timerEndedAt === null ? null : new Date(body.timerEndedAt);
+    if (body.elapsedSeconds !== undefined) {
+      if (!Number.isInteger(body.elapsedSeconds) || body.elapsedSeconds < 0 || body.elapsedSeconds > 7 * 24 * 3600) {
+        return NextResponse.json({ error: 'elapsedSeconds must be a whole number of seconds' }, { status: 400 });
+      }
+      patch.elapsedSeconds = body.elapsedSeconds;
     }
     // `submitted` is a trusted server-side flag — the client can't set submittedBy/submittedAt
     // directly, so a recruiter-visible submission is always attributable to the real panelist.

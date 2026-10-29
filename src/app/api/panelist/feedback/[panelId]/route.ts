@@ -1,4 +1,5 @@
 import { parseRound } from '@/lib/interview-role';
+import { feedbackEditState } from '@/lib/feedback-window';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
@@ -41,16 +42,16 @@ export async function POST(
     );
   }
 
-  // Enforce 2-hour editing window and L1 PASS finality checks if already submitted
-  if (panel.status === 'SUBMITTED' && panel.submittedAt) {
-    const elapsedMs = Date.now() - new Date(panel.submittedAt).getTime();
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    if (elapsedMs > twoHoursMs) {
-      return NextResponse.json(
-        { error: 'The 2-hour feedback editing window has expired and cannot be modified' },
-        { status: 403 }
-      );
-    }
+  // Enforce the 2-hour editing window and L1 PASS finality — but only once feedback
+  // actually exists. (`status === 'SUBMITTED'` just means the slot was booked.)
+  const editState = feedbackEditState({ decision: panel.decision, submittedAt: panel.submittedAt });
+  if (editState === 'expired') {
+    return NextResponse.json(
+      { error: 'The 2-hour feedback editing window has expired and cannot be modified' },
+      { status: 403 }
+    );
+  }
+  if (editState === 'editable') {
 
     // Check if L1 PASS finality applies
     const [interview] = await dbClient

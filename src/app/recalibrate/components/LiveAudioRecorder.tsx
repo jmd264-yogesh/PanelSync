@@ -45,7 +45,8 @@ interface LiveAudioRecorderProps {
   candidateName: string;
   roleTitle: string;
   isProcessing: boolean;
-  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>) => Promise<void>;
+  /** Resolves false when the upload failed, so the recording is kept for another try. */
+  onSubmitAudios: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>) => Promise<boolean | void>;
   onRecordingChange?: (isRecording: boolean) => void;
   onAudioCapturedChange?: (summary: CapturedAudioSummary | null) => void;
   onCancel?: () => void;
@@ -151,7 +152,10 @@ export default function LiveAudioRecorder({
     }
 
     if (allAudios.length === 0) return;
-    await onSubmitAudios(allAudios);
+    const ok = await onSubmitAudios(allAudios);
+    // Only discard the recording once it was transcribed — a failed upload (network,
+    // timeout, model error) must leave it in the browser so the panelist can retry.
+    if (ok === false) return;
     setSavedClips([]);
     resetRecording();
   };

@@ -22,6 +22,7 @@ import L1ReferencePanel from './L1ReferencePanel';
 import TranscriptPanel from './TranscriptPanel';
 import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
 import ScoringPopout from './ScoringPopout';
+import { resolveSuggestedRubricScores } from '@/lib/recalibrate/ai-suggestions';
 import InPersonSpeakerReview from './InPersonSpeakerReview';
 
 function initials(name: string): string {
@@ -120,74 +121,11 @@ export default function RecalibrateWorkspace({
 
   const [specExpanded, setSpecExpanded] = useState(true);
 
-  const suggestedRubricScores = useMemo(() => {
-    if (!aiEvaluation) return {};
-    const result: Record<string, { score: number; reasoning?: string }> = {};
-
-    const categoryScores: Record<string, number[]> = {};
-    for (const qEval of aiEvaluation.questionEvaluations || []) {
-      if (qEval.suggestedScore > 0) {
-        const q = questions.find((item) => item.id === qEval.questionId);
-        if (q && q.category) {
-          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
-        }
-      }
-    }
-
-    for (const dim of allDims) {
-      const label = dim.label;
-      // 1. Direct match
-      if (aiEvaluation.rubricEvaluations && aiEvaluation.rubricEvaluations[label]) {
-        result[label] = {
-          score: aiEvaluation.rubricEvaluations[label].suggestedScore,
-          reasoning: aiEvaluation.rubricEvaluations[label].reasoning,
-        };
-        continue;
-      }
-      // 2. Question category match
-      if (categoryScores[label] && categoryScores[label].length > 0) {
-        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
-        result[label] = { score: Math.min(4, Math.max(1, avg)) };
-        continue;
-      }
-      // 3. Normalized / Fuzzy match
-      if (aiEvaluation.rubricEvaluations) {
-        const target = label.toLowerCase().replace(/[^a-z0-9]/g, '');
-        for (const [key, evalData] of Object.entries(aiEvaluation.rubricEvaluations)) {
-          const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (normKey === target || normKey.includes(target) || target.includes(normKey)) {
-            result[label] = { score: evalData.suggestedScore, reasoning: evalData.reasoning };
-            break;
-          }
-        }
-        if (result[label]) continue;
-
-        // 4. Aliases
-        if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
-          result[label] = {
-            score: aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore,
-            reasoning: aiEvaluation.rubricEvaluations['Problem Solving'].reasoning,
-          };
-          continue;
-        } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
-          const comms = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
-          result[label] = { score: comms.suggestedScore, reasoning: comms.reasoning };
-          continue;
-        } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
-          const people = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
-          result[label] = { score: people.suggestedScore, reasoning: people.reasoning };
-          continue;
-        }
-      }
-
-      // 5. Default to 0 for unaddressed or unevidenced dimension
-      result[label] = {
-        score: 0,
-        reasoning: 'No transcript evidence or discussion for this dimension.',
-      };
-    }
-    return result;
-  }, [aiEvaluation, questions, allDims]);
+  // The same resolver Apply All uses, so a badge always shows exactly what would be applied.
+  const suggestedRubricScores = useMemo(
+    () => resolveSuggestedRubricScores(aiEvaluation, allDims.map((d) => d.label), questions),
+    [aiEvaluation, questions, allDims],
+  );
 
   // A session "has started" once there's recorded elapsed time or it's actively running —
   // this covers the resumed-after-refresh case where isRunning is true but elapsedSeconds

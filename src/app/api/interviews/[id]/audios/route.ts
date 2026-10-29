@@ -27,8 +27,6 @@ export async function GET(
         fileName: a.fileName,
         duration: a.duration,
         mimeType: a.mimeType,
-        s3Key: a.s3Key,
-        s3Url: a.s3Url,
         streamUrl: `/api/interviews/${id}/audios/${a.id}/stream`,
         transcriptText: a.transcriptText,
         createdAt: a.createdAt,

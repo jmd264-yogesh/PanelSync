@@ -150,7 +150,10 @@ export function RubricRow({
           {hasAiSuggestion && (
             <button
               type="button"
-              onClick={() => onScore(suggestedScore)}
+              // A 0 means "no evidence" — it is not a score to apply — and re-clicking an
+              // applied suggestion must not toggle the panelist's score off.
+              onClick={() => { if (suggestedScore > 0 && !isAiScoreApplied) onScore(suggestedScore); }}
+              disabled={suggestedScore <= 0 || isAiScoreApplied}
               title={aiReasoning ? `AI Suggests ${suggestedScore}/4: ${aiReasoning} (Click to apply)` : `AI Suggests ${suggestedScore}/4 (Click to apply)`}
               style={{
                 background: isAiScoreApplied

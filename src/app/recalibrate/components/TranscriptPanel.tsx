@@ -35,7 +35,7 @@ interface TranscriptPanelProps {
   isProcessingTranscript?: boolean;
   onFetchFromTeams?: () => Promise<void>;
   onUploadTranscript?: (text: string) => Promise<void>;
-  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>, sourceType?: string) => Promise<void>;
+  onUploadAudio?: (audios: Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>, sourceType?: string) => Promise<boolean | void>;
   onAcceptAllAiScores?: () => Promise<void>;
   onAcceptSingleQuestionScore?: (questionId: string, score: number) => void;
   onApplyAiSummaryToNotes?: () => void;
@@ -387,10 +387,11 @@ export default function TranscriptPanel({
               onRecordingChange={setIsLiveRecording}
               onAudioCapturedChange={setCapturedAudio}
               onSubmitAudios={async (audios) => {
-                if (onUploadAudio) {
-                  await onUploadAudio(audios, 'live_recording');
-                  await loadSavedAudios();
-                }
+                if (!onUploadAudio) return false;
+                const ok = await onUploadAudio(audios, 'live_recording');
+                // Even a failed transcription saves the clip server-side now, so refresh the list either way.
+                await loadSavedAudios();
+                return ok;
               }}
             />
 

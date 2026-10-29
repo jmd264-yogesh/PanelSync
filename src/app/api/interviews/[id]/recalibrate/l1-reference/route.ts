@@ -47,10 +47,11 @@ export async function GET(
       return NextResponse.json({ error: 'No L1 round found for this candidate.' }, { status: 404 });
     }
 
-    // Every submitted L1 panelist's decision and written feedback.
+    // Every L1 panelist who actually gave a decision. (A panel's status is also SUBMITTED
+    // once a slot is booked, so the status alone would list people with no feedback yet.)
     const panelFeedbacks = l1Interviews.flatMap((l1) =>
       l1.panels
-        .filter((p) => p.status === 'SUBMITTED')
+        .filter((p) => Boolean(p.decision))
         .map((p) => ({
           panelId: p.id,
           panelistName: p.name,
@@ -84,8 +85,17 @@ export async function GET(
       candidateName: l1Interviews[0].candidateName,
       positionTitle: recalibrate?.positionTitle ?? l1Interviews[0].role,
       panelFeedbacks,
-      // Recalibrate fields stay at the top level for the existing reference panel.
-      session: recalibrate?.session ?? null,
+      // Only what the L2 panel needs: scores and notes — not the L1 transcript, AI
+      // evaluation or speaker mapping.
+      session: recalibrate
+        ? {
+            questionScores: recalibrate.session.questionScores,
+            rubricScores: recalibrate.session.rubricScores,
+            notes: recalibrate.session.notes,
+            submittedAt: recalibrate.session.submittedAt,
+            submittedBy: recalibrate.session.submittedBy,
+          }
+        : null,
       spec: recalibrate?.spec ?? null,
       questions: recalibrate?.questions ?? null,
     });

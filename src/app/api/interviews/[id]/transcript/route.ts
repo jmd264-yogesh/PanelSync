@@ -13,6 +13,7 @@ import {
   applySpeakerMap, buildRoleTaggedTranscript, mergeSpeakerMaps, speakerLabels, summarizeSpeakers, validateSpeakerMap,
 } from '@/lib/in-person';
 import { uploadAudioBase64, type UploadAudioResult } from '@/lib/s3';
+import { extensionForAudioMime, normalizeAudioMime } from '@/lib/audio-mime';
 import type { Spec } from '@/lib/ai/schemas';
 
 export const dynamic = 'force-dynamic';
@@ -309,6 +310,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'No audio data provided' }, { status: 400 });
       }
 
+      // The content type is client-supplied and later served from this origin — only real
+      // audio types are accepted (see lib/audio-mime.ts).
+      for (const item of audios) {
+        const safeMime = normalizeAudioMime(item.mimeType);
+        if (!safeMime) {
+          return NextResponse.json({ error: 'Unsupported audio format. Use webm, mp3, wav, m4a, ogg or aac.' }, { status: 400 });
+        }
+        item.mimeType = safeMime;
+      }
+
       // Format components for S3 key naming: candidatename-round-startingtimestamp-duration
       const candidateSlug = (interview.candidateName || 'Candidate')
         .trim()
@@ -363,9 +374,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       for (let i = 0; i < audios.length; i++) {
         const audioItem: any = audios[i];
         try {
-          const extension = audioItem.mimeType?.includes('mp3')
-            ? 'mp3'
-            : (audioItem.mimeType?.includes('wav') ? 'wav' : 'webm');
+          const extension = extensionForAudioMime(audioItem.mimeType);
 
           const startTime = audioItem.startingTimestamp
             ? new Date(audioItem.startingTimestamp)
@@ -399,6 +408,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
+      // Record each uploaded clip NOW, before any model call. Previously the row was only
+      // written after a successful transcription, so a Gemini error/timeout left an orphan
+      // S3 object that no screen could list — the recording was effectively lost.
+      const audioIdByIndex = new Map<number, string>();
+      let primaryAudioId: string | null = null;
+      for (const clip of uploadedS3Clips) {
+        try {
+          const audioRecord = await db.createInterviewAudio({
+            interviewId: id,
+            s3Key: clip.key,
+            s3Url: clip.location,
+            fileName: clip.fileName,
+            mimeType: clip.mimeType || null,
+            duration: clip.duration || null,
+            transcriptText: null,
+            transcriptTurns: null,
+          });
+          audioIdByIndex.set(clip.index, audioRecord.id);
+          if (!primaryAudioId) primaryAudioId = audioRecord.id;
+        } catch (audioDbErr) {
+          console.error('[DB] Failed to save interview audio record:', audioDbErr);
+        }
+      }
+      // Surfaced to the panelist: if S3 or the DB failed for a clip, it is NOT stored.
+      const audioStorageWarning = audioIdByIndex.size < audios.length
+        ? 'Some audio could not be saved to storage — keep your local copy until it is transcribed.'
+        : null;
+
       const recalSession = await db.getOrCreateRecalibrateSession(id);
       const isAppend = Boolean(body.append);
       const previousTranscript = isAppend ? (recalSession.transcriptText || '') : '';
@@ -431,6 +468,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
+      // A take where nothing could be transcribed must not wipe an existing transcript (and
+      // its evaluation / confirmed speakers). The clips are saved either way.
+      if (!combinedTranscript.trim() && !isAppend && recalSession.transcriptText?.trim()) {
+        return NextResponse.json(
+          {
+            error: 'No speech was detected in this recording, so the existing transcript was kept. The audio was saved.',
+            audioStorageWarning,
+          },
+          { status: 422 },
+        );
+      }
+
       // Build transcript for this session (or append if explicitly requested)
       const fullTranscript = isAppend && previousTranscript
         ? (combinedTranscript ? `${previousTranscript}\n\n${combinedTranscript}` : previousTranscript)
@@ -438,25 +487,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const turns = parseDialogueTurns(fullTranscript);
 
-      // Store audio records in database and link the primary audio ID to the recalibrate session
-      let primaryAudioId: string | null = null;
-      for (const clip of uploadedS3Clips) {
+      // Attach each clip's own transcript to its saved row.
+      for (const [index, audioRowId] of audioIdByIndex) {
+        const text = clipTranscripts[index] || '';
         try {
-          const audioRecord = await db.createInterviewAudio({
-            interviewId: id,
-            s3Key: clip.key,
-            s3Url: clip.location,
-            fileName: clip.fileName,
-            mimeType: clip.mimeType || null,
-            duration: clip.duration || null,
-            transcriptText: clipTranscripts[clip.index] || null,
-            transcriptTurns: clipTranscripts[clip.index] ? parseDialogueTurns(clipTranscripts[clip.index]) : null,
-          });
-          if (!primaryAudioId) {
-            primaryAudioId = audioRecord.id;
-          }
-        } catch (audioDbErr) {
-          console.error('[DB] Failed to save interview audio record:', audioDbErr);
+          await db.setInterviewAudioTranscript(audioRowId, text || null, text ? parseDialogueTurns(text) : null);
+        } catch (err) {
+          console.error('[DB] Failed to save clip transcript:', err);
         }
       }
 
@@ -485,7 +522,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           audioId: primaryAudioId,
           evaluation: null,
           needsSpeakerConfirmation: true,
-          s3AudioClips: uploadedS3Clips,
+          audioStorageWarning,
         });
       }
 
@@ -526,8 +563,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         audioId: primaryAudioId,
         evaluation: finalEvaluation,
         evaluationError,
-        s3AudioClips: uploadedS3Clips,
-        // transcriptText and transcriptTurns kept commented out so raw transcript text is not returned
+        audioStorageWarning,
       });
     }
 

@@ -10,6 +10,7 @@ import {
   TECHNICAL_RUBRIC, BEHAVIOURAL_CATEGORIES, BEHAVIOURAL_CATEGORY_LABEL, BEHAVIOURAL_RUBRIC,
   CASE_STUDY_CATEGORY_LABEL, CASE_STUDY_RUBRIC, requiresCaseStudy, computeRubricBreakdown, minimumQuestionCount,
 } from '@/lib/ai/org-rubric';
+import { resolveSuggestedRubricScores } from '@/lib/recalibrate/ai-suggestions';
 import { buildCandidateSheetHtml, buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
 import type { RecalibrateSession, AiTranscriptEvaluation, TranscriptDialogueTurn, InterviewMode, SpeakerMap } from '@/lib/db';
 
@@ -167,8 +168,7 @@ export function useRecalibrateSession({
           setAiEvaluation(loadedSession.aiEvaluation || null);
           setTranscriptFetchedAt(loadedSession.transcriptFetchedAt || null);
           setTranscriptSource(loadedSession.transcriptSource || null);
-          const parsedElapsed = loadedSession.timerEndedAt != null ? Number(loadedSession.timerEndedAt) : 0;
-          setElapsedSeconds(Number.isFinite(parsedElapsed) ? parsedElapsed : 0);
+          setElapsedSeconds(Number.isFinite(loadedSession.elapsedSeconds) ? loadedSession.elapsedSeconds : 0);
           setStartedAt(loadedSession.timerStartedAt ? new Date(loadedSession.timerStartedAt).getTime() : null);
           setIsRunning(!!loadedSession.timerStartedAt);
         }
@@ -207,7 +207,7 @@ export function useRecalibrateSession({
     rubricScores: Record<string, number>;
     notes: string | null;
     timerStartedAt: string | null;
-    timerEndedAt: string | null;
+    elapsedSeconds: number;
     submitted: boolean;
     aiEvaluation: AiTranscriptEvaluation | null;
     interviewMode: InterviewMode;
@@ -230,6 +230,18 @@ export function useRecalibrateSession({
     // empty selection past the button and surface an opaque server-side "Invalid spec".
     if (!spec.techStacks || spec.techStacks.length === 0) {
       toast.error('Select at least one tech stack for this candidate before generating.');
+      return;
+    }
+    // Regenerating replaces the questions, so every score (which belongs to the old ones) and
+    // the AI evaluation go with them. Never do that silently, and never to a submitted report.
+    if (session?.submittedAt) {
+      toast.error('This assessment is already submitted. Withdraw the submission before regenerating questions.');
+      return;
+    }
+    const scoredCount = Object.keys(questionScores).length + Object.keys(rubricScores).length;
+    if (scoredCount > 0 && !window.confirm(
+      `Regenerating creates a new question set and clears the ${scoredCount} score${scoredCount === 1 ? '' : 's'} you've entered so far. Continue?`,
+    )) {
       return;
     }
     setGenerating(true);
@@ -277,6 +289,21 @@ export function useRecalibrateSession({
 
   const handleToggleSubmit = async () => {
     const nextSubmitted = !session?.submittedAt;
+
+    if (nextSubmitted) {
+      // Recruiters see exactly what's here, so say so if parts are still empty.
+      const unscoredQuestions = questions.filter((q) => typeof questionScores[q.id] !== 'number').length;
+      const unratedDims = allDims.filter((d) => typeof rubricScores[d.label] !== 'number').length;
+      if (unscoredQuestions + unratedDims > 0 && !window.confirm(
+        `Not everything is scored yet: ${unscoredQuestions} question${unscoredQuestions === 1 ? '' : 's'} and ` +
+        `${unratedDims} skill rating${unratedDims === 1 ? '' : 's'} are empty.\n\nSubmit to recruiters anyway?`,
+      )) {
+        return;
+      }
+    } else if (!window.confirm('Withdraw this submission? Recruiters will no longer see it until you submit again.')) {
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/interviews/${interviewId}/recalibrate`, {
@@ -360,7 +387,7 @@ export function useRecalibrateSession({
 
     void patchSession({
       timerStartedAt: new Date(now).toISOString(),
-      timerEndedAt: "0",
+      elapsedSeconds: 0,
     });
   };
 
@@ -377,7 +404,7 @@ export function useRecalibrateSession({
 
     void patchSession({
       timerStartedAt: null,
-      timerEndedAt: String(total),
+      elapsedSeconds: total,
     });
   };
 
@@ -391,7 +418,7 @@ export function useRecalibrateSession({
 
     void patchSession({
       timerStartedAt: new Date(now).toISOString(),
-      timerEndedAt: String(elapsedSeconds),
+      elapsedSeconds,
     });
   };
 
@@ -402,7 +429,7 @@ export function useRecalibrateSession({
 
     void patchSession({
       timerStartedAt: null,
-      timerEndedAt: "0",
+      elapsedSeconds: 0,
     });
   };
 
@@ -522,9 +549,7 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
-          setAiEvaluation(data.session.aiEvaluation || null);
-        }
+        setAiEvaluation(data.session.aiEvaluation ?? null);
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'graph_api');
       }
@@ -570,9 +595,7 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
-          setAiEvaluation(data.session.aiEvaluation || null);
-        }
+        setAiEvaluation(data.session.aiEvaluation ?? null);
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'manual_upload');
       }
@@ -681,7 +704,7 @@ export function useRecalibrateSession({
     audioOrAudios: string | Array<{ audioBase64: string; mimeType: string; duration?: string; startingTimestamp?: string }>,
     mimeTypeOrSourceType?: string,
     sourceTypeParam: 'live_recording' | 'audio_upload' = 'audio_upload',
-  ) => {
+  ): Promise<boolean> => {
     setIsProcessingTranscript(true);
     try {
       const body: any = {
@@ -724,14 +747,13 @@ export function useRecalibrateSession({
       }
 
       if (!res.ok) throw new Error(data.error || 'Failed to transcribe and evaluate audio.');
+      if (data.audioStorageWarning) toast.warning(data.audioStorageWarning);
 
       if (data.session) {
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
-          setAiEvaluation(data.session.aiEvaluation || null);
-        }
+        setAiEvaluation(data.session.aiEvaluation ?? null);
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || body.sourceType);
       }
@@ -760,9 +782,11 @@ export function useRecalibrateSession({
       } else {
         toast.success('Audio transcribed successfully.');
       }
+      return true;
     } catch (err: any) {
       console.error('Error processing audio:', err);
-      toast.error(err.message || 'Failed to process audio recording.');
+      toast.error(`${err.message || 'Failed to process audio recording.'} Your recording is still here — try again.`);
+      return false;
     } finally {
       setIsProcessingTranscript(false);
     }
@@ -774,92 +798,52 @@ export function useRecalibrateSession({
       return;
     }
 
-    // 1. Map Question Scores. The AI only overwrites with a real 1-4 score; "0" means it
-    // found no evidence, which must never erase a score the panelist entered by hand
-    // (e.g. they saw the answer but the recording missed it).
+    // What the AI would set. A 0 means "no evidence" and is never applied, so it can't erase
+    // a score the panelist entered themselves (they may have seen an answer the recording missed).
+    const aiQuestionScores: Record<string, number> = {};
+    for (const qEval of aiEvaluation.questionEvaluations) {
+      if (qEval.suggestedScore > 0) aiQuestionScores[qEval.questionId] = qEval.suggestedScore;
+    }
+    const suggestedRubric = resolveSuggestedRubricScores(aiEvaluation, allDims.map((d) => d.label), questions);
+    const aiRubricScores: Record<string, number> = {};
+    for (const [label, suggestion] of Object.entries(suggestedRubric)) {
+      if (suggestion.score > 0) aiRubricScores[label] = suggestion.score;
+    }
+
+    // Anything the panelist already scored differently? Ask once; "Cancel" keeps their
+    // scores and still fills in everything they haven't scored yet.
+    const conflicts =
+      Object.entries(aiQuestionScores).filter(([id, v]) => typeof questionScores[id] === 'number' && questionScores[id] !== v).length +
+      Object.entries(aiRubricScores).filter(([label, v]) => typeof rubricScores[label] === 'number' && rubricScores[label] !== v).length;
+    const overwrite = conflicts > 0
+      && window.confirm(
+        `The AI suggests different scores for ${conflicts} item${conflicts === 1 ? '' : 's'} you already scored.` +
+        "\n\nOK: replace your scores with the AI's.\nCancel: keep your scores and only fill the empty ones.",
+      );
+
     const nextQuestionScores: Record<string, number> = { ...questionScores };
     const nextAppliedZero = new Set(appliedZeroQuestionIds);
     for (const qEval of aiEvaluation.questionEvaluations) {
+      const id = qEval.questionId;
       if (qEval.suggestedScore > 0) {
-        nextQuestionScores[qEval.questionId] = qEval.suggestedScore;
-        nextAppliedZero.delete(qEval.questionId);
-      } else if (typeof nextQuestionScores[qEval.questionId] !== 'number') {
-        nextAppliedZero.add(qEval.questionId);
+        if (overwrite || typeof nextQuestionScores[id] !== 'number') nextQuestionScores[id] = qEval.suggestedScore;
+        nextAppliedZero.delete(id);
+      } else if (typeof nextQuestionScores[id] !== 'number') {
+        nextAppliedZero.add(id);
       }
     }
     setAppliedZeroQuestionIds(nextAppliedZero);
 
-    // 2. Map Rubric Scores (matching exact, question categories, normalized, and aliases)
     const nextRubricScores: Record<string, number> = { ...rubricScores };
-
-    // Build lookup of question categories to their AI scores (only count addressed questions with score > 0)
-    const categoryScores: Record<string, number[]> = {};
-    for (const qEval of aiEvaluation.questionEvaluations) {
-      if (qEval.suggestedScore > 0) {
-        const q = questions.find((item) => item.id === qEval.questionId);
-        if (q && q.category) {
-          (categoryScores[q.category] ||= []).push(qEval.suggestedScore);
-        }
-      }
+    for (const [label, score] of Object.entries(aiRubricScores)) {
+      if (overwrite || typeof nextRubricScores[label] !== 'number') nextRubricScores[label] = score;
     }
 
-    for (const dim of allDims) {
-      const label = dim.label;
-      let resolvedScore: number | undefined;
-
-      // Strategy A: Direct key match in aiEvaluation.rubricEvaluations
-      if (aiEvaluation.rubricEvaluations && aiEvaluation.rubricEvaluations[label]) {
-        resolvedScore = aiEvaluation.rubricEvaluations[label].suggestedScore;
-      } else if (categoryScores[label] && categoryScores[label].length > 0) {
-        // Strategy B: Match based on question evaluations for this exact dimension category
-        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
-        resolvedScore = Math.min(4, Math.max(1, avg));
-      } else if (aiEvaluation.rubricEvaluations) {
-        // Strategy C: Normalized/Fuzzy match in rubricEvaluations
-        const normalizedTarget = label.toLowerCase().replace(/[^a-z0-9]/g, '');
-        for (const [key, evalData] of Object.entries(aiEvaluation.rubricEvaluations)) {
-          const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (
-            normalizedKey === normalizedTarget ||
-            normalizedKey.includes(normalizedTarget) ||
-            normalizedTarget.includes(normalizedKey)
-          ) {
-            resolvedScore = evalData.suggestedScore;
-            break;
-          }
-        }
-
-        // Strategy D: Common aliases
-        if (resolvedScore === undefined) {
-          if (label === 'Logical Thinking & Problem Solving' && aiEvaluation.rubricEvaluations['Problem Solving']) {
-            resolvedScore = aiEvaluation.rubricEvaluations['Problem Solving'].suggestedScore;
-          } else if (label === 'Assertiveness & Comms' && (aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'])) {
-            const commsEval = aiEvaluation.rubricEvaluations['Communication & Assertiveness'] || aiEvaluation.rubricEvaluations['Communication'];
-            resolvedScore = commsEval.suggestedScore;
-          } else if (label === 'People Management' && (aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'])) {
-            const peopleEval = aiEvaluation.rubricEvaluations['People Management'] || aiEvaluation.rubricEvaluations['Leadership'];
-            resolvedScore = peopleEval.suggestedScore;
-          }
-        }
-      }
-
-      // The AI may rate a dimension 0 (no direct evidence) while it did score questions in
-      // that very category — fall back to those instead of dropping the row.
-      if ((resolvedScore === undefined || resolvedScore <= 0) && categoryScores[label]?.length) {
-        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
-        resolvedScore = Math.min(4, Math.max(1, avg));
-      }
-
-      // Only overwrite with a real score; keep any score the panelist already set.
-      if (typeof resolvedScore === 'number' && resolvedScore > 0) {
-        nextRubricScores[label] = resolvedScore;
-      }
-    }
-
-    // 3. Populate Notes with AI summary
+    // Notes: never replace what the panelist wrote — add the AI summary underneath.
     let nextNotes = notes;
-    if (aiEvaluation.overallSummary) {
-      nextNotes = aiEvaluation.overallSummary;
+    const summary = aiEvaluation.overallSummary?.trim();
+    if (summary && !notes.includes(summary)) {
+      nextNotes = notes.trim() ? `${notes.trim()}\n\n— AI assessment —\n${summary}` : summary;
       setNotes(nextNotes);
     }
 
@@ -870,7 +854,7 @@ export function useRecalibrateSession({
       rubricScores: nextRubricScores,
       notes: nextNotes,
     });
-    toast.success('All AI-suggested scores and notes applied!');
+    toast.success(overwrite ? 'AI scores applied (your scores replaced).' : "AI scores applied to everything you hadn't scored.");
   };
 
   const handleApplyAiSummaryToNotes = () => {
@@ -878,9 +862,15 @@ export function useRecalibrateSession({
       toast.error('No AI assessment summary available.');
       return;
     }
-    setNotes(aiEvaluation.overallSummary);
-    void patchSession({ notes: aiEvaluation.overallSummary });
-    toast.success('Applied AI assessment summary to notes.');
+    const summary = aiEvaluation.overallSummary.trim();
+    if (notes.includes(summary)) {
+      toast.info('The AI summary is already in your notes.');
+      return;
+    }
+    const next = notes.trim() ? `${notes.trim()}\n\n— AI assessment —\n${summary}` : summary;
+    setNotes(next);
+    void patchSession({ notes: next });
+    toast.success('Added the AI summary to your notes.');
   };
 
   const handleAcceptSingleQuestionScore = (questionId: string, score: number) => {

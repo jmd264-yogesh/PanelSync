@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { dbClient } from '@/lib/db';
 import * as schema from '@/lib/schema';
-import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { parseRound } from '@/lib/interview-role';
 
 export const dynamic = 'force-dynamic';
@@ -74,7 +74,8 @@ export async function GET(request: NextRequest) {
     .where(
       and(
         inArray(schema.interviewPanels.interviewId, l1InterviewIds),
-        eq(schema.interviewPanels.status, 'SUBMITTED')
+        // A decision means feedback was given; status SUBMITTED alone just means a slot was booked.
+        isNotNull(schema.interviewPanels.decision)
       )
     );
 

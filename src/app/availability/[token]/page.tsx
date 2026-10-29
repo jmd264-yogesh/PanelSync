@@ -1,3 +1,4 @@
+import { interviewForPanelist } from '@/lib/panel-dto';
 import { db } from '@/lib/db';
 import AvailabilityClient from './AvailabilityClient';
 import { AlertCircle } from 'lucide-react';
@@ -48,7 +49,7 @@ export default async function AvailabilityPage({ params }: PageProps) {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <main style={{ flex: 1, padding: '3rem 0', display: 'flex', alignItems: 'center' }}>
         <div className="container" style={{ maxWidth: '720px' }}>
-          <AvailabilityClient interview={interview} panel={panel} />
+          <AvailabilityClient interview={interviewForPanelist(interview, panel.id)} panel={panel} />
         </div>
       </main>
     </div>

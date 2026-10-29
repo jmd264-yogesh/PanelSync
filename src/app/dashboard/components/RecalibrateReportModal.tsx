@@ -39,6 +39,7 @@ interface RoundReport {
     notes: string | null;
     timerStartedAt: string | null;
     timerEndedAt: string | null;
+    elapsedSeconds?: number;
     submittedAt: string | null;
     submittedBy: string | null;
   };
@@ -167,10 +168,14 @@ export default function RecalibrateReportModal({
 
   const durationLabel = (() => {
     const s = activeRound?.session;
-    if (!s?.timerStartedAt) return '—';
-    const start = new Date(s.timerStartedAt).getTime();
-    const end = s.timerEndedAt ? new Date(s.timerEndedAt).getTime() : start;
-    return fmt(Math.max(0, Math.floor((end - start) / 1000)));
+    if (!s) return '—';
+    // Time banked at the last pause, plus the segment still running when the assessment was
+    // submitted. (Recruiters only ever see submitted reports, so submittedAt is the end.)
+    let seconds = s.elapsedSeconds ?? 0;
+    if (s.timerStartedAt && s.submittedAt) {
+      seconds += Math.max(0, Math.floor((new Date(s.submittedAt).getTime() - new Date(s.timerStartedAt).getTime()) / 1000));
+    }
+    return seconds > 0 ? fmt(seconds) : '—';
   })();
 
   const handleDownload = () => {

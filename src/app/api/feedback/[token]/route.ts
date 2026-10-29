@@ -1,4 +1,6 @@
 import { parseRound } from '@/lib/interview-role';
+import { feedbackEditState } from '@/lib/feedback-window';
+import { interviewForPanelist } from '@/lib/panel-dto';
 import { NextRequest, NextResponse } from 'next/server';
 import { db, dbClient } from '@/lib/db';
 import * as schema from '@/lib/schema';
@@ -19,7 +21,8 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 404 });
   }
   const { interview, panel } = result;
-  return NextResponse.json({ interview, panel });
+  // Only this panelist's own panel — other panels' tokens and feedback must not leave the server.
+  return NextResponse.json({ interview: interviewForPanelist(interview, panel.id), panel });
 }
 
 export async function POST(
@@ -50,15 +53,15 @@ export async function POST(
       );
     }
 
-    // Check 2-hour edit window if already submitted
-    if (panel.status === 'SUBMITTED' && panel.submittedAt) {
-      const elapsedMs = Date.now() - new Date(panel.submittedAt).getTime();
-      if (elapsedMs > 2 * 60 * 60 * 1000) {
-        return NextResponse.json(
-          { error: 'The 2-hour feedback editing window has expired.' },
-          { status: 403 }
-        );
-      }
+    // 2-hour edit window — only once feedback exists (a booked slot also reads SUBMITTED).
+    const editState = feedbackEditState({ decision: panel.decision, submittedAt: panel.submittedAt });
+    if (editState === 'expired') {
+      return NextResponse.json(
+        { error: 'The 2-hour feedback editing window has expired.' },
+        { status: 403 }
+      );
+    }
+    if (editState === 'editable') {
 
       // Same finality rule as the panelist-session route: once a candidate has been passed
       // for L1 they are queued for L2, so that decision can't be flipped from this link.

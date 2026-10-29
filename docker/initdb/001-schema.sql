@@ -139,6 +139,19 @@ CREATE TABLE "panelists" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
+CREATE TABLE "interview_audios" (
+	"id" varchar(255) PRIMARY KEY NOT NULL,
+	"interview_id" varchar(255) NOT NULL,
+	"s3_key" text NOT NULL,
+	"s3_url" text NOT NULL,
+	"file_name" varchar(255) NOT NULL,
+	"mime_type" varchar(100),
+	"duration" varchar(50),
+	"transcript_text" text,
+	"transcript_turns" jsonb,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
 CREATE TABLE "recalibrate_sessions" (
 	"id" varchar(255) PRIMARY KEY NOT NULL,
 	"interview_id" varchar(255) NOT NULL,
@@ -148,6 +161,7 @@ CREATE TABLE "recalibrate_sessions" (
 	"notes" text,
 	"timer_started_at" timestamp,
 	"timer_ended_at" timestamp,
+	"elapsed_seconds" integer,
 	"submitted_at" timestamp,
 	"submitted_by" varchar(255),
 	"transcript_text" text,
@@ -155,6 +169,9 @@ CREATE TABLE "recalibrate_sessions" (
 	"ai_evaluation" jsonb,
 	"transcript_fetched_at" timestamp,
 	"transcript_source" varchar(50),
+	"interview_mode" varchar(20) DEFAULT 'ONLINE',
+	"speaker_map" jsonb,
+	"speakers_confirmed_at" timestamp,
 	"created_at" timestamp DEFAULT now(),
 	"updated_at" timestamp DEFAULT now(),
 	CONSTRAINT "recalibrate_sessions_interview_id_unique" UNIQUE("interview_id")
@@ -194,6 +211,7 @@ ALTER TABLE "interview_panels" ADD CONSTRAINT "interview_panels_interview_id_int
 ALTER TABLE "interview_transcripts" ADD CONSTRAINT "interview_transcripts_interview_id_interviews_id_fk" FOREIGN KEY ("interview_id") REFERENCES "public"."interviews"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lateral_candidates" ADD CONSTRAINT "lateral_candidates_mapped_interview_id_interviews_id_fk" FOREIGN KEY ("mapped_interview_id") REFERENCES "public"."interviews"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "panel_availabilities" ADD CONSTRAINT "panel_availabilities_panel_id_interview_panels_id_fk" FOREIGN KEY ("panel_id") REFERENCES "public"."interview_panels"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "interview_audios" ADD CONSTRAINT "interview_audios_interview_id_interviews_id_fk" FOREIGN KEY ("interview_id") REFERENCES "public"."interviews"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "recalibrate_sessions" ADD CONSTRAINT "recalibrate_sessions_interview_id_interviews_id_fk" FOREIGN KEY ("interview_id") REFERENCES "public"."interviews"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "recalibrate_sessions" ADD CONSTRAINT "recalibrate_sessions_ai_run_id_ai_runs_id_fk" FOREIGN KEY ("ai_run_id") REFERENCES "public"."ai_runs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "uploaded_candidates" ADD CONSTRAINT "uploaded_candidates_mapped_interview_id_interviews_id_fk" FOREIGN KEY ("mapped_interview_id") REFERENCES "public"."interviews"("id") ON DELETE cascade ON UPDATE no action;

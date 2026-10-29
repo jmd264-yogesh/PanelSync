@@ -18,6 +18,7 @@ import { TRANSCRIPT_CASES } from './transcript-cases';
 import { IN_PERSON_CASES } from './in-person-cases';
 import { ROUND_CASES } from './round-cases';
 import { VISIBILITY_CASES } from './visibility-cases';
+import { SAFEGUARD_CASES } from './safeguard-cases';
 
 interface Result { name: string; passed: boolean; detail?: string }
 
@@ -275,6 +276,16 @@ function runVisibilityCases() {
   }
 }
 
+// ── Suite 6e: pre-demo safeguards ───────────────────────────────────────────
+
+function runSafeguardCases() {
+  suite('Safeguards (feedback window, AI suggestions, audio types, panel tokens)');
+  for (const testCase of SAFEGUARD_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
 // ── Suite 7 (opt-in): live pipeline ──────────────────────────────────────────
 
 async function runLiveCases() {
@@ -353,6 +364,7 @@ async function main() {
   runInPersonCases();
   runRoundCases();
   runVisibilityCases();
+  runSafeguardCases();
   if (live) await runLiveCases();
 
   const failed = results.filter((r) => !r.passed);

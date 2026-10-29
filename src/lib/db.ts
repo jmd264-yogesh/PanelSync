@@ -6,6 +6,7 @@ import { eq, and, inArray, desc, isNull, or, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
 import { outcomeVisibleToRound, parseRound } from './interview-role';
+import { interviewForPanelist } from './panel-dto';
 
 export interface PanelAvailability {
   id: string;
@@ -161,6 +162,8 @@ export interface RecalibrateSession {
   notes: string | null;
   timerStartedAt: string | null;
   timerEndedAt: string | null;
+  /** Interview time banked at the last pause/resume, in seconds. */
+  elapsedSeconds: number;
   submittedAt: string | null;
   submittedBy: string | null;
   transcriptText: string | null;
@@ -1283,21 +1286,24 @@ export const db = {
 
       const activePanel = interview.panels.find((p) => p.id === panelRow.id);
       if (activePanel) {
-        result.push({ interview, panel: activePanel });
+        // Only the requested panelist's own panel — never co-panelists' tokens or feedback.
+        result.push({ interview: interviewForPanelist(interview, activePanel.id), panel: activePanel });
       }
     }
     return result;
   },
 
   submitPanelFeedback: async (panelId: string, feedback: string, decision: 'PASSED' | 'REJECTED'): Promise<boolean> => {
-    // Keep the original submission timestamp if it was already submitted (for editing)
+    // `submittedAt` doubles as "when the slot was booked" until feedback exists, so stamp
+    // it when the FIRST decision is recorded (the 2-hour edit window runs from there) and
+    // keep it on later edits (see lib/feedback-window.ts).
     const [existing] = await dbClient
-      .select({ submittedAt: schema.interviewPanels.submittedAt })
+      .select({ submittedAt: schema.interviewPanels.submittedAt, decision: schema.interviewPanels.decision })
       .from(schema.interviewPanels)
       .where(eq(schema.interviewPanels.id, panelId))
       .limit(1);
 
-    const submittedAtVal = existing?.submittedAt ? existing.submittedAt : new Date();
+    const submittedAtVal = existing?.decision && existing.submittedAt ? existing.submittedAt : new Date();
 
     await dbClient
       .update(schema.interviewPanels)
@@ -1879,6 +1885,18 @@ export const db = {
     return db.mapInterviewAudioRow(row);
   },
 
+  // Attaches a transcript to a clip that was saved before transcription ran.
+  setInterviewAudioTranscript: async (
+    audioId: string,
+    transcriptText: string | null,
+    transcriptTurns: TranscriptDialogueTurn[] | null,
+  ): Promise<void> => {
+    await dbClient
+      .update(schema.interviewAudios)
+      .set({ transcriptText, transcriptTurns })
+      .where(eq(schema.interviewAudios.id, audioId));
+  },
+
   getInterviewAudio: async (id: string): Promise<InterviewAudio | null> => {
     const [row] = await dbClient
       .select()
@@ -1908,6 +1926,7 @@ export const db = {
     notes: row.notes,
     timerStartedAt: row.timerStartedAt ? row.timerStartedAt.toISOString() : null,
     timerEndedAt: row.timerEndedAt ? row.timerEndedAt.toISOString() : null,
+    elapsedSeconds: row.elapsedSeconds ?? 0,
     submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
     submittedBy: row.submittedBy ?? null,
     transcriptText: row.transcriptText ?? null,
@@ -1966,6 +1985,7 @@ export const db = {
     notes: string | null;
     timerStartedAt: Date | null;
     timerEndedAt: Date | null;
+    elapsedSeconds: number;
     submittedAt: Date | null;
     submittedBy: string | null;
     transcriptText: string | null;

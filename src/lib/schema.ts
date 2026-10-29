@@ -264,7 +264,9 @@ export const recalibrateSessions = pgTable('recalibrate_sessions', {
   rubricScores: jsonb('rubric_scores'), // { [dimensionLabel]: 1-4 }
   notes: text('notes'),
   timerStartedAt: timestamp('timer_started_at'),
-  timerEndedAt: timestamp('timer_ended_at'),
+  timerEndedAt: timestamp('timer_ended_at'), // legacy: older clients wrote elapsed seconds here as a bogus date; superseded by elapsed_seconds
+  // Seconds of interview time accumulated at the last pause/resume (the running segment is derived from timer_started_at).
+  elapsedSeconds: integer('elapsed_seconds'),
   submittedAt: timestamp('submitted_at'), // set once the panelist submits — recruiters can only see submitted reports
   submittedBy: varchar('submitted_by', { length: 255 }), // panelist email
   transcriptText: text('transcript_text'), // raw or formatted transcript text

@@ -1,3 +1,4 @@
+import { interviewForPanelist } from '@/lib/panel-dto';
 import { db } from '@/lib/db';
 import FeedbackClient from './FeedbackClient';
 import { AlertCircle, CheckCircle } from 'lucide-react';
@@ -61,7 +62,7 @@ export default async function FeedbackPage({ params }: PageProps) {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <main style={{ flex: 1, padding: '3rem 0', display: 'flex', alignItems: 'center' }}>
         <div className="container" style={{ maxWidth: '680px' }}>
-          <FeedbackClient interview={interview} panel={panel} />
+          <FeedbackClient interview={interviewForPanelist(interview, panel.id)} panel={panel} />
         </div>
       </main>
     </div>
