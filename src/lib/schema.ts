@@ -271,7 +271,12 @@ export const recalibrateSessions = pgTable('recalibrate_sessions', {
   transcriptTurns: jsonb('transcript_turns'), // parsed dialogue turns: { speaker, timestamp, text }[]
   aiEvaluation: jsonb('ai_evaluation'), // AI evaluation output: { overallSummary, questionEvaluations, rubricEvaluations, confidence }
   transcriptFetchedAt: timestamp('transcript_fetched_at'),
-  transcriptSource: varchar('transcript_source', { length: 50 }), // 'graph_api' | 'manual_upload' | 'webhook'
+  transcriptSource: varchar('transcript_source', { length: 50 }), // 'graph_api' | 'manual_upload' | 'live_recording' | 'audio_upload'
+  // 'ONLINE' (Teams call) | 'IN_PERSON'. In person, transcription uses neutral
+  // "Speaker N" labels and AI scoring waits until a panelist confirms who is who.
+  interviewMode: varchar('interview_mode', { length: 20 }).default('ONLINE'),
+  speakerMap: jsonb('speaker_map'), // { [speakerLabel]: { role: 'candidate'|'panelist'|'ignore', name?, suggested?, reason? } }
+  speakersConfirmedAt: timestamp('speakers_confirmed_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

@@ -44,7 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getInterviewInfo } from "@/lib/interview-role";
+import { getInterviewInfo, parseRound } from "@/lib/interview-role";
 import PanelistLoadHeatmap from "./PanelistLoadHeatmap";
 import { BAND_STYLE, byFairnessThenName, computePanelistLoads } from "@/lib/panelist-load";
 
@@ -700,7 +700,7 @@ export default function InterviewsTab({
 
   const getFilteredInterviews = () => {
     let filtered = interviews.filter((i) => {
-      const info = getInterviewInfo(i.role);
+      const info = getInterviewInfo(i.role, i.hiringType);
       return activeHiringTab === "LATERAL" ? info.isLateral : info.isCampus;
     });
     if (selectedDrive && activeHiringTab === "CAMPUS") {
@@ -856,7 +856,7 @@ export default function InterviewsTab({
   // Filter interviews matching current dashboard scopes (drive, type, date, college), independent of statusFilter
   const getInterviewsForMetrics = () => {
     let filtered = interviews.filter((i) => {
-      const info = getInterviewInfo(i.role);
+      const info = getInterviewInfo(i.role, i.hiringType);
 
       return activeHiringTab === "CAMPUS" ? info.isCampus : info.isLateral;
     });
@@ -1015,7 +1015,7 @@ export default function InterviewsTab({
   // ── Cohort Analytics (L1 & L2 breakdown, reacting to the selected drive + college/date filters) ──────────────
   const getOverallInterviewsForAnalytics = () => {
     let filtered = interviews.filter((i) => {
-      const info = getInterviewInfo(i.role);
+      const info = getInterviewInfo(i.role, i.hiringType);
 
       return activeHiringTab === "CAMPUS" ? info.isCampus : info.isLateral;
     });
@@ -1080,7 +1080,7 @@ export default function InterviewsTab({
     interviews
       .filter(
         (i) =>
-          i.role.toLowerCase().includes("l2") &&
+          (parseRound(i.role) === "L2") &&
           i.candidateName !== "Pending Assignment" &&
           i.candidateEmail !== "pending@assign.com",
       )
@@ -1582,6 +1582,7 @@ export default function InterviewsTab({
                 const isSelected = selectedInterview?.id === interview.id;
                 const { isLateral, isL1, isL2 } = getInterviewInfo(
                   interview.role,
+                  interview.hiringType,
                 );
                 const initials =
                   interview.candidateName === "Pending Assignment"

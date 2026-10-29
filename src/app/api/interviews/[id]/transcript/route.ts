@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
-import { db, type AiTranscriptEvaluation } from '@/lib/db';
+import { db, type AiTranscriptEvaluation, type RecalibrateSession, type SpeakerMap, type TranscriptDialogueTurn } from '@/lib/db';
 import {
   TranscriptError,
   fetchTranscriptVtt,
   listTranscripts,
   resolveOnlineMeetingId,
 } from '@/lib/graph-transcript';
-import { analyseTranscript, parseDialogueTurns } from '@/lib/transcript';
-import { transcribeAudioWithAi, evaluateTranscriptWithAi, isTranscriptEmptyOrNoSpeech } from '@/lib/ai/transcript-evaluator';
+import { analyseTranscript, attributeSpeakers, formatTimestamp, parseDialogueTurns, parseVtt } from '@/lib/transcript';
+import { transcribeAudioWithAi, evaluateTranscriptWithAi, isTranscriptEmptyOrNoSpeech, suggestSpeakerRoles } from '@/lib/ai/transcript-evaluator';
+import {
+  applySpeakerMap, buildRoleTaggedTranscript, mergeSpeakerMaps, speakerLabels, summarizeSpeakers, validateSpeakerMap,
+} from '@/lib/in-person';
 import { uploadAudioBase64, type UploadAudioResult } from '@/lib/s3';
+import type { Spec } from '@/lib/ai/schemas';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +36,121 @@ function analysisFor(interview: NonNullable<Awaited<ReturnType<typeof db.getInte
     candidateName: interview.candidateName,
     candidateEmail: interview.candidateEmail,
     panelistNames: interview.panels.map((p) => p.name),
+  });
+}
+
+type InterviewRecord = NonNullable<Awaited<ReturnType<typeof db.getInterview>>>;
+
+/** The question run a transcript is evaluated against: explicit, then the session's, then the latest completed. */
+async function resolveQuestionRun(interviewId: string, recalSession: RecalibrateSession, preferredRunId?: string | null) {
+  const targetAiRunId = preferredRunId || recalSession.aiRunId;
+  let run = targetAiRunId ? await db.getAiRun(targetAiRunId) : null;
+  if (!run) {
+    const runs = await db.getAiRunsForInterview(interviewId);
+    run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || runs[0] || null;
+  }
+  return run;
+}
+
+interface EvaluationOutcome {
+  evaluation: AiTranscriptEvaluation | null;
+  evaluationError: string | null;
+  runId: string | null;
+}
+
+/**
+ * Evaluates a transcript against the interview's question set and always says WHY when it
+ * can't — a silent null is what left panelists with a transcript, no AI scores and no clue
+ * (or button) to fix it.
+ */
+async function evaluateAgainstRun(params: {
+  interview: InterviewRecord;
+  recalSession: RecalibrateSession;
+  transcriptText: string;
+  preferredRunId?: string | null;
+  fallbackQuestions?: unknown;
+  fallbackSpec?: Spec | null;
+  speakersConfirmed?: boolean;
+}): Promise<EvaluationOutcome> {
+  const { interview, recalSession, transcriptText, preferredRunId, fallbackQuestions, fallbackSpec, speakersConfirmed } = params;
+  const run = await resolveQuestionRun(interview.id, recalSession, preferredRunId);
+  const questionSet = run?.questions || fallbackQuestions || null;
+  const spec = (run?.spec as Spec | null | undefined) || fallbackSpec || null;
+  const runId = run?.id || recalSession.aiRunId || null;
+
+  if (!questionSet) {
+    return { evaluation: null, evaluationError: 'No question set found for this interview. Generate questions first, then run the AI evaluation.', runId };
+  }
+  if (!transcriptText.trim()) {
+    return { evaluation: null, evaluationError: 'There is no transcript to evaluate yet.', runId };
+  }
+  try {
+    const evaluation = await evaluateTranscriptWithAi({
+      transcriptText,
+      questionSet,
+      spec,
+      candidateName: interview.candidateName,
+      roleTitle: interview.role,
+      speakersConfirmed,
+    });
+    return { evaluation, evaluationError: null, runId };
+  } catch (err) {
+    console.error('AI evaluation failed:', err);
+    return { evaluation: null, evaluationError: err instanceof Error ? err.message : String(err), runId };
+  }
+}
+
+/**
+ * In-person: stop after transcription and ask a panelist to confirm who is who. Stores
+ * the neutral-label transcript (the source of truth, also used as continuation context
+ * for later clips), suggests roles, and clears any previous evaluation — nothing is
+ * scored on guessed speakers.
+ */
+async function prepareSpeakerReview(params: {
+  interview: InterviewRecord;
+  recalSession: RecalibrateSession;
+  transcriptText: string;
+  keepPreviousMapping: boolean;
+  extra: Partial<Parameters<typeof db.updateRecalibrateSession>[1]>;
+}) {
+  const { interview, recalSession, transcriptText, keepPreviousMapping, extra } = params;
+  const turns = parseDialogueTurns(transcriptText);
+  const labels = speakerLabels(turns);
+  const summaries = summarizeSpeakers(turns);
+
+  const suggested: SpeakerMap = {};
+  if (labels.length > 0) {
+    try {
+      const result = await suggestSpeakerRoles({
+        speakers: summaries,
+        candidateName: interview.candidateName,
+        panelNames: interview.panels.map((p) => p.name),
+        roleTitle: interview.role,
+      });
+      for (const sp of result.speakers) {
+        if (!labels.includes(sp.label)) continue;
+        suggested[sp.label] = {
+          role: sp.role,
+          name: sp.role === 'panelist' ? (sp.panelistName ?? undefined) : undefined,
+          suggested: true,
+          reason: sp.reason,
+        };
+      }
+    } catch (err) {
+      // A failed suggestion only means the panelist assigns every speaker by hand.
+      console.error('Speaker role suggestion failed:', err);
+    }
+  }
+
+  const speakerMap = mergeSpeakerMaps(keepPreviousMapping ? recalSession.speakerMap : null, suggested, labels);
+  return db.updateRecalibrateSession(interview.id, {
+    ...extra,
+    transcriptText: transcriptText || null,
+    transcriptTurns: turns.length > 0 ? turns : null,
+    speakerMap,
+    speakersConfirmedAt: null,
+    aiEvaluation: null,
+    transcriptFetchedAt: new Date(),
   });
 }
 
@@ -98,6 +217,88 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const isGraph = rawSource === 'graph' || rawSource === 'teams' || rawSource === 'graph_api';
 
+    // RE-RUN AI EVALUATION on the transcript already stored for this interview — for when
+    // the first evaluation failed or was skipped (no questions yet), or the questions were
+    // regenerated. In person this scores the confirmed, role-tagged transcript only.
+    if (rawSource === 'evaluate') {
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      const inPerson = recalSession.interviewMode === 'IN_PERSON';
+      if (!recalSession.transcriptText?.trim()) {
+        return NextResponse.json({ error: 'There is no transcript to evaluate yet. Record, upload or fetch one first.' }, { status: 400 });
+      }
+      if (inPerson && !recalSession.speakersConfirmedAt) {
+        return NextResponse.json({ error: 'Confirm who is who before the AI evaluates an in-person transcript.' }, { status: 409 });
+      }
+
+      const transcriptForEval = inPerson
+        ? buildRoleTaggedTranscript((recalSession.transcriptTurns ?? []).filter((t) => t.role))
+        : recalSession.transcriptText;
+
+      const { evaluation, evaluationError, runId } = await evaluateAgainstRun({
+        interview,
+        recalSession,
+        transcriptText: transcriptForEval,
+        preferredRunId: body.aiRunId,
+        speakersConfirmed: inPerson,
+      });
+      if (!evaluation) {
+        return NextResponse.json({ success: false, error: evaluationError || 'AI evaluation failed.' }, { status: 422 });
+      }
+
+      const updatedSession = await db.updateRecalibrateSession(id, { aiRunId: runId, aiEvaluation: evaluation });
+      await db.addAuditLog(session.user.email, 'TRANSCRIPT_REEVALUATED', 'Interview', id, { inPerson, runId });
+      return NextResponse.json({ success: true, session: updatedSession, evaluation });
+    }
+
+    // 0. CONFIRM IN-PERSON SPEAKERS — apply the panelist's mapping, then evaluate.
+    if (rawSource === 'speakers') {
+      const recalSession = await db.getOrCreateRecalibrateSession(id);
+      const rawTurns: TranscriptDialogueTurn[] = parseDialogueTurns(recalSession.transcriptText || '');
+      const labels = speakerLabels(rawTurns);
+      if (labels.length === 0) {
+        return NextResponse.json({ error: 'There is no transcript to assign speakers for yet.' }, { status: 400 });
+      }
+
+      // Keep only known labels and well-formed assignments; the client never decides the label set.
+      const incoming = (body.speakerMap && typeof body.speakerMap === 'object') ? body.speakerMap as Record<string, unknown> : {};
+      const speakerMap: SpeakerMap = {};
+      for (const label of labels) {
+        const a = incoming[label] as { role?: unknown; name?: unknown } | undefined;
+        if (!a || (a.role !== 'candidate' && a.role !== 'panelist' && a.role !== 'ignore')) continue;
+        speakerMap[label] = {
+          role: a.role,
+          name: a.role === 'panelist' && typeof a.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 120) : undefined,
+        };
+      }
+      const check = validateSpeakerMap(speakerMap, labels);
+      if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+
+      const confirmedTurns = applySpeakerMap(rawTurns, speakerMap, interview.candidateName);
+      const { evaluation, evaluationError, runId } = await evaluateAgainstRun({
+        interview,
+        recalSession,
+        transcriptText: buildRoleTaggedTranscript(confirmedTurns),
+        preferredRunId: body.aiRunId,
+        speakersConfirmed: true,
+      });
+
+      const updatedSession = await db.updateRecalibrateSession(id, {
+        aiRunId: runId,
+        transcriptTurns: confirmedTurns,
+        speakerMap,
+        speakersConfirmedAt: new Date(),
+        aiEvaluation: evaluation,
+      });
+
+      await db.addAuditLog(session.user.email, 'IN_PERSON_SPEAKERS_CONFIRMED', 'Interview', id, {
+        speakers: labels.length,
+        candidateLabels: labels.filter((l) => speakerMap[l].role === 'candidate'),
+        hasEvaluation: Boolean(evaluation),
+      });
+
+      return NextResponse.json({ success: true, session: updatedSession, evaluation, evaluationError });
+    }
+
     // 1. AUDIO TRANSCRIPTION (from live recording or uploaded audio file)
     if (isAudio) {
       const audios: Array<{ audioBase64: string; mimeType: string }> = Array.isArray(body.audios) && body.audios.length > 0
@@ -158,7 +359,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const existingClipCount = existingAudios.length;
 
       // Upload audio clip(s) to S3 before sending to Gemini
-      const uploadedS3Clips: (UploadAudioResult & { fileName: string; mimeType?: string; duration?: string })[] = [];
+      const uploadedS3Clips: (UploadAudioResult & { index: number; fileName: string; mimeType?: string; duration?: string })[] = [];
       for (let i = 0; i < audios.length; i++) {
         const audioItem: any = audios[i];
         try {
@@ -187,6 +388,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           });
           uploadedS3Clips.push({
             ...s3Result,
+            index: i,
             fileName,
             mimeType: audioItem.mimeType,
             duration: durationSlug,
@@ -200,8 +402,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const recalSession = await db.getOrCreateRecalibrateSession(id);
       const isAppend = Boolean(body.append);
       const previousTranscript = isAppend ? (recalSession.transcriptText || '') : '';
+      const inPerson = recalSession.interviewMode === 'IN_PERSON';
 
       let combinedTranscript = '';
+      // Each clip's own text (not the combined interview), so a saved clip's transcript
+      // matches its recording.
+      const clipTranscripts: string[] = [];
       for (const audioItem of audios) {
         const transResult = await transcribeAudioWithAi({
           audioBase64: audioItem.audioBase64,
@@ -209,8 +415,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           candidateName: interview.candidateName,
           roleTitle: interview.role,
           existingTranscriptText: combinedTranscript || (isAppend ? previousTranscript : null),
+          inPerson: inPerson ? { expectedSpeakers: Math.max(2, interview.panels.length + 1) } : undefined,
         });
 
+        const clipText = transResult.transcriptText && !isTranscriptEmptyOrNoSpeech(transResult.transcriptText)
+          ? transResult.transcriptText.trim()
+          : '';
+        clipTranscripts.push(clipText);
         if (transResult.transcriptText && !isTranscriptEmptyOrNoSpeech(transResult.transcriptText)) {
           if (combinedTranscript) {
             combinedTranscript += '\n\n' + transResult.transcriptText.trim();
@@ -238,8 +449,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             fileName: clip.fileName,
             mimeType: clip.mimeType || null,
             duration: clip.duration || null,
-            transcriptText: fullTranscript || null,
-            transcriptTurns: turns.length > 0 ? turns : null,
+            transcriptText: clipTranscripts[clip.index] || null,
+            transcriptTurns: clipTranscripts[clip.index] ? parseDialogueTurns(clipTranscripts[clip.index]) : null,
           });
           if (!primaryAudioId) {
             primaryAudioId = audioRecord.id;
@@ -249,43 +460,51 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
-      // Fetch AI questions for evaluation
-      let evaluation: AiTranscriptEvaluation | null = null;
-      let evaluationError: string | null = null;
-      const targetAiRunId = body.aiRunId || recalSession.aiRunId;
-      let run = targetAiRunId ? await db.getAiRun(targetAiRunId) : null;
-      if (!run) {
-        const runs = await db.getAiRunsForInterview(id);
-        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || runs[0] || null;
+      if (inPerson) {
+        const run = await resolveQuestionRun(id, recalSession, body.aiRunId);
+        const updatedSession = await prepareSpeakerReview({
+          interview,
+          recalSession,
+          transcriptText: fullTranscript,
+          keepPreviousMapping: isAppend,
+          extra: {
+            aiRunId: run?.id || recalSession.aiRunId || null,
+            transcriptSource: body.sourceType || (body.audios ? 'live_recording' : 'audio_upload'),
+          },
+        });
+        await db.addAuditLog(session.user.email, 'AUDIO_TRANSCRIBED', 'Interview', id, {
+          chunksCount: audios.length,
+          characters: fullTranscript.length,
+          inPerson: true,
+          s3AudioKeys: uploadedS3Clips.map((c) => c.key),
+          audioId: primaryAudioId,
+        });
+        return NextResponse.json({
+          success: true,
+          session: updatedSession,
+          audioId: primaryAudioId,
+          evaluation: null,
+          needsSpeakerConfirmation: true,
+          s3AudioClips: uploadedS3Clips,
+        });
       }
 
-      const questionsToUse = run?.questions || body.questionSet || null;
-      const specToUse = run?.spec || body.spec || null;
-
-      if (questionsToUse) {
-        try {
-          evaluation = await evaluateTranscriptWithAi({
-            transcriptText: fullTranscript,
-            questionSet: questionsToUse as any,
-            spec: specToUse as any,
-            candidateName: interview.candidateName,
-            roleTitle: interview.role,
-          });
-        } catch (evalErr: any) {
-          console.error('Failed to run AI evaluation on transcript:', evalErr);
-          evaluationError = evalErr?.message || String(evalErr);
-        }
-      } else {
-        console.warn('AI evaluation skipped: No question set found for interview', id);
-        evaluationError = 'No question set found for this interview. Please generate questions first.';
-      }
+      // Evaluate against the question set (a failure is reported, never silent).
+      const { evaluation, evaluationError, runId } = await evaluateAgainstRun({
+        interview,
+        recalSession,
+        transcriptText: fullTranscript,
+        preferredRunId: body.aiRunId,
+        fallbackQuestions: body.questionSet,
+        fallbackSpec: body.spec,
+      });
 
       // Use the newly computed evaluation directly (do not retain obsolete scores from previous takes)
       const finalEvaluation = evaluation || null;
 
       const sourceType = body.sourceType || (body.audios ? 'live_recording' : 'audio_upload');
       const updatedSession = await db.updateRecalibrateSession(id, {
-        aiRunId: targetAiRunId || run?.id || recalSession.aiRunId || null,
+        aiRunId: runId,
         transcriptText: fullTranscript || null,
         transcriptTurns: turns.length > 0 ? turns : null,
         aiEvaluation: finalEvaluation,
@@ -321,29 +540,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const turns = parseDialogueTurns(rawText);
       const recalSession = await db.getOrCreateRecalibrateSession(id);
-      let evaluation: AiTranscriptEvaluation | null = null;
 
-      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
-      if (!run) {
-        const runs = await db.getAiRunsForInterview(id);
-        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
+      if (recalSession.interviewMode === 'IN_PERSON') {
+        const updatedSession = await prepareSpeakerReview({
+          interview,
+          recalSession,
+          transcriptText: rawText,
+          keepPreviousMapping: false,
+          extra: { transcriptSource: 'manual_upload' },
+        });
+        return NextResponse.json({ success: true, session: updatedSession, evaluation: null, needsSpeakerConfirmation: true });
       }
 
-      if (run?.questions) {
-        try {
-          evaluation = await evaluateTranscriptWithAi({
-            transcriptText: rawText,
-            questionSet: run.questions as any,
-            spec: run.spec as any,
-            candidateName: interview.candidateName,
-            roleTitle: interview.role,
-          });
-        } catch (evalErr) {
-          console.error('Failed to run AI evaluation on text transcript:', evalErr);
-        }
-      }
+      const { evaluation, evaluationError, runId } = await evaluateAgainstRun({
+        interview,
+        recalSession,
+        transcriptText: rawText,
+        preferredRunId: body.aiRunId,
+        fallbackQuestions: body.questionSet,
+        fallbackSpec: body.spec,
+      });
 
       const updatedSession = await db.updateRecalibrateSession(id, {
+        aiRunId: runId,
         transcriptText: rawText,
         transcriptTurns: turns.length > 0 ? turns : null,
         aiEvaluation: evaluation,
@@ -354,9 +573,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({
         success: true,
         session: updatedSession,
-        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
-        // transcriptText: rawText,
-        // transcriptTurns: turns,
+        evaluation,
+        evaluationError,
       });
     }
 
@@ -403,30 +621,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const stored = await db.getInterviewTranscripts(id);
       const combinedVtt = stored.map((t) => t.contentVtt ?? '').filter(Boolean).join('\n\n');
 
-      let evaluation: AiTranscriptEvaluation | null = null;
       const recalSession = await db.getOrCreateRecalibrateSession(id);
-      let run = recalSession.aiRunId ? await db.getAiRun(recalSession.aiRunId) : null;
-      if (!run) {
-        const runs = await db.getAiRunsForInterview(id);
-        run = runs.find((r) => r.status === 'COMPLETED' && r.questions) || null;
-      }
+      const { evaluation, evaluationError, runId } = await evaluateAgainstRun({
+        interview,
+        recalSession,
+        transcriptText: combinedVtt,
+        preferredRunId: body.aiRunId,
+        fallbackQuestions: body.questionSet,
+        fallbackSpec: body.spec,
+      });
 
-      if (run?.questions && combinedVtt) {
-        try {
-          evaluation = await evaluateTranscriptWithAi({
-            transcriptText: combinedVtt,
-            questionSet: run.questions as any,
-            spec: run.spec as any,
+      // Teams VTT carries the real speaker per cue — turn it into proper dialogue turns
+      // (the plain-text parser mangles VTT cue timings into fake "speakers").
+      const turns: TranscriptDialogueTurn[] = combinedVtt
+        ? attributeSpeakers(parseVtt(combinedVtt), {
             candidateName: interview.candidateName,
-            roleTitle: interview.role,
-          });
-        } catch (evalErr) {
-          console.error('Failed to run AI evaluation on Teams transcript:', evalErr);
-        }
-      }
-
-      const turns = combinedVtt ? parseDialogueTurns(combinedVtt) : [];
+            candidateEmail: interview.candidateEmail,
+            panelistNames: interview.panels.map((p) => p.name),
+          })
+            .filter((seg) => seg.text.trim())
+            .map((seg) => ({
+              speaker: seg.speaker || 'Unknown',
+              timestamp: formatTimestamp(seg.startMs),
+              text: seg.text.trim(),
+              ...(seg.role !== 'unknown' ? { role: seg.role } : {}),
+            }))
+        : [];
       const updatedSession = await db.updateRecalibrateSession(id, {
+        aiRunId: runId,
         transcriptText: combinedVtt,
         transcriptTurns: turns.length > 0 ? turns : null,
         aiEvaluation: evaluation,
@@ -441,20 +663,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       return NextResponse.json({
         success: true,
-        hasTranscript: false,
-        evaluation: evaluation || (recalSession.aiEvaluation as any) || null,
-        // fetchedAt: stored[0]?.fetchedAt ?? null,
-        // transcriptCount: stored.length,
-        // analysis: combinedVtt ? analysisFor(interview, combinedVtt) : null,
-        // session: updatedSession,
-        // transcriptText: combinedVtt,
-        // transcriptTurns: turns,
+        hasTranscript: Boolean(combinedVtt),
+        session: updatedSession,
+        evaluation,
+        evaluationError,
       });
     }
 
     // Fallback: If source was not recognized, return explicit error instead of triggering Graph sync
     return NextResponse.json(
-      { error: 'Missing or unsupported transcript source. Supported sources: "audio", "text", or "graph".' },
+      { error: 'Missing or unsupported transcript source. Supported sources: "audio", "text", "graph", "speakers" or "evaluate".' },
       { status: 400 },
     );
   } catch (error) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { parseRound } from '@/lib/interview-role';
 import React, { useState, useEffect } from 'react';
 import { Building2, CalendarDays, ShieldCheck, UserRoundCheck, UsersRound, Compass, Briefcase } from 'lucide-react';
 
@@ -90,8 +91,8 @@ export default function DashboardClient({ initialInterviews, initialPanelists, i
 
   const l1Count = panelists.filter((p) => p.roles.includes('L1')).length;
   const l2Count = panelists.filter((p) => p.roles.includes('L2')).length;
-  const l1Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l1')).length;
-  const l2Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && i.role.toLowerCase().includes('l2')).length;
+  const l1Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && (parseRound(i.role) === 'L1')).length;
+  const l2Scheduled = interviews.filter((i) => i.status === 'SCHEDULED' && (parseRound(i.role) === 'L2')).length;
 
   const navigation = [
     { id: 'interviews', label: 'Interviews', description: 'Schedule and track', icon: CalendarDays, count: interviews.length },

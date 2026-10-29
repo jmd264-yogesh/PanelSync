@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { dbClient } from '@/lib/db';
 import * as schema from '@/lib/schema';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { parseRound } from '@/lib/interview-role';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,12 +34,15 @@ export async function GET(request: NextRequest) {
     )
     .where(
       and(
-        eq(schema.interviewPanels.email, panelistEmail),
-        eq(schema.interviews.candidateEmail, email)
+        // Emails are stored as Graph returned them (any case) — compare case-insensitively,
+        // otherwise a panelist stored as "Jane.Doe@..." is refused their own candidate's L1 feedback.
+        sql`LOWER(TRIM(${schema.interviewPanels.email})) = ${panelistEmail}`,
+        sql`LOWER(TRIM(${schema.interviews.candidateEmail})) = ${email}`,
+        isNull(schema.interviews.deletedAt)
       )
     );
 
-  const hasL2Access = assignedInterviews.some(i => i.role.toLowerCase().includes('l2'));
+  const hasL2Access = assignedInterviews.some(i => parseRound(i.role) === 'L2');
 
   if (!hasL2Access) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 });
@@ -50,14 +54,12 @@ export async function GET(request: NextRequest) {
     .from(schema.interviews)
     .where(
       and(
-        eq(schema.interviews.candidateEmail, email),
+        sql`LOWER(TRIM(${schema.interviews.candidateEmail})) = ${email}`,
         isNull(schema.interviews.deletedAt)
       )
     );
 
-  const l1Interviews = candidateInterviews.filter(i => 
-    i.role.toLowerCase().includes('l1')
-  );
+  const l1Interviews = candidateInterviews.filter(i => parseRound(i.role) === 'L1');
 
   if (l1Interviews.length === 0) {
     return NextResponse.json({ feedbacks: [] });

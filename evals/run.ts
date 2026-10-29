@@ -15,6 +15,9 @@ import { computePanelistLoads, byFairnessThenName } from '../src/lib/panelist-lo
 import { LOAD_CASES, PANELISTS, NOW } from './load-cases';
 import { PIPELINE_CASES } from './pipeline-cases';
 import { TRANSCRIPT_CASES } from './transcript-cases';
+import { IN_PERSON_CASES } from './in-person-cases';
+import { ROUND_CASES } from './round-cases';
+import { VISIBILITY_CASES } from './visibility-cases';
 
 interface Result { name: string; passed: boolean; detail?: string }
 
@@ -242,6 +245,36 @@ function runTranscriptCases() {
   }
 }
 
+// ── Suite 6b: in-person speaker mapping ─────────────────────────────────────
+
+function runInPersonCases() {
+  suite('In-person speaker mapping');
+  for (const testCase of IN_PERSON_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
+// ── Suite 6c: interview round detection ─────────────────────────────────────
+
+function runRoundCases() {
+  suite('Interview round detection');
+  for (const testCase of ROUND_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
+// ── Suite 6d: cross-round visibility ────────────────────────────────────────
+
+function runVisibilityCases() {
+  suite('Cross-round visibility');
+  for (const testCase of VISIBILITY_CASES) {
+    const result = testCase.run();
+    record(testCase.name, result.ok, result.detail);
+  }
+}
+
 // ── Suite 7 (opt-in): live pipeline ──────────────────────────────────────────
 
 async function runLiveCases() {
@@ -317,6 +350,9 @@ async function main() {
   runLoadCases();
   runPipelineCases();
   runTranscriptCases();
+  runInPersonCases();
+  runRoundCases();
+  runVisibilityCases();
   if (live) await runLiveCases();
 
   const failed = results.filter((r) => !r.passed);

@@ -31,10 +31,13 @@ export async function GET(
 
     const recalibrateSession = await db.getOrCreateRecalibrateSession(id);
     const lateralCandidate = await db.getLateralCandidateForInterview(id);
+    const interview = await db.getInterview(id);
 
     return NextResponse.json({
       session: recalibrateSession,
       roleGrade: lateralCandidate?.roleGrade ?? null,
+      // For the in-person "who is who" step: panelists to choose from.
+      panelNames: interview?.panels.map((p) => p.name).filter(Boolean) ?? [],
     });
   } catch (error) {
     console.error('Failed to fetch recalibrate session:', error);
@@ -69,7 +72,15 @@ export async function PATCH(
       submittedAt: Date | null;
       submittedBy: string | null;
       aiEvaluation: any;
+      interviewMode: 'ONLINE' | 'IN_PERSON';
     }> = {};
+
+    if (body.interviewMode !== undefined) {
+      if (body.interviewMode !== 'ONLINE' && body.interviewMode !== 'IN_PERSON') {
+        return NextResponse.json({ error: "interviewMode must be 'ONLINE' or 'IN_PERSON'" }, { status: 400 });
+      }
+      patch.interviewMode = body.interviewMode;
+    }
 
     if (body.aiEvaluation !== undefined) {
       patch.aiEvaluation = body.aiEvaluation;

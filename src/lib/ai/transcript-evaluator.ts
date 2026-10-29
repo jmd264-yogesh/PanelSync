@@ -35,6 +35,11 @@ export interface EvaluateTranscriptInput {
   candidateName: string;
   roleTitle: string;
   signal?: AbortSignal;
+  /**
+   * In-person flow: the transcript's speakers were confirmed by a panelist and every line
+   * is tagged CANDIDATE (...) or PANEL (...), so attribution must not be re-guessed.
+   */
+  speakersConfirmed?: boolean;
 }
 
 /**
@@ -59,11 +64,15 @@ export function isTranscriptEmptyOrNoSpeech(text: string | null | undefined): bo
     'nounderstandablespeech',
     'nomicrophoneinput',
   ];
+  // Only a short transcript can be "just a no-speech marker". A real interview that
+  // happens to contain "[inaudible]" or the word "silence" somewhere must not be
+  // discarded — in a noisy room that's routine, not a sign of an empty recording.
+  if (stripped.length > 80) return false;
   return noSpeechIndicators.some((ind) => stripped === ind || stripped.includes(ind));
 }
 
 export async function evaluateTranscriptWithAi(input: EvaluateTranscriptInput): Promise<TranscriptEvaluation & { evaluatedAt: string }> {
-  const { transcriptText, questionSet, spec, candidateName, roleTitle, signal } = input;
+  const { transcriptText, questionSet, spec, candidateName, roleTitle, signal, speakersConfirmed } = input;
 
   const qList = Array.isArray(questionSet)
     ? questionSet
@@ -136,7 +145,7 @@ ${dims.map((d) => `
 `;
 
   const systemPrompt = `You are an expert technical interview evaluator and calibration auditor for a senior technical hiring panel.
-Your goal is to parse a raw Microsoft Teams interview transcript, locate where each interview question was asked and answered, evaluate the candidate's technical response objectively against the question's rubric bands, and assign a 1-4 score (or 0 if not asked/referenced).
+Your goal is to parse an interview transcript, locate where each interview question was asked and answered, evaluate the candidate's technical response objectively against the question's rubric bands, and assign a 1-4 score (or 0 if not asked/referenced).
 
 Grading Scale:
 0 = Not Addressed / Not Referenced (The question or rubric dimension was skipped, unasked, not reached, or not demonstrated in the transcript)
@@ -155,7 +164,9 @@ Similarly, for any rubric dimension where the candidate did not demonstrate or d
 - You MUST NEVER assign 1, 2, 3, or 4 without actual evidence in the transcript.
 
 Evaluation Instructions:
-1. Candidate Attribution: Identify statements made by the candidate (${candidateName}) vs the interviewer/panelist.
+1. Candidate Attribution: ${speakersConfirmed
+    ? `Speaker roles in this transcript were CONFIRMED by the interview panel. Every line is tagged either "CANDIDATE (${candidateName})" or "PANEL (<name>)". Treat ONLY CANDIDATE-tagged lines as the candidate's answers and evidence. PANEL lines are questions, prompts, or hints from interviewers — never credit them to the candidate, even if a panelist explains the right answer.`
+    : `Identify statements made by the candidate (${candidateName}) vs the interviewer/panelist.`}
 2. Question Matching: Match transcript segments to each of the ${qList.length} questions. If a question was skipped, unasked, not reached, or not referenced in this transcript, assign suggestedScore 0 with candidateAnswerSummary "Question was not asked/addressed in this transcript.", reasoning "The interview transcript did not reach or reference this question.", and verbatimQuote null.
 3. Evidence & Verbatim Quotes: For addressed questions, extract genuine, concise verbatim quotes or direct paraphrases from the transcript representing what the candidate actually stated.
 4. Rubric & Scores: For questions answered by the candidate, map their response to the closest 1-4 score based on rubric bands. Never assign 1-4 to a question that was not asked or referenced in the transcript—always assign suggestedScore 0.
@@ -322,17 +333,24 @@ export interface TranscribeAudioInput {
   roleTitle: string;
   existingTranscriptText?: string | null;
   signal?: AbortSignal;
+  /**
+   * In-person recording: one room microphone, so voices are labelled neutrally
+   * ("Speaker 1", "Speaker 2", ...) instead of guessing who the candidate is — a panelist
+   * confirms the mapping afterwards. `expectedSpeakers` is the panel size + 1.
+   */
+  inPerson?: { expectedSpeakers: number };
 }
 
 export async function transcribeAudioWithAi(input: TranscribeAudioInput): Promise<{ transcriptText: string; model: string }> {
-  const { audioBase64, mimeType, candidateName, roleTitle, existingTranscriptText } = input;
+  const { audioBase64, mimeType, candidateName, roleTitle, existingTranscriptText, inPerson } = input;
   const provider = getAiProvider();
+  const exampleSpeaker = inPerson ? 'Speaker 1' : 'Interviewer';
 
   let contextPrompt = '';
   if (existingTranscriptText && existingTranscriptText.trim()) {
     const timingInfo = extractLastTimestampAndAddOffset(existingTranscriptText, 5);
     const timingInstruction = timingInfo
-      ? `\n- CONTINUOUS TIMING (+5s buffer): The previous interview segment ended at timestamp [${timingInfo.lastTimestamp}]. You MUST START all timestamps for this new audio recording starting from [${timingInfo.nextStartTimestamp}] onwards and increase continuously from there (e.g. "[${timingInfo.nextStartTimestamp}] Interviewer: ..."). Do NOT restart timestamps at [00:00].`
+      ? `\n- CONTINUOUS TIMING (+5s buffer): The previous interview segment ended at timestamp [${timingInfo.lastTimestamp}]. You MUST START all timestamps for this new audio recording starting from [${timingInfo.nextStartTimestamp}] onwards and increase continuously from there (e.g. "[${timingInfo.nextStartTimestamp}] ${exampleSpeaker}: ..."). Do NOT restart timestamps at [00:00].`
       : '';
 
     contextPrompt = `
@@ -343,8 +361,16 @@ ${existingTranscriptText.slice(-15000)}
 <<<PREVIOUS_TRANSCRIPT_END>>>
 
 Important Continuation Instructions:
-- Seamless continuation: Transcribe this new audio recording as a seamless continuation of the interview above. Maintain consistent speaker attribution (e.g. "${candidateName}:", "Interviewer:") and technical terminology.${timingInstruction}`;
+- Seamless continuation: Transcribe this new audio recording as a seamless continuation of the interview above. ${inPerson
+  ? 'Keep EXACTLY the same "Speaker N" label for each voice that already appears above — the same person must keep the same number across segments. Only introduce a new number for a genuinely new voice.'
+  : `Maintain consistent speaker attribution (e.g. "${candidateName}:", "Interviewer:")`} and technical terminology.${timingInstruction}`;
   }
+
+  const speakerRules = inPerson
+    ? `3. FORMATTING: Format each dialogue turn on its own line with accurate timestamps based on when the words were spoken (e.g. "[00:01:23] Speaker 1: ...").
+4. SPEAKERS (in-person room recording, about ${inPerson.expectedSpeakers} people present): Distinguish speakers ONLY by their voice and label them "Speaker 1", "Speaker 2", "Speaker 3", ... in order of first speaking. Do NOT guess or write roles or names (never "Interviewer", "Candidate", or a person's name), even if someone introduces themselves — a panelist assigns identities afterwards. Use the same label for the same voice throughout. Start a new line whenever the speaker changes. Do NOT use markdown bold formatting around labels.`
+    : `3. FORMATTING: Format each dialogue turn on its own paragraph with accurate timestamps based on when the words were spoken (e.g. "[00:01:23] Interviewer: ..." or "[01:23] ${candidateName}: ...").
+4. SPEAKERS: Label speakers accurately (e.g. "Interviewer:", "${candidateName}:"). Do NOT use markdown bold formatting around speaker names (do NOT write **Interviewer:**).`;
 
   const systemPrompt = `You are a precision speech-to-text audio transcriptionist for technical interviews.
 Transcribe ONLY the words and sentences that are audibly and clearly spoken in the audio recording.
@@ -352,8 +378,7 @@ Transcribe ONLY the words and sentences that are audibly and clearly spoken in t
 CRITICAL RULES:
 1. STRICT FIDELITY: Transcribe only actual spoken dialogue. NEVER invent, imagine, hallucinate, or extrapolate fictional interview dialogue, greetings, pleasantries, or questions that were not spoken in the audio file.
 2. SILENCE / UNINTELLIGIBLE AUDIO: If the audio is silent, contains only background room noise, clicks, breaths, or lacks intelligible human speech, return "[No speech detected in audio recording]" or an empty string. Do NOT fabricate an interview script.
-3. FORMATTING: Format each dialogue turn on its own paragraph with accurate timestamps based on when the words were spoken (e.g. "[00:01:23] Interviewer: ..." or "[01:23] ${candidateName}: ...").
-4. SPEAKERS: Label speakers accurately (e.g. "Interviewer:", "${candidateName}:"). Do NOT use markdown bold formatting around speaker names (do NOT write **Interviewer:**).
+${speakerRules}
 5. ACCURACY: Preserve technical terms, library names, framework details, and code explanations verbatim.${contextPrompt}`;
 
   const userPrompt = `Transcribe the audio recording for candidate ${candidateName} interviewing for ${roleTitle}. Output only what was audibly spoken in the recording with timestamps and speaker tags. If no human speech is heard, output "[No speech detected in audio recording]".`;
@@ -365,4 +390,67 @@ CRITICAL RULES:
     userPrompt,
     temperature: 0.0,
   });
+}
+
+// ── In-person speaker role suggestion ───────────────────────────────────────
+
+export const SpeakerRoleSuggestionSchema = z.object({
+  speakers: z.array(z.object({
+    label: z.string(),
+    role: z.enum(['candidate', 'panelist', 'ignore']).catch('panelist'),
+    panelistName: z.string().nullable().optional().default(null),
+    reason: z.string().catch(''),
+  })).default([]),
+});
+
+export interface SpeakerForSuggestion {
+  label: string;
+  turns: number;
+  words: number;
+  share: number;
+  questions: number;
+  samples: string[];
+}
+
+/**
+ * A first guess at who each neutral "Speaker N" is, from what they say (the candidate
+ * answers and explains their experience; panelists ask questions and probe). Only a
+ * suggestion: it pre-fills the review screen, and nothing is scored until a panelist
+ * confirms the mapping.
+ */
+export async function suggestSpeakerRoles(input: {
+  speakers: SpeakerForSuggestion[];
+  candidateName: string;
+  panelNames: string[];
+  roleTitle: string;
+  signal?: AbortSignal;
+}): Promise<z.infer<typeof SpeakerRoleSuggestionSchema>> {
+  const provider = getAiProvider();
+  const systemPrompt = `You help an interview panel label an in-person interview recording. The transcript's speakers are anonymous ("Speaker 1", "Speaker 2", ...). From what each speaker says, suggest who they are.
+
+Rules:
+- Exactly ONE speaker should be "candidate": the person answering questions, describing their own experience and solutions.
+- Panelists ask questions, set up scenarios, probe and give hints. Mark them "panelist"; if you can tell which panel member it is from how they address each other, set "panelistName" to one of the given panel names, otherwise null.
+- Use "ignore" only for a label that is clearly not part of the interview (a passer-by, background speech, a few stray words).
+- Base this only on the content provided. Give a one-sentence reason per speaker.
+
+Respond with JSON only.`;
+
+  const userPrompt = `Candidate: ${input.candidateName}
+Role / round: ${input.roleTitle}
+Panel members: ${input.panelNames.length ? input.panelNames.join(', ') : 'unknown'}
+
+Speakers:
+${input.speakers.map((sp) => `- ${sp.label}: ${sp.turns} turns, ${sp.words} words (${Math.round(sp.share * 100)}% of all words), ${sp.questions} turns ending in a question mark.
+  Sample lines:
+${sp.samples.map((x) => `    "${x}"`).join('\n')}`).join('\n')}`;
+
+  const result = await provider.generateStructured({
+    systemPrompt,
+    userPrompt,
+    zodSchema: SpeakerRoleSuggestionSchema,
+    temperature: 0,
+    signal: input.signal,
+  });
+  return result.data;
 }

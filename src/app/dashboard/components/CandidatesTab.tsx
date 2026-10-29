@@ -1,5 +1,6 @@
 'use client';
 
+import { parseRound } from '@/lib/interview-role';
 import React, { useState, useEffect } from 'react';
 import {
   Users, Plus, Search, Loader2, Trash2, Building2, CheckCircle, X, MessageSquare
@@ -34,10 +35,10 @@ function getCandidateRoundResults(candidate: UploadedCandidate, interviewsList: 
   );
 
   const l1Interviews = candidateInterviews.filter((i) =>
-    i.role.toLowerCase().includes('l1')
+    (parseRound(i.role) === 'L1')
   );
   const l2Interviews = candidateInterviews.filter((i) =>
-    i.role.toLowerCase().includes('l2')
+    (parseRound(i.role) === 'L2')
   );
 
   const getRoundStatus = (roundInterviews: Interview[], roundName: 'L1' | 'L2') => {

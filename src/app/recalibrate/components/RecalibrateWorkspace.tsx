@@ -22,6 +22,7 @@ import L1ReferencePanel from './L1ReferencePanel';
 import TranscriptPanel from './TranscriptPanel';
 import RubricBreakdown from '@/components/recalibrate/RubricBreakdown';
 import ScoringPopout from './ScoringPopout';
+import InPersonSpeakerReview from './InPersonSpeakerReview';
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -104,6 +105,8 @@ export default function RecalibrateWorkspace({
   const rc = useRecalibrateSession({ interviewId, candidateName, positionTitle, panelistName });
   const {
     loading, generating, submitting, error, session, activeRun, spec, setSpec, minQuestionCount, effectiveQuestionCount, notes, setNotes,
+    interviewMode, handleSetInterviewMode, panelNames, handleConfirmSpeakers, isConfirmingSpeakers,
+    evaluationError, isEvaluating, handleRunEvaluation,
     questionScores, rubricScores, appliedZeroQuestionIds, isRunning, elapsedSeconds, elapsedLabel,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
@@ -474,6 +477,39 @@ export default function RecalibrateWorkspace({
               </div>
             )}
           </div>
+          {/* Transcript exists but there are no AI scores yet (first run failed/skipped, or the
+              questions were regenerated): say why and offer a retry instead of nothing. */}
+          {!aiEvaluation && transcriptText && !(interviewMode === 'IN_PERSON' && !session?.speakersConfirmedAt) && (
+            <div className="glass-card" style={{
+              padding: '1rem 1.25rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.5rem',
+              background: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.35)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <AlertTriangle size={15} style={{ color: '#f59e0b' }} />
+                  <strong style={{ fontSize: '0.88rem' }}>AI scores not calculated yet</strong>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleRunEvaluation}
+                  disabled={isEvaluating || isProcessingTranscript || questions.length === 0}
+                  title={questions.length === 0 ? 'Generate questions first' : 'Score the transcript against the current questions'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  {isEvaluating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  <span>{isEvaluating ? 'Evaluating…' : 'Run AI evaluation'}</span>
+                </button>
+              </div>
+              <span className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
+                {questions.length === 0
+                  ? 'Generate the interview questions first — the AI scores answers against them.'
+                  : evaluationError
+                    ? `Last attempt: ${evaluationError}`
+                    : 'A transcript is saved. Run the evaluation to get suggested scores you can apply.'}
+              </span>
+            </div>
+          )}
+
           {/* AI Assessment Summary Banner (only when evaluation is available) */}
           {aiEvaluation && (
             <div className="glass-card" style={{
@@ -807,7 +843,30 @@ export default function RecalibrateWorkspace({
         <div className="rc-interview-col">
           {isL2Round && <L1ReferencePanel interviewId={interviewId} />}
 
+          <div className="glass-card" style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <span className="text-xs" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Interview mode</span>
+            <div style={{ display: 'flex', gap: '0.3rem' }}>
+              {(['ONLINE', 'IN_PERSON'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`btn btn-sm ${interviewMode === mode ? 'btn-primary' : ''}`}
+                  disabled={isProcessingTranscript || isConfirmingSpeakers}
+                  onClick={() => handleSetInterviewMode(mode)}
+                >
+                  {mode === 'ONLINE' ? 'Online (Teams)' : 'In person'}
+                </button>
+              ))}
+            </div>
+            {interviewMode === 'IN_PERSON' && (
+              <span className="text-xs text-muted" style={{ flexBasis: '100%', lineHeight: 1.45 }}>
+                One room recording → transcribed with neutral speaker labels → you confirm who is who → AI scores only the candidate&apos;s answers.
+              </span>
+            )}
+          </div>
+
           <TranscriptPanel
+            inPerson={interviewMode === 'IN_PERSON'}
             interviewId={interviewId}
             candidateName={candidateName}
             roleTitle={positionTitle}
@@ -825,6 +884,20 @@ export default function RecalibrateWorkspace({
             onApplyAiSummaryToNotes={handleApplyAiSummaryToNotes}
             questions={questions}
           />
+
+          {interviewMode === 'IN_PERSON' && transcriptText && (
+            <InPersonSpeakerReview
+              // Remount (resetting the draft) whenever a new transcript or mapping arrives.
+              key={`${session?.transcriptFetchedAt ?? ''}|${session?.speakersConfirmedAt ?? ''}`}
+              transcriptText={transcriptText}
+              speakerMap={session?.speakerMap ?? null}
+              speakersConfirmedAt={session?.speakersConfirmedAt ?? null}
+              candidateName={candidateName}
+              panelNames={panelNames}
+              isConfirming={isConfirmingSpeakers}
+              onConfirm={handleConfirmSpeakers}
+            />
+          )}
 
           <InterviewStopwatch
             elapsedLabel={elapsedLabel}

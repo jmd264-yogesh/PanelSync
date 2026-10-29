@@ -107,6 +107,7 @@ export async function generateQuestionSetAgentic(input: GenerateInput): Promise<
     behaviouralCategories,
     round,
     requireFullCoverage: true,
+    strictRubric: true,
     caseStudyCategory: caseStudy ? CASE_STUDY_CATEGORY_LABEL : null,
   };
 

@@ -9,18 +9,29 @@ import {
 import type { Spec } from '@/lib/ai/schemas';
 import { SectionHeader } from '@/components/recalibrate/primitives';
 
+interface L1PanelFeedback {
+  panelId: string;
+  panelistName: string;
+  decision: string | null;
+  feedback: string | null;
+  submittedAt: string | null;
+}
+
 interface L1Reference {
   candidateName: string;
   positionTitle: string;
+  /** Every submitted L1 panelist's decision and written feedback. */
+  panelFeedbacks: L1PanelFeedback[];
   spec: Spec | null;
   questions: { questions: { id: string; question: string; category: string }[] } | null;
+  /** The L1 Recalibrate assessment — null when the L1 round only used the feedback form. */
   session: {
     questionScores: Record<string, number>;
     rubricScores: Record<string, number>;
     notes: string | null;
     submittedAt: string | null;
     submittedBy: string | null;
-  };
+  } | null;
 }
 
 const SCORE_COLORS: Record<number, string> = { 1: '#ef4444', 2: '#f97316', 3: '#3b82f6', 4: '#10b981' };
@@ -79,8 +90,8 @@ export default function L1ReferencePanel({ interviewId }: { interviewId: string 
   const allDims = useMemo(() => (spec ? deriveFocusAreas(spec.roleGrade, spec.techStacks) : []), [spec]);
 
   const questions = data?.questions?.questions || [];
-  const questionScores = data?.session.questionScores || {};
-  const rubricScores = data?.session.rubricScores || {};
+  const questionScores = data?.session?.questionScores || {};
+  const rubricScores = data?.session?.rubricScores || {};
   const avgQuestionScore = avgOf(questions.map((q) => questionScores[q.id]).filter((v): v is number => typeof v === 'number'));
   const avgRubricScore = avgOf(allDims.map((d) => rubricScores[d]).filter((v): v is number => typeof v === 'number'));
 
@@ -105,8 +116,34 @@ export default function L1ReferencePanel({ interviewId }: { interviewId: string 
           {!loading && error && <div className="text-xs text-muted">{error}</div>}
           {!loading && data && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {data.panelFeedbacks.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div className="text-xs" style={{ fontWeight: 700 }}>L1 panel feedback</div>
+                  {data.panelFeedbacks.map((f) => (
+                    <div key={f.panelId} style={{ padding: '0.5rem 0.65rem', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center' }}>
+                        <span className="text-xs" style={{ fontWeight: 600 }}>{f.panelistName}</span>
+                        {f.decision && (
+                          <span className="badge" style={{
+                            fontSize: '0.62rem', border: 'none',
+                            background: f.decision === 'PASSED' ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)',
+                            color: f.decision === 'PASSED' ? '#10b981' : '#ef4444',
+                          }}>
+                            {f.decision === 'PASSED' ? 'Passed' : 'Rejected'}
+                          </span>
+                        )}
+                      </div>
+                      {f.feedback && <p className="text-xs text-muted" style={{ margin: '0.3rem 0 0', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{f.feedback}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!data.session && (
+                <div className="text-xs text-muted">The L1 round didn&apos;t submit a Recalibrate assessment — the panel feedback above is all that was recorded.</div>
+              )}
+              {data.session && (<>
               <div className="text-xs text-muted">
-                Submitted{data.session.submittedBy ? ` by ${data.session.submittedBy}` : ''}
+                Recalibrate assessment submitted{data.session.submittedBy ? ` by ${data.session.submittedBy}` : ''}
                 {data.session.submittedAt ? ` on ${new Date(data.session.submittedAt).toLocaleString()}` : ''} — read-only
               </div>
               <div style={{ display: 'flex', gap: '1.5rem' }}>
@@ -135,6 +172,7 @@ export default function L1ReferencePanel({ interviewId }: { interviewId: string 
                   <p className="text-xs text-muted" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{data.session.notes}</p>
                 </div>
               )}
+              </>)}
             </div>
           )}
         </div>

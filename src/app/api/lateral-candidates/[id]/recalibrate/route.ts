@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { db } from '@/lib/db';
+import { parseRound } from '@/lib/interview-role';
 
 export const dynamic = 'force-dynamic';
 
 function deriveRound(role: string): 'L1' | 'L2' | null {
-  const lower = role.toLowerCase();
-  if (lower.includes('l2')) return 'L2';
-  if (lower.includes('l1')) return 'L1';
-  return null;
+  const round = parseRound(role);
+  return round === 'GENERAL' ? null : round;
 }
 
 // Recruiter-facing read of a lateral candidate's Recalibrate assessment(s). A candidate

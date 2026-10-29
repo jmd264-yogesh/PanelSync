@@ -1,5 +1,6 @@
 "use client";
 
+import { parseRound } from '@/lib/interview-role';
 import React, { useState } from "react";
 import { PanelistInterview, Interview, InterviewPanel, Drive } from "@/lib/db";
 import AvailabilityClient from "../availability/[token]/AvailabilityClient";
@@ -240,8 +241,8 @@ export default function PanelistClient({
   };
 
   const getRoleBadgeStyle = (role: string) => {
-    const isL1Role = role.toLowerCase().includes("l1");
-    const isL2Role = role.toLowerCase().includes("l2");
+    const isL1Role = (parseRound(role) === "L1");
+    const isL2Role = (parseRound(role) === "L2");
 
     if (isL1Role) {
       return {
@@ -356,11 +357,11 @@ export default function PanelistClient({
   const filteredInterviews = React.useMemo(() => {
     return hiringInterviews.filter((i) => {
       // Round filter
-      if (activeRoundTab === "L1" && !i.role.toLowerCase().includes("l1")) {
+      if (activeRoundTab === "L1" && !(parseRound(i.role) === "L1")) {
         return false;
       }
 
-      if (activeRoundTab === "L2" && !i.role.toLowerCase().includes("l2")) {
+      if (activeRoundTab === "L2" && !(parseRound(i.role) === "L2")) {
         return false;
       }
 
@@ -376,14 +377,14 @@ export default function PanelistClient({
 
       if (
         activeRoundTab === "L1" &&
-        !req.interview.role.toLowerCase().includes("l1")
+        !(parseRound(req.interview.role) === "L1")
       ) {
         return false;
       }
 
       if (
         activeRoundTab === "L2" &&
-        !req.interview.role.toLowerCase().includes("l2")
+        !(parseRound(req.interview.role) === "L2")
       ) {
         return false;
       }
@@ -465,11 +466,11 @@ export default function PanelistClient({
     const totalRequests = hiringRequests.length;
 
     const l1Requests = hiringRequests.filter((r) =>
-      r.interview.role.toLowerCase().includes("l1"),
+      (parseRound(r.interview.role) === "L1"),
     ).length;
 
     const l2Requests = hiringRequests.filter((r) =>
-      r.interview.role.toLowerCase().includes("l2"),
+      (parseRound(r.interview.role) === "L2"),
     ).length;
 
     const generalRequests = totalRequests - l1Requests - l2Requests;
@@ -478,11 +479,11 @@ export default function PanelistClient({
     const totalFeedback = hiringInterviews.length;
 
     const l1Feedback = hiringInterviews.filter((i) =>
-      i.role.toLowerCase().includes("l1"),
+      (parseRound(i.role) === "L1"),
     ).length;
 
     const l2Feedback = hiringInterviews.filter((i) =>
-      i.role.toLowerCase().includes("l2"),
+      (parseRound(i.role) === "L2"),
     ).length;
 
     const generalFeedback = totalFeedback - l1Feedback - l2Feedback;
@@ -1670,8 +1671,8 @@ export default function PanelistClient({
                   .toUpperCase();
                 const feedbackAlreadySubmitted =
                   !!interview.panelFeedback || !!interview.panelDecision;
-                const isL1Role = interview.role.toLowerCase().includes("l1");
-                const isL2Role = interview.role.toLowerCase().includes("l2");
+                const isL1Role = (parseRound(interview.role) === "L1");
+                const isL2Role = (parseRound(interview.role) === "L2");
                 const accentColor = isL1Role
                   ? "#0ea5e9"
                   : isL2Role
@@ -1887,7 +1888,7 @@ export default function PanelistClient({
                           onClick={() =>
                             toggleFeedbackExpansion(
                               interview.panelId,
-                              interview.role.toLowerCase().includes("l2"),
+                              (parseRound(interview.role) === "L2"),
                               interview.candidateEmail,
                             )
                           }
@@ -1938,7 +1939,7 @@ export default function PanelistClient({
                           }}
                         >
                           {/* L1 Feedback for L2 Panelists */}
-                          {interview.role.toLowerCase().includes("l2") && (
+                          {(parseRound(interview.role) === "L2") && (
                             <div
                               style={{
                                 marginBottom: "1rem",
@@ -2190,7 +2191,7 @@ export default function PanelistClient({
 
                                 // L1 Pass locking check
                                 if (
-                                  interview.role.toLowerCase().includes("l1") &&
+                                  (parseRound(interview.role) === "L1") &&
                                   interview.panelDecision === "PASSED"
                                 ) {
                                   canEdit = false;

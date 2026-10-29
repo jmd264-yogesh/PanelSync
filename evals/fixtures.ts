@@ -15,6 +15,7 @@ export const BASE_CONTEXT: GuardrailContext = {
   allowedCategories: [TECH_A, TECH_B, BEHAVIOURAL],
   behaviouralCategories: [BEHAVIOURAL],
   round: null,
+  strictRubric: true,
 };
 
 export function makeQuestion(overrides: Partial<Question> = {}): Question {
@@ -28,9 +29,10 @@ export function makeQuestion(overrides: Partial<Question> = {}): Question {
     maxMarks: 4,
     modelAnswer: 'A strong answer starts from QUERY_HISTORY and the query profile to find the dominant operator rather than guessing. It should identify partition pruning, spilling to remote storage, and warehouse sizing as the usual causes, and explain why simply scaling the warehouse up treats the symptom rather than the cause.',
     rubric: [
-      { band: '0-1', description: 'Guesses at causes with no diagnostic method.', exampleSignals: ['Suggests resizing immediately'] },
-      { band: '2-3', description: 'Names the query profile but cannot interpret spilling or pruning.', exampleSignals: ['Mentions clustering vaguely'] },
-      { band: '4-4', description: 'Diagnoses from the profile and explains the pruning/spilling trade-off.', exampleSignals: ['Reads operator-level timings'] },
+      { band: '1', description: 'Guesses at causes with no diagnostic method.', exampleSignals: ['Suggests resizing immediately'] },
+      { band: '2', description: 'Names the query profile but cannot interpret spilling or pruning.', exampleSignals: ['Mentions clustering vaguely'] },
+      { band: '3', description: 'Reads the profile, finds the dominant operator and fixes the cause rather than the symptom.', exampleSignals: ['Identifies spilling to remote storage'] },
+      { band: '4', description: 'Diagnoses from the profile and explains the pruning/spilling trade-off.', exampleSignals: ['Reads operator-level timings'] },
     ],
     followUps: ['What would you check before resizing the warehouse?'],
   };

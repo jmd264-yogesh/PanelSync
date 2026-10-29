@@ -2,9 +2,10 @@ import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { eq, and, inArray, desc, isNull, or } from 'drizzle-orm';
+import { eq, and, inArray, desc, isNull, or, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import { advanceStage, normalizeStage, type LateralStage } from './lateral-pipeline';
+import { outcomeVisibleToRound, parseRound } from './interview-role';
 
 export interface PanelAvailability {
   id: string;
@@ -96,7 +97,24 @@ export interface TranscriptDialogueTurn {
   speaker: string;
   timestamp?: string;
   text: string;
+  /** Set once speakers are confirmed (in-person flow): who this turn belongs to. */
+  role?: 'candidate' | 'panelist';
+  /** The diarizer's original label ("Speaker 2") before it was replaced by a real name. */
+  sourceLabel?: string;
 }
+
+export type InterviewMode = 'ONLINE' | 'IN_PERSON';
+
+export interface SpeakerAssignment {
+  role: 'candidate' | 'panelist' | 'ignore';
+  /** Panelist display name when role is 'panelist'. */
+  name?: string;
+  /** True while this is only the AI's suggestion, not yet confirmed by a panelist. */
+  suggested?: boolean;
+  reason?: string;
+}
+
+export type SpeakerMap = Record<string, SpeakerAssignment>;
 
 export interface QuestionEvaluation {
   questionId: string;
@@ -150,6 +168,9 @@ export interface RecalibrateSession {
   aiEvaluation: AiTranscriptEvaluation | null;
   transcriptFetchedAt: string | null;
   transcriptSource: string | null;
+  interviewMode: InterviewMode;
+  speakerMap: SpeakerMap | null;
+  speakersConfirmedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -873,7 +894,7 @@ export const db = {
       const allInterviews = await db.getInterviews();
 
       const readyL1Interviews = allInterviews.filter((i) => {
-        const isL1 = i.role.toLowerCase().includes('l1');
+        const isL1 = parseRound(i.role) === 'L1';
         const isPending = i.candidateName === 'Pending Assignment';
         const isCollected = i.status === 'COLLECTED';
         const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
@@ -881,7 +902,7 @@ export const db = {
       });
 
       const readyL2Interviews = allInterviews.filter((i) => {
-        const isL2 = i.role.toLowerCase().includes('l2');
+        const isL2 = parseRound(i.role) === 'L2';
         const isPending = i.candidateName === 'Pending Assignment';
         const isCollected = i.status === 'COLLECTED';
         const hasSlot = i.scheduledSlotStart && i.scheduledSlotEnd;
@@ -1204,7 +1225,12 @@ export const db = {
         candidateName: interview.candidateName,
         candidateEmail: interview.candidateEmail,
         candidateId: candidate?.id ?? null,
-        outcomeStatus: candidate?.outcomeStatus ?? null,
+        // Stored outcome spans every round; an L1 panelist only sees what L1 decided.
+        outcomeStatus: outcomeVisibleToRound(
+          parseRound(interview.role),
+          candidate?.outcomeStatus ?? null,
+          (panel as { decision?: string | null }).decision ?? null,
+        ),
         panelId: panel.id,
         panelDecision: (panel as any).decision ?? null,
         panelFeedback: (panel as any).feedback ?? null,
@@ -1563,7 +1589,26 @@ export const db = {
       .from(schema.lateralCandidates)
       .where(and(eq(schema.lateralCandidates.mappedInterviewId, interviewId), isNull(schema.lateralCandidates.deletedAt)))
       .limit(1);
-    return row ? db.mapLateralCandidateRow(row) : null;
+    if (row) return db.mapLateralCandidateRow(row);
+
+    // `mapped_interview_id` is a single slot that always points at the most recently
+    // scheduled round (or the last panelist's interview), so an earlier L1 interview — or
+    // one of several per-panelist interviews — would otherwise lose the candidate's resume
+    // and role grade. Fall back to the candidate this interview was created for, by email.
+    const [interview] = await dbClient
+      .select({ candidateEmail: schema.interviews.candidateEmail })
+      .from(schema.interviews)
+      .where(eq(schema.interviews.id, interviewId))
+      .limit(1);
+    const email = interview?.candidateEmail?.trim().toLowerCase();
+    if (!email) return null;
+    const [byEmail] = await dbClient
+      .select()
+      .from(schema.lateralCandidates)
+      .where(and(sql`LOWER(TRIM(${schema.lateralCandidates.email})) = ${email}`, isNull(schema.lateralCandidates.deletedAt)))
+      .orderBy(desc(schema.lateralCandidates.createdAt))
+      .limit(1);
+    return byEmail ? db.mapLateralCandidateRow(byEmail) : null;
   },
 
   mapAiRunRow: (row: typeof schema.aiRuns.$inferSelect): AiRun => ({
@@ -1870,6 +1915,9 @@ export const db = {
     aiEvaluation: (row.aiEvaluation as AiTranscriptEvaluation) ?? null,
     transcriptFetchedAt: row.transcriptFetchedAt ? row.transcriptFetchedAt.toISOString() : null,
     transcriptSource: row.transcriptSource ?? null,
+    interviewMode: row.interviewMode === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE',
+    speakerMap: (row.speakerMap as SpeakerMap) ?? null,
+    speakersConfirmedAt: row.speakersConfirmedAt ? row.speakersConfirmedAt.toISOString() : null,
     createdAt: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: row.updatedAt ? row.updatedAt.toISOString() : new Date().toISOString(),
   }),
@@ -1925,6 +1973,9 @@ export const db = {
     aiEvaluation: AiTranscriptEvaluation | null;
     transcriptFetchedAt: Date | null;
     transcriptSource: string | null;
+    interviewMode: InterviewMode;
+    speakerMap: SpeakerMap | null;
+    speakersConfirmedAt: Date | null;
   }>): Promise<RecalibrateSession> => {
     await db.getOrCreateRecalibrateSession(interviewId); // ensure a row exists first
     await dbClient

@@ -1,3 +1,4 @@
+import { parseRound } from '@/lib/interview-role';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPanelistSession } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
@@ -58,7 +59,7 @@ export async function POST(
       .where(eq(schema.interviews.id, panel.interviewId))
       .limit(1);
 
-    if (interview && interview.role.toLowerCase().includes('l1') && panel.decision === 'PASSED') {
+    if (interview && parseRound(interview.role) === 'L1' && panel.decision === 'PASSED') {
       return NextResponse.json(
         { error: 'Cannot edit feedback once a candidate has been passed for L1' },
         { status: 403 }
@@ -87,8 +88,9 @@ export async function POST(
         .limit(1);
 
       if (candidate) {
-        const isL1 = interview.role.toLowerCase().includes('l1');
-        const isL2 = interview.role.toLowerCase().includes('l2');
+        const round = parseRound(interview.role);
+        const isL1 = round === 'L1';
+        const isL2 = round === 'L2';
 
         let nextOutcomeStatus = candidate.outcomeStatus;
         let nextQueueStatus = 'MAPPED';

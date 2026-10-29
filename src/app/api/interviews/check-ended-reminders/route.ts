@@ -1,3 +1,4 @@
+import { parseRound } from '@/lib/interview-role';
 import { NextRequest, NextResponse } from 'next/server';
 import { db, dbClient } from '@/lib/db';
 import { getAnyValidAccessToken, getSession } from '@/lib/session';
@@ -74,8 +75,8 @@ export async function GET(request: NextRequest) {
         try {
           const chat = await graph.createOneOnOneChat(senderUserId, panel.userId, token);
 
-          const isL1 = interview.role.toLowerCase().includes('l1');
-          const isL2 = interview.role.toLowerCase().includes('l2');
+          const isL1 = (parseRound(interview.role) === 'L1');
+          const isL2 = (parseRound(interview.role) === 'L2');
           const roundLabel = isL1 ? 'L1 Technical Screening' : isL2 ? 'L2 System Design / Management' : interview.role;
           const accentColor = isL1 ? '#60a5fa' : isL2 ? '#a78bfa' : '#6366f1';
 

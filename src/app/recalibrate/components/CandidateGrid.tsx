@@ -3,6 +3,7 @@
 import React from 'react';
 import { Clock3, CircleDot, CheckCircle2 } from 'lucide-react';
 import type { PanelistInterview } from '@/lib/db';
+import { parseRound } from '@/lib/interview-role';
 
 export type CandidateStatus = 'not_started' | 'in_progress' | 'submitted';
 
@@ -18,8 +19,8 @@ export function initials(name: string): string {
 }
 
 export function deriveRound(role: string): 'L1' | 'L2' | null {
-  const roleLower = role.toLowerCase();
-  return roleLower.includes('l2') ? 'L2' : roleLower.includes('l1') ? 'L1' : null;
+  const round = parseRound(role);
+  return round === 'GENERAL' ? null : round;
 }
 
 export function positionLabel(role: string): string {

@@ -23,6 +23,7 @@ import RecalibrateReportModal from './RecalibrateReportModal';
 import PanelistLoadHeatmap from './PanelistLoadHeatmap';
 import { BAND_STYLE, byFairnessThenName, computePanelistLoads } from '@/lib/panelist-load';
 import { advanceStage, LATERAL_STAGES, STAGE_LABEL, STAGE_STYLE } from '@/lib/lateral-pipeline';
+import { parseRound } from '@/lib/interview-role';
 
 interface LateralHiringTabProps {
   candidates: LateralCandidate[];
@@ -607,8 +608,8 @@ export default function LateralHiringTab({
                       noisiest thing in the table — status now reads as a coloured dot
                       with the detail in the tooltip. */}
                   {candidateInterviews.map((intv) => {
-                    const roleLower = intv.role.toLowerCase();
-                    const round = roleLower.includes("l2") ? "L2" : roleLower.includes("l1") ? "L1" : null;
+                    const parsedRound = parseRound(intv.role);
+                    const round = parsedRound === "GENERAL" ? null : parsedRound;
                     const label = intv.role.replace(/^(L1|L2)\s*-\s*/i, "").replace(/^LATERAL - /i, "");
                     const dot = intv.status === "SCHEDULED"
                       ? "var(--success, #10b981)"
@@ -885,13 +886,10 @@ export default function LateralHiringTab({
                 >
                   Already scheduled for this candidate:{" "}
                   {existingRounds
-                    .map((i) =>
-                      i.role.toLowerCase().includes("l2")
-                        ? "L2"
-                        : i.role.toLowerCase().includes("l1")
-                          ? "L1"
-                          : i.role,
-                    )
+                    .map((i) => {
+                      const round = parseRound(i.role);
+                      return round === "GENERAL" ? i.role : round;
+                    })
                     .join(", ")}
                 </div>
               );

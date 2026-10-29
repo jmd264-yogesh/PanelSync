@@ -29,7 +29,11 @@ export async function POST(request: NextRequest) {
       candidateName,
       candidateEmail,
       role,
-      hiringType: hiringType,
+      // NOT NULL in the DB — the manual-create form doesn't send one, so derive it rather
+      // than letting the insert fail: lateral when it's for a lateral candidate, else campus.
+      hiringType: hiringType === 'LATERAL' || hiringType === 'CAMPUS'
+        ? hiringType
+        : (lateralCandidateId ? 'LATERAL' : 'CAMPUS'),
       duration: parseInt(duration, 10),
       startDate,
       endDate,

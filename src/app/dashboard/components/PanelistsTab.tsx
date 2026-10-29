@@ -1,5 +1,6 @@
 'use client';
 
+import { parseRound } from '@/lib/interview-role';
 import React, { useState, useEffect } from 'react';
 import {
   Shield, Settings, Search, Loader2, Trash2, Info, Clock, Building2, Check, Download, Upload
@@ -225,7 +226,7 @@ export default function PanelistsTab({
   // ── Column summary stats ──────────────────────────────────────────────────
   const l1ScheduledTotal = React.useMemo(() => {
     return interviews.filter((i) => {
-      if (i.status !== 'SCHEDULED' || !i.role.toLowerCase().includes('l1')) return false;
+      if (i.status !== 'SCHEDULED' || !(parseRound(i.role) === 'L1')) return false;
       
       const parts = i.role.split(' - ');
       const interviewCollege = parts.length > 1 ? parts[1].trim().toLowerCase() : '';
@@ -247,7 +248,7 @@ export default function PanelistsTab({
 
   const l2ScheduledTotal = React.useMemo(() => {
     return interviews.filter((i) => {
-      if (i.status !== 'SCHEDULED' || !i.role.toLowerCase().includes('l2')) return false;
+      if (i.status !== 'SCHEDULED' || !(parseRound(i.role) === 'L2')) return false;
       
       const parts = i.role.split(' - ');
       const interviewCollege = parts.length > 1 ? parts[1].trim().toLowerCase() : '';

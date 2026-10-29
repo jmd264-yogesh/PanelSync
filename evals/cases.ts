@@ -66,20 +66,20 @@ export const GUARDRAIL_CASES: GuardrailCase[] = [
   // ── Rubric integrity ───────────────────────────────────────────────────────
   {
     name: 'detects a gap between rubric bands',
-    questionSet: mutate((qs) => { qs.questions[0].rubric[1].band = '3-3'; }),
+    questionSet: mutate((qs) => { qs.questions[0].rubric[1].band = '3'; }),
     context: ctx(),
     expectCodes: ['RUBRIC_BAND_GAP'],
     expectBlocking: true,
   },
   {
-    name: 'detects rubric bands not reaching maxMarks',
-    questionSet: mutate((qs) => { qs.questions[0].maxMarks = 6; }),
+    name: 'detects a rubric that is missing a score band',
+    questionSet: mutate((qs) => { qs.questions[0].rubric.pop(); }),
     context: ctx(),
     expectCodes: ['RUBRIC_BAND_COVERAGE'],
     expectBlocking: true,
   },
   {
-    name: 'detects a descriptive rubric band label instead of a mark range',
+    name: 'detects a descriptive rubric band label instead of a score number',
     questionSet: mutate((qs) => { qs.questions[0].rubric[0].band = 'Basic'; }),
     context: ctx(),
     expectCodes: ['RUBRIC_BAND_FORMAT'],

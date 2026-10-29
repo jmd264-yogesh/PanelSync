@@ -1,3 +1,4 @@
+import { parseRound } from '@/lib/interview-role';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAnyValidAccessToken } from '@/lib/session';
 import { db, dbClient } from '@/lib/db';
@@ -62,6 +63,17 @@ export async function POST(request: NextRequest) {
       collegeNameFromRole = parts[1].trim().toLowerCase();
     }
 
+    // A slot only takes candidates at the matching stage: L2 slots take candidates who
+    // passed L1, every other slot (L1 / General) takes fresh candidates. Matching on
+    // college + date alone let an L1-passed candidate be re-mapped to an L1 slot, and a
+    // fresh candidate land in L2 without ever being interviewed in L1 (the bulk
+    // auto-mapper already enforces this split).
+    const slotRound = parseRound(interview.role);
+    const isEligibleForRound = (outcomeStatus: string | null) =>
+      slotRound === 'L2'
+        ? outcomeStatus === 'PASSED_L1'
+        : !outcomeStatus || outcomeStatus === 'PENDING';
+
     for (let i = 0; i < slots.length; i++) {
       const { startTime: slotStart, endTime: slotEnd } = slots[i];
       const slotDate = new Date(slotStart);
@@ -73,6 +85,7 @@ export async function POST(request: NextRequest) {
       let matchedCandidate: typeof waitingCandidates[number] | null = null;
       if (interview.candidateName === 'Pending Assignment') {
         const candidateIndex = waitingCandidates.findIndex(c => {
+          if (!isEligibleForRound(c.outcomeStatus)) return false;
           const matchesCollege = collegeNameFromRole ? c.collegeDrive?.toLowerCase() === collegeNameFromRole : true;
           const cDate = c.preferredDate ? new Date(c.preferredDate) : null;
           if (!cDate) return false;

@@ -1,5 +1,6 @@
 'use client';
 
+import { parseRound } from '@/lib/interview-role';
 import React, { useState } from 'react';
 import { Interview, InterviewPanel } from '@/lib/db';
 import {
@@ -30,8 +31,8 @@ export default function FeedbackClient({ interview, panel }: FeedbackClientProps
   const [submitted, setSubmitted] = useState(!!panel.decision);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const isL1 = interview.role.toLowerCase().includes('l1');
-  const isL2 = interview.role.toLowerCase().includes('l2');
+  const isL1 = (parseRound(interview.role) === 'L1');
+  const isL2 = (parseRound(interview.role) === 'L2');
   const accentColor = isL1 ? 'var(--badge-l1-text)' : isL2 ? 'var(--badge-l2-text)' : 'var(--primary)';
   const accentBg = isL1 ? 'var(--badge-l1-bg)' : isL2 ? 'var(--badge-l2-bg)' : 'var(--primary-glow)';
   const accentBorder = isL1 ? 'var(--badge-l1-border)' : isL2 ? 'var(--badge-l2-border)' : 'rgba(26, 43, 74, 0.2)';

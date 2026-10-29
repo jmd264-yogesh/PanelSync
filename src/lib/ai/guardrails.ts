@@ -38,6 +38,8 @@ export interface GuardrailContext {
    * is already at least the number of categories), so an uncovered one blocks.
    */
   requireFullCoverage?: boolean;
+  /** Require exactly four rubric bands labelled 1-4 (generation). Off for edits to older saved sets. */
+  strictRubric?: boolean;
   /** Category label of the compulsory case study (Consultant & above); exactly one question must use it. */
   caseStudyCategory?: string | null;
 }
@@ -213,47 +215,43 @@ function checkCategories(qs: QuestionSet, ctx: GuardrailContext): Finding[] {
   return findings;
 }
 
-function checkRubric(q: Question): Finding[] {
+function checkRubric(q: Question, strict: boolean): Finding[] {
   const findings: Finding[] = [];
 
-  // Check 1-4 discrete bands format (e.g. "1", "2", "3", "4" or "1 - ...")
-  const singleNumberMatches = q.rubric.map((b) => {
-    const m = b.band.match(/^\s*(\d+)/);
-    return m ? Number(m[1]) : null;
-  });
-
-  if (singleNumberMatches.every((n) => n !== null)) {
-    const numbers = (singleNumberMatches as number[]).sort((a, b) => a - b);
-    if (numbers.length === 4 && numbers[0] === 1 && numbers[3] === 4) {
-      return findings; // Valid 1-4 scale rubric
-    }
-  }
-
-  // Legacy range format checking (e.g. 0-1, 2-3, 4-5)
-  const parsed: { start: number; end: number; raw: string }[] = [];
-
+  // Every band must lead with its score number ("1", "2", ... or "3 - Meets ...").
+  const numbers: number[] = [];
   for (const band of q.rubric) {
-    const match = band.band.match(/(\d+)\s*-\s*(\d+)/);
-    if (!match) {
-      const singleM = band.band.match(/^\s*(\d+)/);
-      if (singleM) {
-        const val = Number(singleM[1]);
-        parsed.push({ start: val, end: val, raw: band.band });
-        continue;
-      }
+    const m = band.band.match(/^\s*(\d+)/);
+    if (!m) {
       findings.push({
         code: 'RUBRIC_BAND_FORMAT',
         severity: 'error',
         message: `Question "${q.id}" has rubric band "${band.band}", which is not a valid score band.`,
         questionId: q.id,
-        repairHint: 'Every rubric "band" must be a score number ("1", "2", "3", "4") or numeric range.',
+        repairHint: 'Every rubric "band" must be a score number: "1", "2", "3", "4".',
       });
       return findings;
     }
-    parsed.push({ start: Number(match[1]), end: Number(match[2]), raw: band.band });
+    numbers.push(Number(m[1]));
   }
 
-  parsed.sort((a, b) => a.start - b.start);
+  // Generated questions are scored 1-4 (Does Not Meet .. Exceeds Expectation), so a usable
+  // rubric has exactly one band per score. Older saved sets used mark ranges (0-1, 2-3 ...)
+  // and are only format-checked, so editing one doesn't suddenly start failing.
+  if (!strict) return findings;
+
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const complete = sorted.length === 4 && sorted.every((n, i) => n === i + 1);
+  if (!complete) {
+    const missing = [1, 2, 3, 4].filter((n) => !numbers.includes(n));
+    findings.push({
+      code: q.rubric.length === 4 ? 'RUBRIC_BAND_GAP' : 'RUBRIC_BAND_COVERAGE',
+      severity: 'error',
+      message: `Question "${q.id}" rubric must have exactly one band for each score 1-4 (has ${numbers.join(', ')}${missing.length ? `; missing ${missing.join(', ')}` : ''}).`,
+      questionId: q.id,
+      repairHint: 'Give the rubric exactly 4 bands, labelled "1", "2", "3" and "4", each described once.',
+    });
+  }
   return findings;
 }
 
@@ -419,7 +417,7 @@ export function inspectQuestionSet(qs: QuestionSet, ctx: GuardrailContext): Find
   ];
 
   for (const q of qs.questions) {
-    findings.push(...checkRubric(q), ...checkContent(q));
+    findings.push(...checkRubric(q, ctx.strictRubric === true), ...checkContent(q));
   }
 
   return findings;

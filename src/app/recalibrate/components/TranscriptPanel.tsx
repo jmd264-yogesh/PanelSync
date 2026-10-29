@@ -40,6 +40,8 @@ interface TranscriptPanelProps {
   onAcceptSingleQuestionScore?: (questionId: string, score: number) => void;
   onApplyAiSummaryToNotes?: () => void;
   questions?: Array<{ id: string; question: string; category: string }>;
+  /** In-person interview: no Teams sync, and recording guidance for a single room mic. */
+  inPerson?: boolean;
 }
 
 const ROLE_STYLE: Record<SpeakerRole, { color: string; label: string }> = {
@@ -65,8 +67,10 @@ export default function TranscriptPanel({
   onAcceptSingleQuestionScore,
   onApplyAiSummaryToNotes,
   questions = [],
+  inPerson = false,
 }: TranscriptPanelProps) {
-  const [activeTab, setActiveTab] = useState<'live' | 'upload' | 'teams'>('live');
+  const [selectedTab, setActiveTab] = useState<'live' | 'upload' | 'teams'>('live');
+  const activeTab = inPerson && selectedTab === 'teams' ? 'live' : selectedTab;
   const [isLiveRecording, setIsLiveRecording] = useState(false);
   const [manualText, setManualText] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
@@ -249,7 +253,7 @@ export default function TranscriptPanel({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: inPerson ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
               gap: '0.35rem',
               width: '100%',
               boxSizing: 'border-box',
@@ -335,7 +339,7 @@ export default function TranscriptPanel({
               <span>Upload</span>
             </button>
 
-            <button
+            {!inPerson && <button
               type="button"
               className={`btn btn-sm ${activeTab === 'teams' ? 'btn-primary' : ''}`}
               onClick={() => !isLiveRecording && setActiveTab('teams')}
@@ -359,8 +363,20 @@ export default function TranscriptPanel({
             >
               <RefreshCw size={13} style={{ flexShrink: 0 }} />
               <span>Teams</span>
-            </button>
+            </button>}
           </div>
+
+          {inPerson && (
+            <div className="text-xs" style={{ lineHeight: 1.55, padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(14, 165, 233, 0.07)', border: '1px solid rgba(14, 165, 233, 0.25)' }}>
+              <strong>In-person recording tips</strong>
+              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem' }}>
+                <li>Put the laptop (or a conference mic) in the middle of the table, not in front of the panel.</li>
+                <li>Ask everyone to say their name once at the start — it makes the speaker check quicker.</li>
+                <li>Avoid talking over each other; record long interviews as several clips.</li>
+                <li>After transcribing you&apos;ll confirm who is who before any AI scoring.</li>
+              </ul>
+            </div>
+          )}
 
           {/* Tab 1: Live Record (kept mounted so recording state and clips never disappear on tab switch) */}
           <div style={{ display: activeTab === 'live' ? 'flex' : 'none', flexDirection: 'column', gap: '0.6rem', flex: 1 }}>

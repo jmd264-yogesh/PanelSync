@@ -11,7 +11,7 @@ import {
   CASE_STUDY_CATEGORY_LABEL, CASE_STUDY_RUBRIC, requiresCaseStudy, computeRubricBreakdown, minimumQuestionCount,
 } from '@/lib/ai/org-rubric';
 import { buildCandidateSheetHtml, buildPanelistReportHtml, printHtmlDocument } from '@/lib/pdf/recalibrate-print';
-import type { RecalibrateSession, AiTranscriptEvaluation, TranscriptDialogueTurn } from '@/lib/db';
+import type { RecalibrateSession, AiTranscriptEvaluation, TranscriptDialogueTurn, InterviewMode, SpeakerMap } from '@/lib/db';
 
 export interface RubricBand {
   band: string;
@@ -117,6 +117,12 @@ export function useRecalibrateSession({
   const [aiEvaluation, setAiEvaluation] = useState<AiTranscriptEvaluation | null>(null);
   const [transcriptFetchedAt, setTranscriptFetchedAt] = useState<string | null>(null);
   const [transcriptSource, setTranscriptSource] = useState<string | null>(null);
+  const [panelNames, setPanelNames] = useState<string[]>([]);
+  // Why the last AI evaluation didn't produce scores (no questions yet, model error, ...),
+  // kept on screen next to a retry button instead of vanishing with a toast.
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [isConfirmingSpeakers, setIsConfirmingSpeakers] = useState(false);
   const [isProcessingTranscript, setIsProcessingTranscript] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -141,6 +147,7 @@ export function useRecalibrateSession({
           const data = await sessionRes.json();
           loadedSession = data.session;
           roleGrade = data.roleGrade;
+          setPanelNames(Array.isArray(data.panelNames) ? data.panelNames : []);
         }
 
         let runs: AiRun[] = [];
@@ -203,6 +210,7 @@ export function useRecalibrateSession({
     timerEndedAt: string | null;
     submitted: boolean;
     aiEvaluation: AiTranscriptEvaluation | null;
+    interviewMode: InterviewMode;
   }>) => {
     try {
       const res = await fetch(`/api/interviews/${interviewId}/recalibrate`, {
@@ -514,8 +522,8 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation) {
-          setAiEvaluation(data.session.aiEvaluation);
+        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
+          setAiEvaluation(data.session.aiEvaluation || null);
         }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'graph_api');
@@ -528,9 +536,12 @@ export function useRecalibrateSession({
             void patchSession({ notes: data.evaluation.overallSummary });
           }
         }
+        setEvaluationError(null);
         toast.success('Teams transcript fetched and AI evaluation complete!');
       } else {
-        toast.success('Teams transcript saved.');
+        setEvaluationError(data.evaluationError || null);
+        if (data.evaluationError) toast.warning(`Teams transcript saved, but: ${data.evaluationError}`);
+        else toast.success('Teams transcript saved.');
       }
     } catch (err: any) {
       console.error('Error fetching Teams transcript:', err);
@@ -559,13 +570,15 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation) {
-          setAiEvaluation(data.session.aiEvaluation);
+        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
+          setAiEvaluation(data.session.aiEvaluation || null);
         }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || 'manual_upload');
       }
-      if (data.evaluation) {
+      if (data.needsSpeakerConfirmation) {
+        toast.info('Transcript added — confirm who is who below to score it.');
+      } else if (data.evaluation) {
         setAiEvaluation(data.evaluation);
         if (data.evaluation.overallSummary) {
           if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
@@ -573,15 +586,94 @@ export function useRecalibrateSession({
             void patchSession({ notes: data.evaluation.overallSummary });
           }
         }
+        setEvaluationError(null);
         toast.success('Transcript uploaded and AI evaluation complete!');
       } else {
-        toast.success('Transcript uploaded successfully.');
+        setEvaluationError(data.evaluationError || null);
+        if (data.evaluationError) toast.warning(`Transcript uploaded, but: ${data.evaluationError}`);
+        else toast.success('Transcript uploaded successfully.');
       }
     } catch (err: any) {
       console.error('Error uploading transcript:', err);
       toast.error(err.message || 'Failed to upload transcript.');
     } finally {
       setIsProcessingTranscript(false);
+    }
+  };
+
+  const interviewMode: InterviewMode = session?.interviewMode ?? 'ONLINE';
+
+  const handleSetInterviewMode = async (mode: InterviewMode) => {
+    if (mode === interviewMode) return;
+    setSession((s) => (s ? { ...s, interviewMode: mode } : s));
+    await patchSession({ interviewMode: mode });
+  };
+
+  // In person: apply the panelist's "who is who" mapping, then the server evaluates the
+  // role-tagged transcript. Scores are only ever suggested from confirmed speakers.
+  const handleConfirmSpeakers = async (speakerMap: SpeakerMap) => {
+    setIsConfirmingSpeakers(true);
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/transcript`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'speakers', speakerMap, aiRunId: activeRun?.id || session?.aiRunId || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to confirm speakers.');
+
+      if (data.session) {
+        setSession(data.session);
+        setTranscriptTurns(data.session.transcriptTurns || null);
+        setAiEvaluation(data.session.aiEvaluation || null);
+      }
+      if (data.evaluation) {
+        if (data.evaluation.overallSummary && (!notes.trim() || notes.toLowerCase().includes('no speech detected'))) {
+          setNotes(data.evaluation.overallSummary);
+          void patchSession({ notes: data.evaluation.overallSummary });
+        }
+        setEvaluationError(null);
+        toast.success('Speakers confirmed — AI evaluation complete.');
+      } else if (data.evaluationError) {
+        setEvaluationError(data.evaluationError);
+        toast.warning(`Speakers confirmed, but: ${data.evaluationError}`);
+      } else {
+        toast.success('Speakers confirmed.');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to confirm speakers.');
+    } finally {
+      setIsConfirmingSpeakers(false);
+    }
+  };
+
+  // Re-run the AI evaluation on the stored transcript — after a failed/skipped first run
+  // (e.g. questions weren't generated yet) or after regenerating the questions.
+  const handleRunEvaluation = async () => {
+    setIsEvaluating(true);
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/transcript`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'evaluate', aiRunId: activeRun?.id || session?.aiRunId || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.evaluation) {
+        const message = data.error || 'AI evaluation failed.';
+        setEvaluationError(message);
+        toast.error(message);
+        return;
+      }
+      setEvaluationError(null);
+      if (data.session) setSession(data.session);
+      setAiEvaluation(data.evaluation);
+      toast.success('AI evaluation complete — review and apply the scores.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'AI evaluation failed.';
+      setEvaluationError(message);
+      toast.error(message);
+    } finally {
+      setIsEvaluating(false);
     }
   };
 
@@ -637,13 +729,15 @@ export function useRecalibrateSession({
         setSession(data.session);
         setTranscriptText(data.session.transcriptText || null);
         setTranscriptTurns(data.session.transcriptTurns || null);
-        if (data.session.aiEvaluation) {
-          setAiEvaluation(data.session.aiEvaluation);
+        if (data.session.aiEvaluation || data.needsSpeakerConfirmation) {
+          setAiEvaluation(data.session.aiEvaluation || null);
         }
         setTranscriptFetchedAt(data.session.transcriptFetchedAt || null);
         setTranscriptSource(data.session.transcriptSource || body.sourceType);
       }
-      if (data.evaluation) {
+      if (data.needsSpeakerConfirmation) {
+        toast.info('Audio transcribed — confirm who is who below to score it.');
+      } else if (data.evaluation) {
         setAiEvaluation(data.evaluation);
         if (data.evaluation.overallSummary) {
           if (!notes.trim() || notes.toLowerCase().includes('no audible speech') || notes.toLowerCase().includes('no speech detected')) {
@@ -656,9 +750,12 @@ export function useRecalibrateSession({
             ? 'Live recording(s) transcribed and AI evaluation complete!'
             : 'Audio(s) transcribed and AI evaluation complete!',
         );
+        setEvaluationError(null);
       } else if (data.session?.aiEvaluation) {
+        setEvaluationError(null);
         toast.success('Audio transcribed and AI evaluation updated!');
       } else if (data.evaluationError) {
+        setEvaluationError(data.evaluationError);
         toast.warning(`Audio transcribed, but: ${data.evaluationError}`);
       } else {
         toast.success('Audio transcribed successfully.');
@@ -677,15 +774,16 @@ export function useRecalibrateSession({
       return;
     }
 
-    // 1. Map Question Scores (only assign score 1-4; if 0, do not select any score)
+    // 1. Map Question Scores. The AI only overwrites with a real 1-4 score; "0" means it
+    // found no evidence, which must never erase a score the panelist entered by hand
+    // (e.g. they saw the answer but the recording missed it).
     const nextQuestionScores: Record<string, number> = { ...questionScores };
     const nextAppliedZero = new Set(appliedZeroQuestionIds);
     for (const qEval of aiEvaluation.questionEvaluations) {
       if (qEval.suggestedScore > 0) {
         nextQuestionScores[qEval.questionId] = qEval.suggestedScore;
         nextAppliedZero.delete(qEval.questionId);
-      } else {
-        delete nextQuestionScores[qEval.questionId];
+      } else if (typeof nextQuestionScores[qEval.questionId] !== 'number') {
         nextAppliedZero.add(qEval.questionId);
       }
     }
@@ -745,10 +843,16 @@ export function useRecalibrateSession({
         }
       }
 
+      // The AI may rate a dimension 0 (no direct evidence) while it did score questions in
+      // that very category — fall back to those instead of dropping the row.
+      if ((resolvedScore === undefined || resolvedScore <= 0) && categoryScores[label]?.length) {
+        const avg = Math.round(categoryScores[label].reduce((a, b) => a + b, 0) / categoryScores[label].length);
+        resolvedScore = Math.min(4, Math.max(1, avg));
+      }
+
+      // Only overwrite with a real score; keep any score the panelist already set.
       if (typeof resolvedScore === 'number' && resolvedScore > 0) {
         nextRubricScores[label] = resolvedScore;
-      } else {
-        delete nextRubricScores[label];
       }
     }
 
@@ -797,6 +901,8 @@ export function useRecalibrateSession({
   return {
     loading, generating, submitting, error,
     session, activeRun, spec, setSpec, minQuestionCount, effectiveQuestionCount, notes, setNotes,
+    interviewMode, handleSetInterviewMode, panelNames, handleConfirmSpeakers, isConfirmingSpeakers,
+    evaluationError, isEvaluating, handleRunEvaluation,
     questionScores, rubricScores, appliedZeroQuestionIds,
     transcriptText, transcriptTurns, aiEvaluation, transcriptFetchedAt, transcriptSource, isProcessingTranscript,
     handleFetchTranscriptFromTeams, handleUploadTranscript, handleUploadAudio,
